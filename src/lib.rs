@@ -16,6 +16,7 @@ pub mod paths;
 pub mod session;
 pub mod snapshot;
 pub mod sync;
+pub mod template;
 pub mod uninstall;
 pub mod upgrade;
 pub mod workspace;

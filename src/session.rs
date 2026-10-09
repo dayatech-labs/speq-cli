@@ -144,11 +144,15 @@ impl<'a> Session<'a> {
         let request = env.client.cli_request(&challenge, &device_name()).await?;
         let url = check_verification_url(&env.api_url, &request.verification_url)?;
 
-        eprintln!("To sign in, approve this device in your browser:\n  {url}");
-        if env.open_browser && !open_in_browser(&url) {
-            eprintln!("(could not open a browser automatically; open the URL above)");
-        }
-        eprintln!("Waiting for approval (the request expires in 10 minutes)...");
+        let browser_failed = env.open_browser && !open_in_browser(&url);
+        eprintln!(
+            "{}",
+            crate::output::login_prompt(
+                url.as_str(),
+                browser_failed,
+                LOGIN_DEADLINE.as_secs() / 60
+            )
+        );
 
         let tokens = self
             .poll_for_tokens(

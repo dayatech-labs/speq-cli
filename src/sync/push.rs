@@ -140,10 +140,7 @@ pub async fn push(env: &Env, ws: &Workspace) -> Result<PushReport> {
         )));
     }
     // The summary is shown before anything is sent.
-    eprintln!("Pushing {} change(s):", changes.len());
-    for c in &changes {
-        eprintln!("  {:<7} {}", c.action, c.path);
-    }
+    eprintln!("{}", crate::output::push_preview(&changes));
 
     let session = Session::new(env);
     let auth = session.authenticate().await?;

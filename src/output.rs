@@ -1,20 +1,21 @@
 //! Human-readable output (default) and `--json`. Machine output is the report struct itself.
+//! Every text layout is built with the one template in [`crate::template`].
 use crate::context::ContextReport;
 use crate::deinit::DeinitReport;
 use crate::error::{Error, exit};
 use crate::init::{InitReport, ListReport};
 use crate::session::{LoginReport, LogoutReport};
 use crate::sync::pull::{PullReport, UpdateReport};
-use crate::sync::push::PushReport;
+use crate::sync::push::{PlannedChange, PushReport};
 use crate::sync::status::{DiffReport, StatusReport};
+use crate::template::{Item, Screen, Theme, Tone};
 use crate::uninstall::UninstallReport;
 use crate::upgrade::{CheckReport, UpgradeReport};
-use clap::builder::styling::{AnsiColor, Effects, Style};
 use serde::Serialize;
 use std::io::IsTerminal;
 
 pub trait Human: Serialize {
-    fn human(&self) -> String;
+    fn human(&self, theme: &Theme) -> String;
     /// Non-zero when the command succeeded but found something the user must resolve.
     fn exit_code(&self) -> u8 {
         exit::OK
@@ -29,7 +30,7 @@ pub fn emit<T: Human>(json: bool, report: &T) -> u8 {
             serde_json::to_string_pretty(report).expect("report serialises")
         );
     } else {
-        let text = report.human();
+        let text = report.human(&Theme::stdout());
         if !text.is_empty() {
             println!("{}", text.trim_end());
         }
@@ -41,143 +42,222 @@ fn plural(n: usize, one: &str, many: &str) -> String {
     format!("{n} {}", if n == 1 { one } else { many })
 }
 
+/// Commit ids are shown short, as in `git log --oneline`.
+fn short(sha: &str) -> &str {
+    sha.get(..12).unwrap_or(sha)
+}
+
 impl Human for LoginReport {
-    fn human(&self) -> String {
+    fn human(&self, theme: &Theme) -> String {
         let who = match (&self.name, &self.email) {
             (Some(n), Some(e)) => format!("{n} <{e}>"),
             (None, Some(e)) => e.clone(),
             _ => self.user_id.clone(),
         };
-        format!(
-            "Logged in as {who}. You can access {}.",
-            plural(self.projects, "repository", "repositories")
-        )
+        let mut s = Screen::new(theme);
+        s.title(Tone::Ok, "Logged in").facts(&[
+            ("account", who),
+            (
+                "access",
+                plural(self.projects, "repository", "repositories"),
+            ),
+        ]);
+        if self.projects == 0 {
+            s.hint("Ask a platform admin to add you to a repository.");
+        } else {
+            s.hint("Run `speq list` to see them, then `speq init <repo>`.");
+        }
+        s.finish()
     }
 }
 
 impl Human for LogoutReport {
-    fn human(&self) -> String {
+    fn human(&self, theme: &Theme) -> String {
+        let mut s = Screen::new(theme);
         if self.was_logged_in && self.all_devices {
-            "Logged out everywhere. Every session of this account was ended and local credentials were removed.".into()
+            s.title(Tone::Ok, "Logged out everywhere").text(
+                "Every session of this account was ended and local credentials were removed.",
+            );
         } else if self.was_logged_in {
-            "Logged out. Local credentials were removed; the token itself stays valid until it expires (use `speq logout --all` to end it).".into()
+            s.title(Tone::Ok, "Logged out")
+                .text("Local credentials were removed from this machine.")
+                .hint("The token stays valid until it expires; run `speq logout --all` to end it.");
         } else {
-            "You were not logged in; local state was cleaned.".into()
+            s.title(Tone::Info, "You were not logged in")
+                .text("Local state was cleaned.");
         }
+        s.finish()
     }
 }
 
 impl Human for DeinitReport {
-    fn human(&self) -> String {
-        format!(
-            "Removed .speq/ and {}/ from {}.\n.gitignore, your login, and the binary were left untouched. Run `speq init` to set up again.",
-            self.specs_dir, self.root
-        )
+    fn human(&self, theme: &Theme) -> String {
+        let mut s = Screen::new(theme);
+        s.title(Tone::Ok, "Workspace removed")
+            .facts(&[
+                ("workspace", self.root.clone()),
+                ("removed", format!(".speq/ and {}/", self.specs_dir)),
+            ])
+            .text(".gitignore, your login, and the binary were left untouched.")
+            .hint("Run `speq init <repo>` to set up again.");
+        s.finish()
     }
 }
 
 impl Human for UninstallReport {
-    fn human(&self) -> String {
-        let mut out = String::from(if self.credential_removed {
-            "Removed your local credentials and cached data."
+    fn human(&self, theme: &Theme) -> String {
+        let clean = self.credential_removed && self.manual_steps.is_empty();
+        let mut s = Screen::new(theme);
+        if clean {
+            s.title(Tone::Ok, "Removed speq's local data");
         } else {
-            "Removed your cached data."
-        });
-        out.push_str(
-            "\nWorkspaces (specs/ and .speq/) were left untouched; `speq deinit` removes them.",
-        );
+            s.title(
+                Tone::Warn,
+                "Removed speq's local data, but some steps are left",
+            );
+        }
+        let mut facts = vec![
+            (
+                "credentials",
+                if self.credential_removed {
+                    "removed".to_string()
+                } else {
+                    "not removed (see below)".to_string()
+                },
+            ),
+            ("cached data", format!("removed ({})", self.data_dir)),
+        ];
         if let Some(binary) = &self.removed_binary {
-            out.push_str(&format!("\nRemoved {binary}."));
+            facts.push(("binary", format!("removed ({binary})")));
         }
-        for step in &self.manual_steps {
-            out.push_str(&format!("\n- {step}"));
-        }
-        out
+        s.facts(&facts).text(
+            "Workspaces (specs/ and .speq/) were left untouched; `speq deinit` removes them.",
+        );
+        s.section(
+            "To do by hand",
+            self.manual_steps
+                .iter()
+                .map(|step| Item::new(Tone::Warn, "→", step))
+                .collect(),
+        );
+        s.finish()
     }
 }
 
 impl Human for ListReport {
-    fn human(&self) -> String {
+    fn human(&self, theme: &Theme) -> String {
+        let mut s = Screen::new(theme);
         if self.projects.is_empty() {
-            return "No repositories are available to you yet. Ask a platform admin to add you."
-                .into();
+            s.title(Tone::Info, "No repositories are available to you yet")
+                .hint("Ask a platform admin to add you.");
+            return s.finish();
         }
-        let width = self
+        let rows: Vec<Vec<String>> = self
             .projects
             .iter()
             .map(|p| {
-                p.repository_full_name
-                    .as_deref()
-                    .unwrap_or("(not bound)")
-                    .len()
+                vec![
+                    p.repository_full_name
+                        .clone()
+                        .unwrap_or_else(|| "(not bound)".into()),
+                    p.display_name.clone(),
+                    p.roles.join(", "),
+                ]
             })
-            .max()
-            .unwrap_or(0);
-        self.projects
-            .iter()
-            .map(|p| {
-                format!(
-                    "{:<width$}  {}  [{}]",
-                    p.repository_full_name.as_deref().unwrap_or("(not bound)"),
-                    p.display_name,
-                    p.roles.join(", ")
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
+            .collect();
+        s.heading(&format!(
+            "{} you can use",
+            plural(rows.len(), "repository", "repositories")
+        ))
+        .table(&["REPOSITORY", "PROJECT", "ROLES"], &rows)
+        .hint("Run `speq init <repo>` in your implementation repository.");
+        s.finish()
     }
 }
 
 impl Human for InitReport {
-    fn human(&self) -> String {
-        let mut out = format!(
-            "{} {} (branch {}) into ./{}\nNext: run `speq pull`.",
+    fn human(&self, theme: &Theme) -> String {
+        let mut s = Screen::new(theme);
+        s.title(
+            Tone::Ok,
             if self.reconfigured {
-                "Reconfigured"
+                "Workspace reconfigured"
             } else {
-                "Initialized"
+                "Workspace initialized"
             },
-            self.repository,
-            self.branch,
-            self.local_dir
-        );
+        )
+        .facts(&[
+            ("repository", self.repository.clone()),
+            ("branch", self.branch.clone()),
+            ("folder", format!("./{}", self.local_dir)),
+        ]);
         if self.sync_state_reset {
-            out.push_str("\nnote: the source changed, so sync state was cleared; existing files in the folder count as untracked local files.");
+            s.note(
+                Tone::Warn,
+                "The source changed, so sync state was cleared; existing files in the folder count as untracked local files.",
+            );
         }
-        out
+        s.hint("Run `speq pull` to download the specs.");
+        s.finish()
     }
 }
 
 impl Human for PullReport {
-    fn human(&self) -> String {
-        let mut out = String::new();
-        for (label, paths) in [
-            ("added", &self.added),
-            ("updated", &self.updated),
-            ("deleted", &self.deleted),
-            ("adopted", &self.adopted),
-        ] {
-            for p in paths {
-                out.push_str(&format!("{label:<8}{p}\n"));
-            }
-        }
-        for c in &self.conflicts {
-            out.push_str(&format!("conflict {} ({})\n", c.path, c.reason));
-        }
-        out.push_str(&format!(
-            "Pulled {}: {} added, {} updated, {} deleted, {} unchanged or kept.\n",
-            &self.head_sha[..self.head_sha.len().min(12)],
-            self.added.len(),
-            self.updated.len(),
-            self.deleted.len(),
-            self.unchanged
-        ));
-        if self.conflicts.is_empty() {
-            out.push_str("Workspace is clean.");
+    fn human(&self, theme: &Theme) -> String {
+        let changed = self.added.len() + self.updated.len() + self.deleted.len();
+        let mut s = Screen::new(theme);
+        if !self.conflicts.is_empty() {
+            s.title(
+                Tone::Warn,
+                &format!(
+                    "Pulled with {}",
+                    plural(self.conflicts.len(), "conflict", "conflicts")
+                ),
+            );
+        } else if changed + self.adopted.len() == 0 {
+            s.title(Tone::Ok, "Already up to date");
         } else {
-            out.push_str(&format!("{} not applied; resolve with `speq diff <path>`, then edit the file and pull again. Push stays blocked until then.", plural(self.conflicts.len(), "path was", "paths were")));
+            s.title(Tone::Ok, "Pulled the latest specs");
         }
-        out
+        let mut summary: Vec<String> = [
+            (self.added.len(), "added"),
+            (self.updated.len(), "updated"),
+            (self.deleted.len(), "deleted"),
+            (self.adopted.len(), "adopted"),
+        ]
+        .iter()
+        .filter(|(n, _)| *n > 0)
+        .map(|(n, label)| format!("{n} {label}"))
+        .collect();
+        summary.push(format!("{} unchanged or kept", self.unchanged));
+        s.facts(&[
+            ("commit", short(&self.head_sha).to_string()),
+            ("summary", summary.join(" · ")),
+        ]);
+        let items = |tone, glyph, paths: &[String]| {
+            paths
+                .iter()
+                .map(|p| Item::new(tone, glyph, p))
+                .collect::<Vec<_>>()
+        };
+        s.section("Added", items(Tone::Ok, "+", &self.added))
+            .section("Updated", items(Tone::Info, "~", &self.updated))
+            .section("Deleted", items(Tone::Warn, "-", &self.deleted))
+            .section("Adopted", items(Tone::Info, "=", &self.adopted))
+            .section(
+                "Conflicts",
+                self.conflicts
+                    .iter()
+                    .map(|c| Item::new(Tone::Warn, "!", &c.path).detail(&c.reason))
+                    .collect(),
+            );
+        if !self.conflicts.is_empty() {
+            s.hint(&format!(
+                "{} not applied. Run `speq diff <path>`, edit the file, then pull again; push stays blocked until then.",
+                plural(self.conflicts.len(), "path was", "paths were")
+            ));
+        }
+        s.finish()
     }
     fn exit_code(&self) -> u8 {
         if self.conflicts.is_empty() {
@@ -189,61 +269,113 @@ impl Human for PullReport {
 }
 
 impl Human for UpdateReport {
-    fn human(&self) -> String {
-        match self.result {
-            "up-to-date" => format!("{} is already up to date.", self.path),
-            _ => format!(
-                "Applied the latest version of {} ({}).",
-                self.path,
-                &self.head_sha[..self.head_sha.len().min(12)]
-            ),
-        }
+    fn human(&self, theme: &Theme) -> String {
+        let mut s = Screen::new(theme);
+        s.title(
+            Tone::Ok,
+            if self.result == "up-to-date" {
+                "Already up to date"
+            } else {
+                "Applied the latest version"
+            },
+        )
+        .facts(&[
+            ("file", self.path.clone()),
+            ("commit", short(&self.head_sha).to_string()),
+        ]);
+        s.finish()
     }
 }
 
 impl Human for StatusReport {
-    fn human(&self) -> String {
-        let mut out = format!(
-            "lock {}  remote {}  {}\n",
-            self.lock_head_sha
-                .as_deref()
-                .map(|s| &s[..s.len().min(12)])
-                .unwrap_or("none"),
-            &self.remote_head_sha[..self.remote_head_sha.len().min(12)],
-            if self.up_to_date {
-                "(up to date)"
-            } else {
-                "(run `speq pull`)"
-            }
+    fn human(&self, theme: &Theme) -> String {
+        let changed: Vec<_> = self
+            .files
+            .iter()
+            .filter(|f| f.state != "unchanged")
+            .collect();
+        let has_local = changed
+            .iter()
+            .any(|f| matches!(f.state, "local-only" | "deleted"));
+        let conflicts = self.has_conflicts();
+
+        let mut s = Screen::new(theme);
+        if conflicts {
+            s.title(Tone::Warn, "Workspace has conflicts");
+        } else if changed.is_empty() && self.up_to_date {
+            s.title(Tone::Ok, "Workspace is up to date");
+        } else if changed.is_empty() {
+            s.title(Tone::Info, "The remote has newer specs");
+        } else {
+            s.title(Tone::Info, "Workspace has changes");
+        }
+        s.facts(&[
+            (
+                "last sync",
+                self.lock_head_sha
+                    .as_deref()
+                    .map_or("none", short)
+                    .to_string(),
+            ),
+            ("remote", short(&self.remote_head_sha).to_string()),
+        ]);
+        s.section(
+            "Changes",
+            changed
+                .iter()
+                .map(|f| {
+                    let (tone, glyph, detail) = match f.state {
+                        "conflict" => (
+                            Tone::Warn,
+                            "!",
+                            format!("conflict · local {}, remote {}", f.local, f.remote),
+                        ),
+                        "remote-only" => (
+                            Tone::Info,
+                            "↓",
+                            format!("remote-only · remote {}", f.remote),
+                        ),
+                        "deleted" => (Tone::Info, "-", "deleted · removed locally".to_string()),
+                        state => (Tone::Info, "↑", format!("{state} · local {}", f.local)),
+                    };
+                    Item::new(tone, glyph, &f.path).detail(detail)
+                })
+                .collect(),
+        )
+        .section(
+            "Ignored",
+            self.skipped
+                .iter()
+                .map(|p| Item::new(Tone::Info, "·", p))
+                .collect(),
+        )
+        .section(
+            "Unsafe",
+            self.unsafe_paths
+                .iter()
+                .map(|p| {
+                    Item::new(Tone::Warn, "!", p)
+                        .detail("symbolic link or special file; never followed")
+                })
+                .collect(),
         );
-        let mut any = false;
-        for f in self.files.iter().filter(|f| f.state != "unchanged") {
-            any = true;
-            let detail = match f.state {
-                "conflict" => format!("local {}, remote {}", f.local, f.remote),
-                "remote-only" => format!("remote {}", f.remote),
-                _ => format!("local {}", f.local),
-            };
-            out.push_str(&format!("{:<12}{}  ({detail})\n", f.state, f.path));
-        }
-        if !any {
-            out.push_str("All files are unchanged.\n");
-        }
-        for p in &self.skipped {
-            out.push_str(&format!("ignored     {p}\n"));
-        }
-        for p in &self.unsafe_paths {
-            out.push_str(&format!(
-                "unsafe      {p} (symbolic link or special file; never followed)\n"
-            ));
-        }
         if !self.pending.is_empty() {
-            out.push_str(&format!(
-                "{} pending from the last pull; `speq push` is blocked.\n",
-                plural(self.pending.len(), "conflict", "conflicts")
-            ));
+            s.note(
+                Tone::Warn,
+                &format!(
+                    "{} pending from the last pull; `speq push` is blocked.",
+                    plural(self.pending.len(), "conflict", "conflicts")
+                ),
+            );
         }
-        out
+        if conflicts {
+            s.hint("Run `speq diff <path>` to inspect, edit the file, then `speq pull`.");
+        } else if !self.up_to_date {
+            s.hint("Run `speq pull` to bring in the remote changes.");
+        } else if has_local {
+            s.hint("Run `speq push` to send your local changes.");
+        }
+        s.finish()
     }
     fn exit_code(&self) -> u8 {
         if self.has_conflicts() {
@@ -255,62 +387,135 @@ impl Human for StatusReport {
 }
 
 impl Human for DiffReport {
-    fn human(&self) -> String {
-        if self.identical {
-            format!(
-                "No differences between {} and the {} copy.",
-                self.path, self.against
-            )
-        } else {
-            self.diff.clone()
+    fn human(&self, theme: &Theme) -> String {
+        if !self.identical {
+            return theme.diff(&self.diff);
         }
+        let mut s = Screen::new(theme);
+        s.title(Tone::Ok, "No differences").facts(&[
+            ("file", self.path.clone()),
+            (
+                "compared with",
+                if self.against == "base" {
+                    "the last synced copy".to_string()
+                } else {
+                    "the latest remote copy".to_string()
+                },
+            ),
+        ]);
+        s.finish()
     }
+}
+
+/// Shown on stderr while `speq login` waits for the browser approval.
+pub fn login_prompt(url: &str, browser_failed: bool, expires_minutes: u64) -> String {
+    let theme = Theme::stderr();
+    let mut s = Screen::new(&theme);
+    s.title(Tone::Info, "Approve this device in your browser")
+        .text(&format!("  {url}"));
+    if browser_failed {
+        s.note(
+            Tone::Warn,
+            "Could not open a browser automatically; open the URL above.",
+        );
+    }
+    s.text(&format!(
+        "Waiting for approval; the request expires in {expires_minutes} minutes..."
+    ));
+    s.finish()
+}
+
+/// What `speq push` is about to send, shown on stderr before anything leaves the machine.
+pub fn push_preview(changes: &[PlannedChange]) -> String {
+    let theme = Theme::stderr();
+    let mut s = Screen::new(&theme);
+    s.title(
+        Tone::Info,
+        &format!("Pushing {}", plural(changes.len(), "change", "changes")),
+    )
+    .section(
+        "Changes",
+        changes
+            .iter()
+            .map(|c| {
+                let (tone, glyph) = match c.action {
+                    "create" => (Tone::Ok, "+"),
+                    "delete" => (Tone::Warn, "-"),
+                    _ => (Tone::Info, "~"),
+                };
+                Item::new(tone, glyph, &c.path).detail(c.action)
+            })
+            .collect(),
+    );
+    s.finish()
 }
 
 impl Human for PushReport {
-    fn human(&self) -> String {
+    fn human(&self, theme: &Theme) -> String {
+        let mut s = Screen::new(theme);
         if self.nothing_to_push {
-            return "Nothing to push.".into();
+            s.title(Tone::Info, "Nothing to push")
+                .text("There are no local changes since the last sync.");
+            return s.finish();
         }
-        let sha = self
-            .commit_sha
-            .as_deref()
-            .map(|s| &s[..s.len().min(12)])
-            .unwrap_or("");
-        format!(
-            "Pushed {} in commit {sha}{}.",
-            plural(self.changes.len(), "change", "changes"),
-            if self.replayed {
-                " (already applied earlier)"
-            } else {
-                ""
-            }
+        s.title(
+            Tone::Ok,
+            &format!("Pushed {}", plural(self.changes.len(), "change", "changes")),
         )
+        .facts(&[(
+            "commit",
+            self.commit_sha
+                .as_deref()
+                .map_or(String::new(), |sha| short(sha).to_string()),
+        )]);
+        if self.replayed {
+            s.note(Tone::Info, "These changes were already applied earlier.");
+        }
+        s.finish()
     }
 }
 
+/// Paths only, one per line and nothing else: coding agents and scripts read this output as a file list.
 impl Human for ContextReport {
-    fn human(&self) -> String {
+    fn human(&self, _theme: &Theme) -> String {
         self.paths.join("\n")
     }
 }
 
 impl Human for CheckReport {
-    fn human(&self) -> String {
-        format!(
-            "installed {}  latest {}  target {}  status: {}",
-            self.current, self.latest, self.target, self.status
-        )
+    fn human(&self, theme: &Theme) -> String {
+        let mut s = Screen::new(theme);
+        if self.status == "update-available" {
+            s.title(Tone::Info, "A newer version of speq is available");
+        } else {
+            s.title(Tone::Ok, "speq is up to date");
+        }
+        s.facts(&[
+            ("installed", self.current.clone()),
+            ("latest", self.latest.clone()),
+            ("target", self.target.to_string()),
+        ]);
+        if self.status == "update-available" {
+            s.hint("Run `speq upgrade` to install it.");
+        }
+        s.finish()
     }
 }
 
 impl Human for UpgradeReport {
-    fn human(&self) -> String {
+    fn human(&self, theme: &Theme) -> String {
+        let mut s = Screen::new(theme);
         if self.installed {
-            format!("Upgraded speq {} -> {}.", self.from, self.to)
+            let mut facts = vec![("version", format!("{} → {}", self.from, self.to))];
+            if let Some(path) = &self.path {
+                facts.push(("path", path.clone()));
+            }
+            s.title(Tone::Ok, "speq was upgraded").facts(&facts);
         } else {
-            format!("speq {} is already the latest version.", self.from)
+            s.title(Tone::Info, "Nothing to install")
+                .facts(&[("installed", self.from.clone())]);
         }
+        s.finish()
     }
 }
 
@@ -319,7 +524,7 @@ pub fn stderr_color() -> bool {
     std::io::stderr().is_terminal() && std::env::var_os("NO_COLOR").is_none()
 }
 
-/// The one template for human error output:
+/// The error side of the template: title, what happened, what to do next, and the technical details.
 ///
 /// ```text
 /// ✖ Title
@@ -333,31 +538,7 @@ pub fn stderr_color() -> bool {
 ///
 /// The hint and the HTTP status and request id are shown only when the error has them.
 pub fn render_error(error: &Error, color: bool) -> String {
-    let red = AnsiColor::Red.on_default().effects(Effects::BOLD);
-    let yellow = AnsiColor::Yellow.on_default().effects(Effects::BOLD);
-    let literal = AnsiColor::Green.on_default().effects(Effects::BOLD);
-    let dim = AnsiColor::BrightBlack.on_default();
-    let paint = |style: &Style, text: &str| {
-        if color {
-            format!("{style}{text}{style:#}")
-        } else {
-            text.to_string()
-        }
-    };
-    // `commands` in backticks keep their backticks and get the same green as in `--help`.
-    let paint_spans = |text: &str| {
-        text.split('`')
-            .enumerate()
-            .map(|(i, part)| {
-                if i % 2 == 1 {
-                    format!("`{}`", paint(&literal, part))
-                } else {
-                    part.to_string()
-                }
-            })
-            .collect::<String>()
-    };
-
+    let theme = Theme::new(color);
     let mut meta = vec![format!("code {}", error.code())];
     if let Some(status) = error.api_status() {
         meta.push(format!("HTTP {status}"));
@@ -367,18 +548,11 @@ pub fn render_error(error: &Error, color: bool) -> String {
     }
     meta.push(format!("exit {}", error.exit_code()));
 
-    let mut out = format!("{} {}\n", paint(&red, "✖"), paint(&red, error.title()));
-    out.push('\n');
-    for line in error.detail().lines() {
-        out.push_str(&format!("  {}\n", paint_spans(line)));
-    }
+    let mut s = Screen::new(&theme);
+    s.title(Tone::Fail, error.title()).text(&error.detail());
     if let Some(hint) = error.hint() {
-        out.push_str(&format!(
-            "\n  {} {}\n",
-            paint(&yellow, "→"),
-            paint_spans(&hint)
-        ));
+        s.hint(&hint);
     }
-    out.push_str(&format!("\n  {}", paint(&dim, &meta.join(" · "))));
-    out
+    s.meta(&meta.join(" · "));
+    s.finish()
 }

@@ -88,6 +88,8 @@ speq context epic-payment/create-payment   # files a coding agent should read, o
 `speq help` lists every command; `speq <command> --help` shows usage, arguments, flags, examples, and exit codes.
 Add `--json` to any command for machine-readable output (errors are JSON on stderr).
 
+Text output follows one template (`src/template.rs`): a title with an icon (`✔` done, `!` needs attention, `ℹ` info, `✖` error), aligned facts, grouped lists, and a `→` next step. Colors appear only on a terminal and never when `NO_COLOR` is set. `speq context` is the exception: it prints bare paths, one per line, for scripts and coding agents.
+
 | Command | What it does |
 | --- | --- |
 | `login` / `logout [--all]` | PKCE device login; logout deletes the local token and cache. A token cannot be revoked on its own: `--all` ends every session of your account (all devices and the Web app) |
