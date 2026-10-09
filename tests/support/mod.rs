@@ -3,13 +3,11 @@
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use serde_json::{Value, json};
-use speq::agent::Scheduler;
 use speq::credentials::MemoryStore;
 use speq::dirs::AppDirs;
 use speq::env::Env;
 use speq::hashing::{git_blob_sha, sha256_bytes, sha256_hex};
 use std::collections::{BTreeMap, HashMap};
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 pub mod http;
 
@@ -568,28 +566,10 @@ impl FakeApi {
     }
 }
 
-#[derive(Default)]
-pub struct RecordingScheduler {
-    pub installs: AtomicUsize,
-    pub uninstalls: AtomicUsize,
-}
-
-impl Scheduler for RecordingScheduler {
-    fn install(&self) -> speq::error::Result<()> {
-        self.installs.fetch_add(1, Ordering::SeqCst);
-        Ok(())
-    }
-    fn uninstall(&self) -> speq::error::Result<()> {
-        self.uninstalls.fetch_add(1, Ordering::SeqCst);
-        Ok(())
-    }
-}
-
-/// One "device": its own data directory, credential store and scheduler, sharing the fake API.
+/// One "device": its own data directory, credential store, sharing the fake API.
 pub struct Device {
     pub env: Env,
     pub creds: Arc<MemoryStore>,
-    pub scheduler: Arc<RecordingScheduler>,
     pub data: tempfile::TempDir,
 }
 
@@ -597,22 +577,15 @@ impl Device {
     pub fn new(api: &FakeApi) -> Device {
         let data = tempfile::tempdir().expect("tempdir");
         let creds = Arc::new(MemoryStore::default());
-        let scheduler = Arc::new(RecordingScheduler::default());
         let api_url = speq::api::parse_api_url(&api.url).expect("api url");
         let env = Env {
             client: speq::api::Client::new(api_url.clone()).expect("client"),
             dirs: AppDirs::at(data.path()),
             creds: creds.clone(),
-            scheduler: scheduler.clone(),
             api_url,
             open_browser: false,
         };
-        Device {
-            env,
-            creds,
-            scheduler,
-            data,
-        }
+        Device { env, creds, data }
     }
 
     /// A second "process" on the same device: same data directory and credential store, own HTTP client.
@@ -621,7 +594,6 @@ impl Device {
             client: speq::api::Client::new(self.env.api_url.clone()).expect("client"),
             dirs: AppDirs::at(self.data.path()),
             creds: self.creds.clone(),
-            scheduler: self.scheduler.clone(),
             api_url: self.env.api_url.clone(),
             open_browser: false,
         }

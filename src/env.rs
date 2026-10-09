@@ -1,5 +1,4 @@
 //! Everything a command needs from the outside world, so tests can substitute each piece.
-use crate::agent::{Scheduler, SystemScheduler};
 use crate::api::{self, Client};
 use crate::credentials::{CredentialStore, KeyringStore};
 use crate::dirs::AppDirs;
@@ -13,7 +12,6 @@ pub struct Env {
     pub client: Client,
     pub dirs: AppDirs,
     pub creds: Arc<dyn CredentialStore>,
-    pub scheduler: Arc<dyn Scheduler>,
     pub open_browser: bool,
 }
 
@@ -24,7 +22,6 @@ impl Env {
             client: Client::new(api_url.clone())?,
             dirs: AppDirs::discover()?,
             creds: Arc::new(KeyringStore),
-            scheduler: Arc::new(SystemScheduler::new(&api_url)),
             api_url,
             open_browser,
         })
@@ -43,7 +40,7 @@ impl Env {
         self.state_dir().join("snapshot.json")
     }
 
-    /// Serialises credential rotation across CLI processes and the background agent.
+    /// Serialises credential rotation across CLI processes.
     pub fn auth_lock_path(&self) -> PathBuf {
         self.state_dir().join("auth.lock")
     }

@@ -27,7 +27,7 @@ pub fn uninstall(env: &Env, exe: &Path, install: &Install) -> Result<UninstallRe
     let mut credential_removed = true;
     {
         let _lock = FileLock::exclusive(&env.auth_lock_path())?;
-        // Tries the credential, the snapshot, and the background agent before it reports a failure.
+        // Tries the credential and the snapshot before it reports a failure.
         if let Err(e) = Session::new(env).clear_local() {
             credential_removed = false;
             manual_steps.push(format!(

@@ -45,10 +45,6 @@ fn help_lists_every_command_with_a_summary_and_exit_codes() {
     for c in COMMANDS {
         assert!(out.contains(&format!("  {c} ")), "missing {c} in help");
     }
-    assert!(
-        !out.contains("\n  agent "),
-        "the internal agent command is hidden"
-    );
     assert!(out.contains("Exit codes:"));
 }
 
@@ -93,7 +89,13 @@ fn commands_outside_a_workspace_exit_7_without_touching_the_network() {
         .output()
         .expect("run");
     assert_eq!(out.status.code(), Some(7));
-    assert!(String::from_utf8_lossy(&out.stderr).contains("speq init"));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.starts_with("✖ Not a Speq workspace\n"));
+    assert!(stderr.contains("→ Run `speq init <repo>`"));
+    assert!(
+        !stderr.contains('\x1b'),
+        "no colors when stderr is not a terminal"
+    );
 }
 
 #[test]
@@ -178,13 +180,16 @@ fn no_color_wins_over_forced_color() {
 }
 
 #[test]
-fn only_the_top_level_help_shows_the_speq_banner() {
-    let logo = r"\___ \| |_) |  _| | | | |";
+fn only_the_top_level_help_shows_the_speq_cli_banner() {
+    let logo = r"\___ \| |_) |  _| | | | |  | |   | |    | | ";
     for args in [&["help"][..], &["--help"], &[]] {
         let (_, out, err) = speq(args);
         let text = format!("{out}{err}");
         assert!(
-            text.starts_with(" ____  ____  _____  ___  \n"),
+            text.starts_with(
+                " ____  ____  _____  ___      ____ _     ___ 
+"
+            ),
             "{args:?}: {text}"
         );
         assert!(text.contains(logo), "{args:?}");

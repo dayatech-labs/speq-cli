@@ -43,7 +43,7 @@ src/api.rs                         client HTTP ke API Speq
 src/session.rs, credentials.rs     login, token, dan penyimpanan di credential store OS
 src/workspace.rs, snapshot.rs      sinkronisasi tiga arah, lock, manifest, baseline
 src/paths.rs, fsx.rs, hashing.rs   path aman, tulis atomik, hash blob Git
-src/upgrade.rs, agent.rs           self-upgrade dan job refresh latar belakang
+src/upgrade.rs                     self-upgrade
 src/output.rs, error.rs            keluaran manusia/JSON dan kode keluar
 tests/                             tes integrasi melawan API palsu (tests/support/)
 scripts/                           installer dan skrip rilis (Python)

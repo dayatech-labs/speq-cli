@@ -1,6 +1,7 @@
 use speq::commands::{parse_args, run};
 use speq::env::Env;
 use speq::error::{Error, exit};
+use speq::output::{render_error, stderr_color};
 use std::process::ExitCode;
 use tracing_subscriber::EnvFilter;
 
@@ -9,7 +10,7 @@ fn report_error(json: bool, error: &Error) {
         let body = serde_json::json!({ "error": { "code": error.code(), "message": error.to_string(), "request_id": error.request_id() } });
         eprintln!("{body}");
     } else {
-        eprintln!("error: {error}");
+        eprintln!("{}", render_error(error, stderr_color()));
     }
 }
 
@@ -35,7 +36,10 @@ fn main() -> ExitCode {
     {
         Ok(rt) => rt,
         Err(e) => {
-            eprintln!("error: cannot start the runtime: {e}");
+            report_error(
+                json,
+                &Error::Other(format!("cannot start the runtime: {e}")),
+            );
             return ExitCode::from(exit::FAILURE);
         }
     };

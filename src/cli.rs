@@ -127,13 +127,9 @@ pub enum Command {
 
     /// Remove speq's local data and, when the installer put it there, the binary
     #[command(
-        after_help = "Examples:\n  speq uninstall\n  speq uninstall --yes\n\nRemoves the stored credential, the cache, and the background agent, then the binary if it was placed by the\nofficial installer. Binaries managed by Homebrew, Scoop, WinGet, or another package manager are left in place and\nthe matching package-manager command is shown. Workspaces (`specs/` and `.speq/`) are never touched, and the\nserver-side session is not ended: run `speq logout --all` first for that. Only the credential of the current API\norigin is removed.\n\n"
+        after_help = "Examples:\n  speq uninstall\n  speq uninstall --yes\n\nRemoves the stored credential and the cache, then the binary if it was placed by the\nofficial installer. Binaries managed by Homebrew, Scoop, WinGet, or another package manager are left in place and\nthe matching package-manager command is shown. Workspaces (`specs/` and `.speq/`) are never touched, and the\nserver-side session is not ended: run `speq logout --all` first for that. Only the credential of the current API\norigin is removed.\n\n"
     )]
     Uninstall(UninstallArgs),
-
-    /// Background snapshot refresh (run by the OS scheduler)
-    #[command(hide = true)]
-    Agent(AgentArgs),
 }
 
 impl Command {
@@ -151,7 +147,6 @@ impl Command {
             Command::Context(_) => "context",
             Command::Upgrade(_) => "upgrade",
             Command::Uninstall(_) => "uninstall",
-            Command::Agent(_) => "agent",
         }
     }
 }
@@ -226,18 +221,6 @@ pub struct UninstallArgs {
     pub yes: bool,
 }
 
-#[derive(Args, Debug)]
-pub struct AgentArgs {
-    #[command(subcommand)]
-    pub action: AgentAction,
-}
-
-#[derive(Subcommand, Debug)]
-pub enum AgentAction {
-    /// One scheduled tick: refresh the capability snapshot when it is close to expiry
-    Run,
-}
-
 /// Exit-code table, exposed so docs and tests can reuse it.
 pub fn exit_code_help() -> &'static str {
     EXIT_CODES
@@ -293,14 +276,14 @@ pub fn paint_help(text: &str) -> String {
 }
 
 const BANNER: [&str; 5] = [
-    r" ____  ____  _____  ___  ",
-    r"/ ___||  _ \| ____|/ _ \ ",
-    r"\___ \| |_) |  _| | | | |",
-    r" ___) |  __/| |___| |_| |",
-    r"|____/|_|   |_____|\__\_\",
+    r" ____  ____  _____  ___      ____ _     ___ ",
+    r"/ ___||  _ \| ____|/ _ \    / ___| |   |_ _|",
+    r"\___ \| |_) |  _| | | | |  | |   | |    | | ",
+    r" ___) |  __/| |___| |_| |  | |___| |___ | | ",
+    r"|____/|_|   |_____|\__\_\   \____|_____|___|",
 ];
 
-/// The `SPEQ` logo shown above the top-level help. Clap drops the colors when output is not a terminal.
+/// The `SPEQ CLI` logo shown above the top-level help. Clap drops the colors when output is not a terminal.
 pub fn banner() -> String {
     let style = AnsiColor::Cyan.on_default().effects(Effects::BOLD);
     BANNER

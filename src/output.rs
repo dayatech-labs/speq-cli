@@ -1,6 +1,6 @@
 //! Human-readable output (default) and `--json`. Machine output is the report struct itself.
 use crate::context::ContextReport;
-use crate::error::exit;
+use crate::error::{Error, exit};
 use crate::init::{InitReport, ListReport};
 use crate::session::{LoginReport, LogoutReport};
 use crate::sync::pull::{PullReport, UpdateReport};
@@ -8,7 +8,9 @@ use crate::sync::push::PushReport;
 use crate::sync::status::{DiffReport, StatusReport};
 use crate::uninstall::UninstallReport;
 use crate::upgrade::{CheckReport, UpgradeReport};
+use clap::builder::styling::{AnsiColor, Effects, Style};
 use serde::Serialize;
+use std::io::IsTerminal;
 
 pub trait Human: Serialize {
     fn human(&self) -> String;
@@ -45,14 +47,10 @@ impl Human for LoginReport {
             (None, Some(e)) => e.clone(),
             _ => self.user_id.clone(),
         };
-        let mut out = format!(
+        format!(
             "Logged in as {who}. You can access {}.",
             plural(self.projects, "repository", "repositories")
-        );
-        if let Some(w) = &self.agent_warning {
-            out.push_str(&format!("\nwarning: {w}"));
-        }
-        out
+        )
     }
 }
 
@@ -71,9 +69,9 @@ impl Human for LogoutReport {
 impl Human for UninstallReport {
     fn human(&self) -> String {
         let mut out = String::from(if self.credential_removed {
-            "Removed your local credentials, cached data, and the background agent."
+            "Removed your local credentials and cached data."
         } else {
-            "Removed your cached data and the background agent."
+            "Removed your cached data."
         });
         out.push_str("\nWorkspaces (specs/ and .speq/) were left untouched.");
         if let Some(binary) = &self.removed_binary {
@@ -303,4 +301,73 @@ impl Human for UpgradeReport {
             format!("speq {} is already the latest version.", self.from)
         }
     }
+}
+
+/// Colors for stderr only on a terminal, and never when `NO_COLOR` is set.
+pub fn stderr_color() -> bool {
+    std::io::stderr().is_terminal() && std::env::var_os("NO_COLOR").is_none()
+}
+
+/// The one template for human error output:
+///
+/// ```text
+/// ✖ Title
+///
+///   What happened.
+///
+///   → What to do next
+///
+///   code <code> · HTTP <status> · request <id> · exit <n>
+/// ```
+///
+/// The hint and the HTTP status and request id are shown only when the error has them.
+pub fn render_error(error: &Error, color: bool) -> String {
+    let red = AnsiColor::Red.on_default().effects(Effects::BOLD);
+    let yellow = AnsiColor::Yellow.on_default().effects(Effects::BOLD);
+    let literal = AnsiColor::Green.on_default().effects(Effects::BOLD);
+    let dim = AnsiColor::BrightBlack.on_default();
+    let paint = |style: &Style, text: &str| {
+        if color {
+            format!("{style}{text}{style:#}")
+        } else {
+            text.to_string()
+        }
+    };
+    // `commands` in backticks keep their backticks and get the same green as in `--help`.
+    let paint_spans = |text: &str| {
+        text.split('`')
+            .enumerate()
+            .map(|(i, part)| {
+                if i % 2 == 1 {
+                    format!("`{}`", paint(&literal, part))
+                } else {
+                    part.to_string()
+                }
+            })
+            .collect::<String>()
+    };
+
+    let mut meta = vec![format!("code {}", error.code())];
+    if let Some(status) = error.api_status() {
+        meta.push(format!("HTTP {status}"));
+    }
+    if let Some(id) = error.request_id() {
+        meta.push(format!("request {id}"));
+    }
+    meta.push(format!("exit {}", error.exit_code()));
+
+    let mut out = format!("{} {}\n", paint(&red, "✖"), paint(&red, error.title()));
+    out.push('\n');
+    for line in error.detail().lines() {
+        out.push_str(&format!("  {}\n", paint_spans(line)));
+    }
+    if let Some(hint) = error.hint() {
+        out.push_str(&format!(
+            "\n  {} {}\n",
+            paint(&yellow, "→"),
+            paint_spans(&hint)
+        ));
+    }
+    out.push_str(&format!("\n  {}", paint(&dim, &meta.join(" · "))));
+    out
 }

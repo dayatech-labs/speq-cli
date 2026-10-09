@@ -7,7 +7,6 @@ use speq::snapshot;
 use speq::uninstall::uninstall;
 use speq::upgrade::Install;
 use std::path::PathBuf;
-use std::sync::atomic::Ordering;
 use support::{Device, FakeApi, Fixture};
 
 /// A stand-in for the installed binary, in its own directory.
@@ -40,7 +39,6 @@ async fn official_install_loses_its_state_and_its_binary_without_calling_the_api
             .unwrap()
             .is_none()
     );
-    assert_eq!(device.scheduler.uninstalls.load(Ordering::SeqCst), 1);
     assert!(
         !device.data.path().exists() || std::fs::read_dir(device.data.path()).unwrap().count() == 0,
         "the data directory is gone"
@@ -78,7 +76,6 @@ async fn a_package_managed_binary_is_kept_and_its_own_command_is_shown() {
     assert_eq!(report.manual_steps.len(), 1);
     assert!(report.manual_steps[0].contains("`brew uninstall speq`"));
     assert!(device.creds.load(&device.env.account()).unwrap().is_none());
-    assert_eq!(device.scheduler.uninstalls.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test]

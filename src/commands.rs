@@ -1,11 +1,11 @@
 //! Dispatch from the parsed command line to the library, then to output.
-use crate::cli::{AgentAction, Cli, Command, banner, exit_code_help, paint_help};
+use crate::cli::{Cli, Command, banner, exit_code_help, paint_help};
 use crate::context;
 use crate::env::Env;
-use crate::error::{Error, Result, exit};
+use crate::error::{Error, Result};
 use crate::init::{self, InitOptions};
 use crate::output::emit;
-use crate::session::{AgentOutcome, Session};
+use crate::session::Session;
 use crate::sync::{pull, push, status};
 use crate::uninstall;
 use crate::upgrade::{self, Install};
@@ -122,16 +122,6 @@ pub async fn run(cli: Cli, env: &Env) -> Result<u8> {
         Command::Context(args) => Ok(emit(json, &context::context(&workspace()?, &args.target)?)),
         Command::Upgrade(args) => upgrade_command(json, args).await,
         Command::Uninstall(args) => uninstall_command(json, env, args),
-        Command::Agent(args) => match args.action {
-            AgentAction::Run => {
-                match Session::new(env).agent_tick(true).await? {
-                    AgentOutcome::LoggedOut
-                    | AgentOutcome::StillFresh
-                    | AgentOutcome::Refreshed => {}
-                }
-                Ok(exit::OK)
-            }
-        },
     }
 }
 
@@ -220,9 +210,8 @@ fn uninstall_command(json: bool, env: &Env, args: crate::cli::UninstallArgs) -> 
             Install::Official => format!(" and {}", exe.display()),
             _ => String::new(),
         };
-        let prompt = format!(
-            "Uninstall speq? This removes your local credentials, cached data, and the background agent{binary}"
-        );
+        let prompt =
+            format!("Uninstall speq? This removes your local credentials, and cached data{binary}");
         if !confirm(&prompt)? {
             return Err(Error::invalid("cancelled; nothing was changed"));
         }

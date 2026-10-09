@@ -63,7 +63,7 @@ speq uninstall       # asks for confirmation on a terminal
 speq uninstall --yes # for automation
 ```
 
-`uninstall` removes the stored credential, the cache, and the background agent, then the binary itself if the
+`uninstall` removes the stored credential and the cache, then the binary itself if the
 official installer put it there. If `speq` is managed by Homebrew, Scoop, WinGet, or Nix, the binary is left alone
 and the package manager's own command is printed (`brew uninstall speq`, `scoop uninstall speq`, ...). It never
 touches your workspaces (`specs/` and `.speq/`), does not end the server-side session (use `logout --all` first), and
@@ -133,9 +133,7 @@ specs/                   the working copy (ignored by Git)
   never reach the CLI.
 * The capability cache (projects, roles, expiry) is stored in the per-user application-data folder with owner-only
   permissions. It is never used after it expires and never authorizes anything: the API checks every request.
-* A background job (launchd on macOS, a systemd user timer on Linux, Task Scheduler on Windows) refreshes the cache
-  shortly before it expires. If it is unavailable, the next command refreshes in the foreground. `speq logout`
-  removes the job.
+* The CLI runs no background process. When the cache has expired, the next command refreshes it in the foreground.
 * Logs never contain tokens or document content. Set `SPEQ_LOG=debug` to see request method, path, status, and
   request ID.
 

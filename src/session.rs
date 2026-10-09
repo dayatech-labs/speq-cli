@@ -1,5 +1,5 @@
 //! Device session: login (PKCE), a stored access token that simply expires (there is no refresh),
-//! capability snapshot refresh, logout, and the background-agent tick.
+//! capability snapshot refresh, and logout.
 use crate::api::{ProjectsResponse, Tokens};
 use crate::credentials::StoredCredential;
 use crate::env::Env;
@@ -17,9 +17,6 @@ use url::Url;
 
 const LOGIN_DEADLINE: Duration = Duration::from_secs(600);
 const MAX_POLL_FAILURES: u32 = 3;
-/// The agent refreshes this long before expiry so `list` never meets an expired cache.
-const AGENT_REFRESH_AHEAD: TimeDuration = TimeDuration::seconds(150);
-const AGENT_JITTER_MAX_SECONDS: u64 = 10;
 
 /// The access token of a session that has not expired locally. The server still decides on every request.
 pub struct Authed {
@@ -38,9 +35,6 @@ pub struct LoginReport {
     pub email: Option<String>,
     pub name: Option<String>,
     pub projects: usize,
-    pub agent_installed: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub agent_warning: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -48,13 +42,6 @@ pub struct LogoutReport {
     pub was_logged_in: bool,
     /// Every other session of the account was ended too (`logout --all`).
     pub all_devices: bool,
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum AgentOutcome {
-    LoggedOut,
-    StillFresh,
-    Refreshed,
 }
 
 pub struct Session<'a> {
@@ -142,12 +129,10 @@ impl<'a> Session<'a> {
             .ok_or(Error::NotLoggedIn)
     }
 
-    /// Remove every trace of the device session from this machine: credential, snapshot, agent.
+    /// Remove every trace of the device session from this machine: credential and snapshot.
     pub fn clear_local(&self) -> Result<()> {
         let credential = self.env.creds.delete(&self.env.account());
         let snapshot = snapshot::delete(&self.env.snapshot_path());
-        // A missing scheduler is not a failure to sign out.
-        let _ = self.env.scheduler.uninstall();
         credential.and(snapshot)
     }
 
@@ -243,22 +228,11 @@ impl<'a> Session<'a> {
         self.remember_user(&snapshot.user_id)?;
         let me = env.client.me(&token).await.ok();
 
-        let (agent_installed, agent_warning) = match env.scheduler.install() {
-            Ok(()) => (true, None),
-            Err(e) => (
-                false,
-                Some(format!(
-                    "background refresh is unavailable ({e}); commands will refresh in the foreground"
-                )),
-            ),
-        };
         Ok(LoginReport {
             user_id: snapshot.user_id,
             email: me.as_ref().map(|m| m.email.clone()),
             name: me.and_then(|m| m.name),
             projects: snapshot.projects.len(),
-            agent_installed,
-            agent_warning,
         })
     }
 
@@ -307,10 +281,6 @@ impl<'a> Session<'a> {
     /// The stored token if it has not expired. An expired or rejected token removes all local
     /// authentication state: there is no refresh, so the user signs in again.
     pub async fn authenticate(&self) -> Result<Authed> {
-        self.authenticate_with(TimeDuration::ZERO).await
-    }
-
-    async fn authenticate_with(&self, snapshot_margin: TimeDuration) -> Result<Authed> {
         let env = self.env;
         let _lock = FileLock::exclusive(&env.auth_lock_path())?;
         let credential = self.credential()?;
@@ -321,7 +291,10 @@ impl<'a> Session<'a> {
         }
         let token = SecretString::from(credential.access_token.clone());
 
-        let snapshot = match self.refresh_snapshot(&token, false, snapshot_margin).await {
+        let snapshot = match self
+            .refresh_snapshot(&token, false, TimeDuration::ZERO)
+            .await
+        {
             Ok(snapshot) => snapshot,
             Err(Error::SessionExpired) => {
                 self.clear_local()?;
@@ -431,34 +404,6 @@ impl<'a> Session<'a> {
             let _ = self
                 .refresh_snapshot(&auth.token, true, TimeDuration::ZERO)
                 .await;
-        }
-    }
-
-    // ----------------------------------------------------------------- agent
-
-    /// One scheduled tick. Cheap and local until the snapshot is near expiry.
-    pub async fn agent_tick(&self, jitter: bool) -> Result<AgentOutcome> {
-        if self.env.creds.load(&self.env.account())?.is_none() {
-            let _ = self.env.scheduler.uninstall();
-            return Ok(AgentOutcome::LoggedOut);
-        }
-        if let Some(s) = snapshot::load(&self.env.snapshot_path())?
-            && s.is_valid_for(now(), AGENT_REFRESH_AHEAD)
-        {
-            return Ok(AgentOutcome::StillFresh);
-        }
-        if jitter {
-            let [byte] = random_bytes::<1>()?;
-            tokio::time::sleep(Duration::from_secs(
-                u64::from(byte) % (AGENT_JITTER_MAX_SECONDS + 1),
-            ))
-            .await;
-        }
-        // Refreshing before the margin lapses is the point; another process may have done it meanwhile.
-        match self.authenticate_with(AGENT_REFRESH_AHEAD).await {
-            Ok(_) => Ok(AgentOutcome::Refreshed),
-            Err(Error::SessionExpired | Error::NotLoggedIn) => Ok(AgentOutcome::LoggedOut),
-            Err(e) => Err(e),
         }
     }
 }

@@ -98,6 +98,69 @@ impl Error {
         }
     }
 
+    /// Short heading for the human error template.
+    pub fn title(&self) -> &'static str {
+        match self {
+            Error::NotLoggedIn => "Not logged in",
+            Error::SessionExpired => "Session expired",
+            Error::Network(_) => "Network error",
+            Error::Api(e) => match e.status {
+                401 => "Session rejected",
+                403 => "Access denied",
+                404 => "Not found",
+                409 => "Conflict",
+                429 => "Rate limited",
+                500..=599 => "Server unavailable",
+                _ => "Request failed",
+            },
+            Error::Conflict(_) => "Conflict",
+            Error::Invalid(_) => "Invalid request",
+            Error::NotInitialized => "Not a Speq workspace",
+            Error::Io { .. } => "File error",
+            Error::CredentialStore(_) => "Credential store error",
+            Error::Other(_) => "Something went wrong",
+        }
+    }
+
+    /// What happened, without the heading and without the next step.
+    pub fn detail(&self) -> String {
+        match self {
+            Error::NotLoggedIn => "You are not signed in on this machine.".into(),
+            Error::SessionExpired => {
+                "Your token expired or was revoked, so the local credentials were removed.".into()
+            }
+            Error::NotInitialized => {
+                "No .speq/config.toml was found in this directory or any parent.".into()
+            }
+            Error::Api(e) => e.message.clone(),
+            Error::Network(m)
+            | Error::Conflict(m)
+            | Error::Invalid(m)
+            | Error::CredentialStore(m)
+            | Error::Other(m) => m.clone(),
+            Error::Io { context, source } => format!("{context}: {source}"),
+        }
+    }
+
+    /// The next step the user can take, when there is an obvious one.
+    pub fn hint(&self) -> Option<String> {
+        match self {
+            Error::NotLoggedIn | Error::SessionExpired => Some("Run `speq login`".into()),
+            Error::NotInitialized => Some("Run `speq init <repo>`".into()),
+            Error::Network(_) => Some("Check your connection and try again".into()),
+            Error::Api(e) => match e.status {
+                401 => Some("Run `speq login`".into()),
+                429 => Some(match e.retry_after {
+                    Some(s) => format!("Try again in {s}s"),
+                    None => "Wait a moment and try again".into(),
+                }),
+                500..=599 => Some("Try again shortly".into()),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
     pub fn request_id(&self) -> Option<&str> {
         match self {
             Error::Api(e) => e.request_id.as_deref(),

@@ -2,20 +2,17 @@ mod support;
 
 use speq::credentials::CredentialStore;
 use speq::error::Error;
-use speq::session::{AgentOutcome, Session};
+use speq::session::Session;
 use speq::snapshot;
-use std::sync::atomic::Ordering;
 use support::{Device, FakeApi, REPO};
 
 #[tokio::test]
-async fn login_stores_the_token_only_in_the_credential_store_plus_snapshot_and_agent() {
+async fn login_stores_the_token_only_in_the_credential_store_plus_snapshot() {
     let api = FakeApi::start();
     let device = Device::new(&api);
     let report = device.login().await;
     assert_eq!(report.user_id, "user_a");
     assert_eq!(report.projects, 3);
-    assert!(report.agent_installed);
-    assert_eq!(device.scheduler.installs.load(Ordering::SeqCst), 1);
 
     let credential = device
         .creds
@@ -77,7 +74,6 @@ async fn logout_forgets_the_token_on_this_device_only_and_leaves_the_server_alon
             .unwrap()
             .is_none()
     );
-    assert_eq!(laptop.scheduler.uninstalls.load(Ordering::SeqCst), 1);
     assert!(matches!(
         Session::new(&laptop.env).authenticate().await,
         Err(Error::NotLoggedIn)
@@ -280,11 +276,10 @@ async fn an_expired_token_is_dropped_locally_without_calling_the_api() {
             .unwrap()
             .is_none()
     );
-    assert!(device.scheduler.uninstalls.load(Ordering::SeqCst) >= 1);
 }
 
 #[tokio::test]
-async fn a_401_clears_authentication_state_and_stops_the_agent() {
+async fn a_401_clears_authentication_state() {
     let api = FakeApi::start();
     api.with(|s| s.snapshot_ttl = -5); // the cached window is over, so authenticate reaches the API
     let device = Device::new(&api);
@@ -298,11 +293,6 @@ async fn a_401_clears_authentication_state_and_stops_the_agent() {
             .unwrap()
             .is_none()
     );
-    assert!(device.scheduler.uninstalls.load(Ordering::SeqCst) >= 1);
-    assert!(matches!(
-        Session::new(&device.env).agent_tick(false).await,
-        Ok(AgentOutcome::LoggedOut)
-    ));
 }
 
 #[tokio::test]
@@ -328,35 +318,6 @@ async fn switching_accounts_replaces_the_credential_and_drops_the_old_snapshot()
             .as_deref(),
         Some("user_b")
     );
-}
-
-#[tokio::test]
-async fn the_agent_is_a_no_op_until_expiry_and_then_refreshes_with_etag() {
-    let api = FakeApi::start();
-    let device = Device::new(&api);
-    device.login().await;
-    let session = Session::new(&device.env);
-    let calls = api.count("GET /v1/projects");
-    assert_eq!(
-        session.agent_tick(false).await.unwrap(),
-        AgentOutcome::StillFresh
-    );
-    assert_eq!(api.count("GET /v1/projects"), calls);
-
-    // Close to expiry: the agent refreshes without any user command.
-    let mut near = snapshot::load(&device.env.snapshot_path())
-        .unwrap()
-        .unwrap();
-    near.expires_at = snapshot::now() + time::Duration::seconds(30);
-    snapshot::save(&device.env.snapshot_path(), &near).unwrap();
-    assert_eq!(
-        session.agent_tick(false).await.unwrap(),
-        AgentOutcome::Refreshed
-    );
-    let renewed = snapshot::load(&device.env.snapshot_path())
-        .unwrap()
-        .unwrap();
-    assert!(renewed.expires_at - snapshot::now() > time::Duration::minutes(5));
 }
 
 #[tokio::test]
