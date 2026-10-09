@@ -632,7 +632,6 @@ impl Fixture {
     pub async fn init(&self) {
         let options = speq::init::InitOptions {
             repo: REPO,
-            repository_type: "frontend",
             local_dir: "specs",
             reconfigure: false,
         };

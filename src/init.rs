@@ -8,8 +8,6 @@ use crate::workspace::{Config, SPEQ_DIR, SpecSource, Workspace, ensure_gitignore
 use serde::Serialize;
 use std::path::Path;
 
-pub const REPOSITORY_TYPES: [&str; 3] = ["frontend", "backend", "cli"];
-
 #[derive(Debug, Serialize)]
 pub struct ListReport {
     pub user_id: String,
@@ -67,7 +65,6 @@ pub struct InitReport {
     pub repository: String,
     pub branch: String,
     pub local_dir: String,
-    pub repository_type: String,
     pub reconfigured: bool,
     /// Lock, manifest, and baselines were cleared because the source changed.
     pub sync_state_reset: bool,
@@ -75,7 +72,6 @@ pub struct InitReport {
 
 pub struct InitOptions<'a> {
     pub repo: &'a str,
-    pub repository_type: &'a str,
     pub local_dir: &'a str,
     pub reconfigure: bool,
 }
@@ -84,14 +80,8 @@ pub async fn init(env: &Env, root: &Path, options: InitOptions<'_>) -> Result<In
     let existing = root.join(SPEQ_DIR).join("config.toml").exists();
     if existing && !options.reconfigure {
         return Err(Error::invalid(
-            "this directory is already initialized; run `speq init <repo> --type <type> --reconfigure` to change it",
+            "this directory is already initialized; run `speq init <repo> --reconfigure` to change it",
         ));
-    }
-    if !REPOSITORY_TYPES.contains(&options.repository_type) {
-        return Err(Error::invalid(format!(
-            "--type must be one of {}",
-            REPOSITORY_TYPES.join(", ")
-        )));
     }
     if !is_valid_local_dir(options.local_dir) {
         return Err(Error::invalid(
@@ -108,7 +98,6 @@ pub async fn init(env: &Env, root: &Path, options: InitOptions<'_>) -> Result<In
             repository: project.repository_full_name.clone().unwrap_or_default(),
             branch: project.branch.clone(),
             local_dir: options.local_dir.to_string(),
-            repository_type: options.repository_type.to_string(),
         },
     };
 
@@ -130,7 +119,6 @@ pub async fn init(env: &Env, root: &Path, options: InitOptions<'_>) -> Result<In
         repository: config.spec_source.repository,
         branch: config.spec_source.branch,
         local_dir: config.spec_source.local_dir,
-        repository_type: config.spec_source.repository_type,
         reconfigured: existing,
         sync_state_reset: reset,
     })

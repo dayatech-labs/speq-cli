@@ -66,7 +66,7 @@ speq uninstall --yes # for automation
 `uninstall` removes the stored credential and the cache, then the binary itself if the
 official installer put it there. If `speq` is managed by Homebrew, Scoop, WinGet, or Nix, the binary is left alone
 and the package manager's own command is printed (`brew uninstall speq`, `scoop uninstall speq`, ...). It never
-touches your workspaces (`specs/` and `.speq/`), does not end the server-side session (use `logout --all` first), and
+touches your workspaces (`specs/` and `.speq/`; see `deinit` below), does not end the server-side session (use `logout --all` first), and
 only removes the credential of the API origin in use (`--api-url` / `SPEQ_API_URL`). The installer's PATH line in your
 shell profile (Unix) or the user PATH entry (Windows) is left for you to remove; the command points it out.
 
@@ -76,7 +76,7 @@ shell profile (Unix) or the user PATH entry (Windows) is left for you to remove;
 speq login                              # approve this device in your browser
 speq list                               # repositories you may use
 cd my-frontend-repo
-speq init payment-specs --type frontend # repo or project name works when it is unique; otherwise owner/repo
+speq init payment-specs # repo or project name works when it is unique; otherwise owner/repo
 speq pull                               # downloads every specs document into ./specs
 # ... edit files under specs/ ...
 speq status                             # unchanged / local-only / remote-only / conflict / deleted
@@ -92,7 +92,8 @@ Add `--json` to any command for machine-readable output (errors are JSON on stde
 | --- | --- |
 | `login` / `logout [--all]` | PKCE device login; logout deletes the local token and cache. A token cannot be revoked on its own: `--all` ends every session of your account (all devices and the Web app) |
 | `list` | repositories you can use, from the local capability cache while it is valid |
-| `init <repo> --type <frontend\|backend\|cli>` | writes `.speq/config.toml`, creates `specs/`, updates `.gitignore`; re-init needs `--reconfigure` |
+| `init <repo>` | writes `.speq/config.toml`, creates `specs/`, adds `specs/` and `.speq/` to `.gitignore`; re-init needs `--reconfigure` |
+| `deinit [--yes]` | delete this workspace's `.speq/` and specs folder, including unpushed edits; asks first on a terminal. Leaves `.gitignore` and your login alone |
 | `pull` | full-project sync; never overwrites local work |
 | `status` | local vs. last sync vs. latest remote, per path |
 | `diff <path> [--base]` | unified diff; `--base` needs no network |
@@ -118,11 +119,11 @@ Add `--json` to any command for machine-readable output (errors are JSON on stde
 ### Workspace files
 
 ```
-.speq/config.toml      project mapping — safe to commit
-.speq/lock.json        last fully synced commit, unresolved conflicts      ┐
-.speq/manifest.json    per-path baseline hashes                            │ ignored by Git
-.speq/base/            exact copies of the last applied remote content     ┘
-specs/                   the working copy (ignored by Git)
+.speq/config.toml      project mapping                                     ┐
+.speq/lock.json        last fully synced commit, unresolved conflicts      │
+.speq/manifest.json    per-path baseline hashes                            │ the whole .speq/ is
+.speq/base/            exact copies of the last applied remote content     │ ignored by Git
+specs/                   the working copy                                  ┘
 ```
 
 ## Security

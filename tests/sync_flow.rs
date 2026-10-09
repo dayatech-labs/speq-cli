@@ -456,7 +456,6 @@ async fn state_is_separated_per_workspace() {
     let other = tempfile::tempdir().unwrap();
     let options = speq::init::InitOptions {
         repo: "acme/cart-specs",
-        repository_type: "backend",
         local_dir: "docs/specs",
         reconfigure: false,
     };

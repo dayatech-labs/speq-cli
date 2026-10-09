@@ -1,5 +1,6 @@
 //! Human-readable output (default) and `--json`. Machine output is the report struct itself.
 use crate::context::ContextReport;
+use crate::deinit::DeinitReport;
 use crate::error::{Error, exit};
 use crate::init::{InitReport, ListReport};
 use crate::session::{LoginReport, LogoutReport};
@@ -66,6 +67,15 @@ impl Human for LogoutReport {
     }
 }
 
+impl Human for DeinitReport {
+    fn human(&self) -> String {
+        format!(
+            "Removed .speq/ and {}/ from {}.\n.gitignore, your login, and the binary were left untouched. Run `speq init` to set up again.",
+            self.specs_dir, self.root
+        )
+    }
+}
+
 impl Human for UninstallReport {
     fn human(&self) -> String {
         let mut out = String::from(if self.credential_removed {
@@ -73,7 +83,9 @@ impl Human for UninstallReport {
         } else {
             "Removed your cached data."
         });
-        out.push_str("\nWorkspaces (specs/ and .speq/) were left untouched.");
+        out.push_str(
+            "\nWorkspaces (specs/ and .speq/) were left untouched; `speq deinit` removes them.",
+        );
         if let Some(binary) = &self.removed_binary {
             out.push_str(&format!("\nRemoved {binary}."));
         }
@@ -119,14 +131,13 @@ impl Human for ListReport {
 impl Human for InitReport {
     fn human(&self) -> String {
         let mut out = format!(
-            "{} {} ({}, branch {}) into ./{}\nNext: run `speq pull`.",
+            "{} {} (branch {}) into ./{}\nNext: run `speq pull`.",
             if self.reconfigured {
                 "Reconfigured"
             } else {
                 "Initialized"
             },
             self.repository,
-            self.repository_type,
             self.branch,
             self.local_dir
         );

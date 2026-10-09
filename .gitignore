@@ -4,3 +4,7 @@
 *.pem
 *.log
 .DS_Store
+
+# Speq
+specs/
+.speq/

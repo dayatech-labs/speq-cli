@@ -334,7 +334,6 @@ async fn init_lists_only_repositories_from_the_api_and_requires_unique_short_nam
                 &root,
                 speq::init::InitOptions {
                     repo,
-                    repository_type: "frontend",
                     local_dir: "specs",
                     reconfigure,
                 },
@@ -354,14 +353,7 @@ async fn init_lists_only_repositories_from_the_api_and_requires_unique_short_nam
     assert_eq!(report.repository, "acme/cart-specs");
 
     let gitignore = std::fs::read_to_string(root.join(".gitignore")).unwrap();
-    for line in [
-        "specs/",
-        ".speq/lock.json",
-        ".speq/manifest.json",
-        ".speq/base/",
-    ] {
-        assert!(gitignore.lines().any(|l| l == line), "{line}");
-    }
+    assert_eq!(gitignore.trim_end(), "# Speq\nspecs/\n.speq/");
     assert!(root.join(".speq/config.toml").is_file());
     assert!(root.join("specs").is_dir());
 

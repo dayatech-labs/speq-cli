@@ -16,7 +16,6 @@ pub struct SpecSource {
     pub repository: String,
     pub branch: String,
     pub local_dir: String,
-    pub repository_type: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -344,14 +343,9 @@ fn walk(dir: &Path, prefix: &str, scan: &mut LocalScan) -> Result<()> {
     Ok(())
 }
 
-/// Lines `init` keeps out of Git: the working copy and per-machine sync state.
-pub fn gitignore_entries(local_dir: &str) -> [String; 4] {
-    [
-        format!("{local_dir}/"),
-        ".speq/lock.json".into(),
-        ".speq/manifest.json".into(),
-        ".speq/base/".into(),
-    ]
+/// Lines `init` keeps out of Git: the working copy and the whole `.speq/` folder (config and sync state).
+pub fn gitignore_entries(local_dir: &str) -> [String; 2] {
+    [format!("{local_dir}/"), format!("{SPEQ_DIR}/")]
 }
 
 /// Append any missing entries to `.gitignore`, leaving existing lines untouched.

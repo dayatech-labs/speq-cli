@@ -1,6 +1,7 @@
 //! Dispatch from the parsed command line to the library, then to output.
 use crate::cli::{Cli, Command, banner, exit_code_help, paint_help};
 use crate::context;
+use crate::deinit;
 use crate::env::Env;
 use crate::error::{Error, Result};
 use crate::init::{self, InitOptions};
@@ -97,12 +98,12 @@ pub async fn run(cli: Cli, env: &Env) -> Result<u8> {
             })?;
             let options = InitOptions {
                 repo: &args.repo,
-                repository_type: &args.repository_type,
                 local_dir: &args.local_dir,
                 reconfigure: args.reconfigure,
             };
             Ok(emit(json, &init::init(env, &root, options).await?))
         }
+        Command::Deinit(args) => deinit_command(json, env, args),
         Command::Pull => Ok(emit(json, &pull::pull(env, &workspace()?).await?)),
         Command::Status => Ok(emit(json, &status::status(env, &workspace()?).await?)),
         Command::Diff(args) => {
@@ -201,6 +202,21 @@ async fn upgrade_command(json: bool, args: crate::cli::UpgradeArgs) -> Result<u8
             path: Some(exe.display().to_string()),
         },
     ))
+}
+
+fn deinit_command(json: bool, env: &Env, args: crate::cli::DeinitArgs) -> Result<u8> {
+    let ws = workspace()?;
+    if !args.yes {
+        let prompt = format!(
+            "Delete {} in {}? Local edits that were not pushed are lost",
+            deinit::targets(&ws),
+            ws.root.display()
+        );
+        if !confirm(&prompt)? {
+            return Err(Error::invalid("cancelled; nothing was changed"));
+        }
+    }
+    Ok(emit(json, &deinit::deinit(env, &ws)?))
 }
 
 fn uninstall_command(json: bool, env: &Env, args: crate::cli::UninstallArgs) -> Result<u8> {

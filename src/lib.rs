@@ -4,6 +4,7 @@ pub mod cli;
 pub mod commands;
 pub mod context;
 pub mod credentials;
+pub mod deinit;
 pub mod dirs;
 pub mod env;
 pub mod error;

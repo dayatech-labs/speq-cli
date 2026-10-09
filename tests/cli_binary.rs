@@ -15,11 +15,12 @@ fn speq(args: &[&str]) -> (i32, String, String) {
     )
 }
 
-const COMMANDS: [&str; 12] = [
+const COMMANDS: [&str; 13] = [
     "login",
     "logout",
     "list",
     "init",
+    "deinit",
     "pull",
     "status",
     "diff",
@@ -62,7 +63,7 @@ fn every_command_help_has_usage_arguments_flags_examples_and_exit_codes() {
     }
     let (_, init, _) = speq(&["init", "--help"]);
     assert!(
-        init.contains("--type") && init.contains("--local-dir") && init.contains("--reconfigure")
+        init.contains("--local-dir") && init.contains("--reconfigure") && !init.contains("--type")
     );
     let (_, upgrade, _) = speq(&["upgrade", "--help"]);
     assert!(
@@ -128,6 +129,29 @@ fn uninstall_without_a_terminal_asks_for_yes_and_changes_nothing() {
     assert_eq!(code, 7);
     assert!(err.contains("--yes"), "{err}");
     assert!(std::path::Path::new(env!("CARGO_BIN_EXE_speq")).exists());
+}
+
+#[test]
+fn deinit_without_a_terminal_asks_for_yes_and_deletes_nothing() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(dir.path().join(".speq")).unwrap();
+    std::fs::write(
+        dir.path().join(".speq/config.toml"),
+        "[spec_source]\nproject_id = \"p\"\nrepository = \"acme/specs\"\nbranch = \"main\"\nlocal_dir = \"specs\"\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(dir.path().join("specs")).unwrap();
+
+    let out = Command::new(env!("CARGO_BIN_EXE_speq"))
+        .arg("deinit")
+        .current_dir(dir.path())
+        .output()
+        .expect("run speq");
+
+    assert_eq!(out.status.code(), Some(7));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("--yes"));
+    assert!(dir.path().join(".speq/config.toml").exists());
+    assert!(dir.path().join("specs").exists());
 }
 
 fn speq_env(args: &[&str], key: &str, value: &str) -> String {

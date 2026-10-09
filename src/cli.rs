@@ -41,7 +41,7 @@ Exit codes:
     long_about = "Speq brings the product specs repository into your repository's specs/ folder, \
                   shows what changed on either side, and sends your edits back through the Speq API. \
                   It never talks to GitHub directly and never needs GitHub credentials.",
-    after_help = "Run `speq <command> --help` for usage, arguments, flags, examples, and exit codes.\n\nGet started: speq login && speq list && speq init <repo> --type frontend && speq pull",
+    after_help = "Run `speq <command> --help` for usage, arguments, flags, examples, and exit codes.\n\nGet started: speq login && speq list && speq init <repo> && speq pull",
     arg_required_else_help = true
 )]
 pub struct Cli {
@@ -79,9 +79,15 @@ pub enum Command {
 
     /// Choose a repository and prepare this directory as a workspace
     #[command(
-        after_help = "Arguments:\n  <REPO>  `owner/repo` from `speq list`, or the repo name or project name when it is unique\n\nExamples:\n  speq init payment-specs --type frontend\n  speq init acme/payment-specs --type backend --local-dir docs/specs\n  speq init payment-specs --type frontend --reconfigure\n\n"
+        after_help = "Arguments:\n  <REPO>  `owner/repo` from `speq list`, or the repo name or project name when it is unique\n\nExamples:\n  speq init payment-specs\n  speq init acme/payment-specs --local-dir docs/specs\n  speq init payment-specs --reconfigure\n\n"
     )]
     Init(InitArgs),
+
+    /// Delete this workspace's .speq/ and specs folder
+    #[command(
+        after_help = "Examples:\n  speq deinit\n  speq deinit --yes\n\nThe inverse of `speq init`: removes `.speq/` and the specs folder from the workspace, including local edits that\nwere never pushed. Run `speq push` first to keep them. Nothing else is touched: `.gitignore`, your login, and the\nbinary stay. Use `speq init` and `speq pull` to start over.\n\n"
+    )]
+    Deinit(DeinitArgs),
 
     /// Download all specs and apply them without overwriting local work
     #[command(
@@ -127,7 +133,7 @@ pub enum Command {
 
     /// Remove speq's local data and, when the installer put it there, the binary
     #[command(
-        after_help = "Examples:\n  speq uninstall\n  speq uninstall --yes\n\nRemoves the stored credential and the cache, then the binary if it was placed by the\nofficial installer. Binaries managed by Homebrew, Scoop, WinGet, or another package manager are left in place and\nthe matching package-manager command is shown. Workspaces (`specs/` and `.speq/`) are never touched, and the\nserver-side session is not ended: run `speq logout --all` first for that. Only the credential of the current API\norigin is removed.\n\n"
+        after_help = "Examples:\n  speq uninstall\n  speq uninstall --yes\n\nRemoves the stored credential and the cache, then the binary if it was placed by the\nofficial installer. Binaries managed by Homebrew, Scoop, WinGet, or another package manager are left in place and\nthe matching package-manager command is shown. Workspaces (`specs/` and `.speq/`) are never touched (see `speq deinit`), and the\nserver-side session is not ended: run `speq logout --all` first for that. Only the credential of the current API\norigin is removed.\n\n"
     )]
     Uninstall(UninstallArgs),
 }
@@ -139,6 +145,7 @@ impl Command {
             Command::Logout(_) => "logout",
             Command::List => "list",
             Command::Init(_) => "init",
+            Command::Deinit(_) => "deinit",
             Command::Pull => "pull",
             Command::Status => "status",
             Command::Diff(_) => "diff",
@@ -169,15 +176,19 @@ pub struct LogoutArgs {
 pub struct InitArgs {
     /// Repository: `owner/repo`, or a repo or project name that is unique in `speq list`
     pub repo: String,
-    /// What this repository is: frontend, backend, or cli
-    #[arg(long = "type", value_name = "TYPE")]
-    pub repository_type: String,
     /// Folder for the specs, relative to this directory
     #[arg(long, default_value = "specs", value_name = "DIR")]
     pub local_dir: String,
     /// Replace the existing configuration of this workspace
     #[arg(long)]
     pub reconfigure: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct DeinitArgs {
+    /// Do not ask for confirmation
+    #[arg(long, short = 'y')]
+    pub yes: bool,
 }
 
 #[derive(Args, Debug)]
