@@ -72,6 +72,16 @@ try {
     Move-Item -Force $staged $dest
   }
   Write-Host "Installed speq $found to $dest"
+  # The same logo as `speq help`.
+  Write-Host ""
+  Write-Host @'
+ ____  ____  _____  ___      ____ _     ___ 
+/ ___||  _ \| ____|/ _ \    / ___| |   |_ _|
+\___ \| |_) |  _| | | | |  | |   | |    | | 
+ ___) |  __/| |___| |_| |  | |___| |___ | | 
+|____/|_|   |_____|\__\_\   \____|_____|___|
+'@ -ForegroundColor Cyan
+  Write-Host ""
 
   # User PATH: add once, never duplicate.
   $userPath = [Environment]::GetEnvironmentVariable("Path", "User")

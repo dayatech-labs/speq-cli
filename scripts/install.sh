@@ -25,6 +25,24 @@ USAGE
 
 fail() { printf 'speq installer: %s\n' "$1" >&2; exit 1; }
 
+# The same logo as `speq help`; colored only on a terminal and never when NO_COLOR is set.
+print_banner() {
+  if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+    on=$(printf '\033[1;36m'); off=$(printf '\033[0m')
+  else
+    on=""; off=""
+  fi
+  printf '\n%s' "$on"
+  cat <<'BANNER'
+ ____  ____  _____  ___      ____ _     ___ 
+/ ___||  _ \| ____|/ _ \    / ___| |   |_ _|
+\___ \| |_) |  _| | | | |  | |   | |    | | 
+ ___) |  __/| |___| |_| |  | |___| |___ | | 
+|____/|_|   |_____|\__\_\   \____|_____|___|
+BANNER
+  printf '%s\n' "$off"
+}
+
 while [ $# -gt 0 ]; do
   case "$1" in
     --version) [ $# -ge 2 ] || fail "--version needs a value"; VERSION="${2#v}"; shift 2 ;;
@@ -109,6 +127,7 @@ chmod 755 "$staged"
 mv -f "$staged" "$bin_dir/speq"
 staged=""
 printf 'Installed speq %s to %s/speq\n' "$version" "$bin_dir"
+print_banner
 
 # ---- PATH: add it for future shells only if it is missing, without duplicating the line
 case ":$PATH:" in

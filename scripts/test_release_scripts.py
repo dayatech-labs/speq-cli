@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
 """Tests for next_version.py and stamp_version.py. Run: python3 scripts/test_release_scripts.py"""
+import functools
+import hashlib
+import http.server
 import os
 import pathlib
+import platform
+import re
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 
 HERE = pathlib.Path(__file__).resolve().parent
@@ -72,6 +78,70 @@ class Stamp(unittest.TestCase):
         self.assertIn('name = "clap"\nversion = "4.6.7"', lock)
         bad = subprocess.run([sys.executable, str(HERE / "stamp_version.py"), "1.2"], cwd=d)
         self.assertNotEqual(bad.returncode, 0)
+
+
+def rust_banner():
+    """The logo rows exactly as `speq help` prints them (BANNER in src/cli.rs)."""
+    src = (HERE.parent / "src" / "cli.rs").read_text()
+    block = src[src.index("const BANNER") :]
+    block = block[: block.index("];")]
+    return re.findall(r'r"(.*)",', block)
+
+
+def installer_target():
+    system, machine = platform.system(), platform.machine()
+    if system == "Darwin":
+        return {"arm64": "aarch64-apple-darwin", "x86_64": "x86_64-apple-darwin"}.get(machine)
+    if system == "Linux" and machine in ("x86_64", "amd64"):
+        return "x86_64-unknown-linux-musl"
+    return None
+
+
+class Installer(unittest.TestCase):
+    def test_banner_matches_the_cli_in_both_installers(self):
+        rows = rust_banner()
+        self.assertEqual(len(rows), 5)
+        for name in ("install.sh", "install.ps1"):
+            text = (HERE / name).read_text()
+            self.assertIn("\n".join(rows), text, f"{name} banner differs from src/cli.rs")
+
+    @unittest.skipUnless(installer_target(), "install.sh supports macOS and x86_64 Linux only")
+    def test_success_shows_the_banner_after_the_install_line(self):
+        target = installer_target()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = pathlib.Path(tmp)
+            release = tmp / "mirror" / "download" / "v0.1.0"
+            release.mkdir(parents=True)
+            name = f"speq-0.1.0-{target}"
+            binary = release / name
+            binary.write_text("#!/bin/sh\necho speq 0.1.0\n")
+            digest = hashlib.sha256(binary.read_bytes()).hexdigest()
+            (release / "SHA256SUMS").write_text(f"{digest}  {name}\n")
+
+            class Quiet(http.server.SimpleHTTPRequestHandler):
+                def log_message(self, *args):
+                    pass
+
+            handler = functools.partial(Quiet, directory=str(tmp / "mirror"))
+            server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+            threading.Thread(target=server.serve_forever, daemon=True).start()
+            try:
+                home = tmp / "home"
+                home.mkdir()
+                env = {**os.environ, "HOME": str(home), "SPEQ_RELEASE_URL": f"http://127.0.0.1:{server.server_port}"}
+                env.pop("NO_COLOR", None)
+                done = subprocess.run(
+                    ["sh", str(HERE / "install.sh"), "--version", "0.1.0"], env=env, capture_output=True, text=True, check=True
+                )
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            out = done.stdout
+            self.assertTrue((home / ".local" / "bin" / "speq").exists())
+            self.assertIn("\n".join(rust_banner()), out)
+            self.assertLess(out.index("Installed speq 0.1.0"), out.index(rust_banner()[0]))
+            self.assertNotIn("\x1b", out, "no colors when stdout is not a terminal")
 
 
 if __name__ == "__main__":
