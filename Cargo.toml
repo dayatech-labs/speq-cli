@@ -19,7 +19,7 @@ path = "src/main.rs"
 
 [dependencies]
 base64 = "0.23.1"
-clap = { version = "4.6.7", default-features = false, features = ["std", "derive", "env", "help", "usage", "error-context", "suggestions"] }
+clap = { version = "4.6.7", default-features = false, features = ["std", "derive", "env", "help", "usage", "error-context", "suggestions", "color"] }
 directories = "6.0.0"
 getrandom = "0.4.3"
 keyring = { version = "4.2.0", default-features = false, features = ["v1"] }

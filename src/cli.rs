@@ -1,5 +1,16 @@
 //! The Clap command tree. `speq help` and `speq <command> --help` are generated from here.
+use clap::builder::styling::{AnsiColor, Effects, Style, Styles};
 use clap::{Args, Parser, Subcommand};
+
+/// Help colors. Clap only emits them on a terminal; `NO_COLOR` and pipes get plain text.
+pub const STYLES: Styles = Styles::styled()
+    .header(AnsiColor::Yellow.on_default().effects(Effects::BOLD))
+    .usage(AnsiColor::Yellow.on_default().effects(Effects::BOLD))
+    .literal(AnsiColor::Green.on_default().effects(Effects::BOLD))
+    .placeholder(AnsiColor::Cyan.on_default())
+    .error(AnsiColor::Red.on_default().effects(Effects::BOLD))
+    .valid(AnsiColor::Green.on_default())
+    .invalid(AnsiColor::Yellow.on_default());
 
 pub const LONG_VERSION: &str = concat!(
     env!("CARGO_PKG_VERSION"),
@@ -23,6 +34,7 @@ Exit codes:
 #[derive(Parser, Debug)]
 #[command(
     name = "speq",
+    styles = STYLES,
     version = env!("CARGO_PKG_VERSION"),
     long_version = LONG_VERSION,
     about = "Sync product specs into your implementation repository",
@@ -229,4 +241,71 @@ pub enum AgentAction {
 /// Exit-code table, exposed so docs and tests can reuse it.
 pub fn exit_code_help() -> &'static str {
     EXIT_CODES
+}
+
+/// Paints the hand-written help text (`after_help`) with the same palette as [`STYLES`]:
+/// section headings, example commands, `<ARGS>`, and exit-code numbers.
+pub fn paint_help(text: &str) -> String {
+    const HEADINGS: [&str; 5] = [
+        "Examples:",
+        "Arguments:",
+        "Categories:",
+        "Exit codes:",
+        "Get started:",
+    ];
+    let header = STYLES.get_header();
+    let literal = STYLES.get_literal();
+    let placeholder = STYLES.get_placeholder();
+    let wrap = |style: &Style, s: &str| format!("{style}{s}{style:#}");
+
+    let mut section = "";
+    let lines: Vec<String> = text
+        .lines()
+        .map(|line| {
+            if let Some(h) = HEADINGS.iter().find(|h| line.starts_with(**h)) {
+                section = h;
+                return format!("{}{}", wrap(header, h), &line[h.len()..]);
+            }
+            if line.trim().is_empty() {
+                section = "";
+                return line.to_string();
+            }
+            let Some(body) = line.strip_prefix("  ") else {
+                return line.to_string();
+            };
+            match section {
+                "Examples:" | "Get started:" if body.starts_with("speq ") => {
+                    format!("  {}", wrap(literal, body))
+                }
+                "Arguments:" if body.starts_with('<') => {
+                    let end = body.find('>').map_or(body.len(), |i| i + 1);
+                    format!("  {}{}", wrap(placeholder, &body[..end]), &body[end..])
+                }
+                "Exit codes:" => {
+                    let end = body.find(' ').unwrap_or(body.len());
+                    format!("  {}{}", wrap(literal, &body[..end]), &body[end..])
+                }
+                _ => line.to_string(),
+            }
+        })
+        .collect();
+    lines.join("\n")
+}
+
+const BANNER: [&str; 5] = [
+    r" ____  ____  _____  ___  ",
+    r"/ ___||  _ \| ____|/ _ \ ",
+    r"\___ \| |_) |  _| | | | |",
+    r" ___) |  __/| |___| |_| |",
+    r"|____/|_|   |_____|\__\_\",
+];
+
+/// The `SPEQ` logo shown above the top-level help. Clap drops the colors when output is not a terminal.
+pub fn banner() -> String {
+    let style = AnsiColor::Cyan.on_default().effects(Effects::BOLD);
+    BANNER
+        .iter()
+        .map(|line| format!("{style}{line}{style:#}"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }

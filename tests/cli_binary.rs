@@ -4,6 +4,8 @@ use std::process::Command;
 fn speq(args: &[&str]) -> (i32, String, String) {
     let out = Command::new(env!("CARGO_BIN_EXE_speq"))
         .args(args)
+        .env_remove("CLICOLOR_FORCE")
+        .env_remove("NO_COLOR")
         .output()
         .expect("run speq");
     (
@@ -124,4 +126,76 @@ fn uninstall_without_a_terminal_asks_for_yes_and_changes_nothing() {
     assert_eq!(code, 7);
     assert!(err.contains("--yes"), "{err}");
     assert!(std::path::Path::new(env!("CARGO_BIN_EXE_speq")).exists());
+}
+
+fn speq_env(args: &[&str], key: &str, value: &str) -> String {
+    let out = Command::new(env!("CARGO_BIN_EXE_speq"))
+        .args(args)
+        .env_remove("CLICOLOR_FORCE")
+        .env_remove("NO_COLOR")
+        .env(key, value)
+        .output()
+        .expect("run speq");
+    String::from_utf8_lossy(&out.stdout).into_owned()
+}
+
+#[test]
+fn help_is_plain_when_piped_and_colored_when_forced() {
+    let (_, plain, _) = speq(&["init", "--help"]);
+    assert!(
+        !plain.contains('\x1b'),
+        "piped help must have no ANSI codes"
+    );
+
+    let colored = speq_env(&["init", "--help"], "CLICOLOR_FORCE", "1");
+    assert!(colored.contains('\x1b'), "forced help should be colored");
+    // Clap-generated parts and our hand-written sections are both painted.
+    assert!(colored.contains("\x1b[1m\x1b[33mUsage:"), "{colored}");
+    assert!(colored.contains("\x1b[1m\x1b[33mExamples:"), "{colored}");
+    assert!(
+        colored.contains("\x1b[1m\x1b[32mspeq init payment-specs"),
+        "{colored}"
+    );
+    assert!(colored.contains("\x1b[36m<REPO>"), "{colored}");
+    assert!(
+        colored.contains("\x1b[1m\x1b[32m5\x1b[0m  conflict"),
+        "{colored}"
+    );
+
+    let top = speq_env(&["help"], "CLICOLOR_FORCE", "1");
+    assert!(top.contains("\x1b[1m\x1b[33mGet started:"), "{top}");
+}
+
+#[test]
+fn no_color_wins_over_forced_color() {
+    let out = Command::new(env!("CARGO_BIN_EXE_speq"))
+        .args(["help"])
+        .env("CLICOLOR_FORCE", "1")
+        .env("NO_COLOR", "1")
+        .output()
+        .expect("run speq");
+    assert!(!String::from_utf8_lossy(&out.stdout).contains('\x1b'));
+}
+
+#[test]
+fn only_the_top_level_help_shows_the_speq_banner() {
+    let logo = r"\___ \| |_) |  _| | | | |";
+    for args in [&["help"][..], &["--help"], &[]] {
+        let (_, out, err) = speq(args);
+        let text = format!("{out}{err}");
+        assert!(
+            text.starts_with(" ____  ____  _____  ___  \n"),
+            "{args:?}: {text}"
+        );
+        assert!(text.contains(logo), "{args:?}");
+        assert!(text.contains("Usage: speq"), "{args:?}");
+    }
+    let (_, sub, _) = speq(&["pull", "--help"]);
+    assert!(!sub.contains("_____"), "subcommand help has no banner");
+
+    let colored = speq_env(&["help"], "CLICOLOR_FORCE", "1");
+    assert!(
+        colored.starts_with("\x1b[1m\x1b[36m ____  ____"),
+        "{colored}"
+    );
 }

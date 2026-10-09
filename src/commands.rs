@@ -1,5 +1,5 @@
 //! Dispatch from the parsed command line to the library, then to output.
-use crate::cli::{AgentAction, Cli, Command, exit_code_help};
+use crate::cli::{AgentAction, Cli, Command, banner, exit_code_help, paint_help};
 use crate::context;
 use crate::env::Env;
 use crate::error::{Error, Result, exit};
@@ -27,21 +27,22 @@ pub fn build_command() -> clap::Command {
                 .get_after_help()
                 .map(|s| s.to_string())
                 .unwrap_or_default();
-            sub.after_help(format!(
+            sub.after_help(paint_help(&format!(
                 "{}{codes}",
                 if existing.is_empty() {
                     String::new()
                 } else {
                     format!("{}\n\n", existing.trim_end())
                 }
-            ))
+            )))
         });
     }
     let top = cmd
         .get_after_help()
         .map(|s| s.to_string())
         .unwrap_or_default();
-    cmd.after_help(format!("{top}\n\n{codes}"))
+    cmd.before_help(banner())
+        .after_help(paint_help(&format!("{top}\n\n{codes}")))
 }
 
 pub fn parse_args<I: IntoIterator<Item = String>>(
