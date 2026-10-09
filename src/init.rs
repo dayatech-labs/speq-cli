@@ -30,30 +30,22 @@ pub async fn list(env: &Env) -> Result<ListReport> {
     })
 }
 
-/// `owner/repo` matches exactly; a bare name must be unique among the projects the user can use.
+/// Matches `owner/repo`, the bare repo name, or the project's display name (all case-insensitive).
+/// It must identify exactly one project the user can use that is bound to a repository.
 pub fn resolve_repo<'a>(
     projects: &'a [ProjectSummary],
     wanted: &str,
 ) -> Result<&'a ProjectSummary> {
-    let bound: Vec<(&ProjectSummary, &str)> = projects
+    let matches: Vec<(&ProjectSummary, &str)> = projects
         .iter()
         .filter_map(|p| p.repository_full_name.as_deref().map(|r| (p, r)))
+        .filter(|(p, full)| {
+            let short = full.rsplit('/').next().unwrap_or(full);
+            [*full, short, p.display_name.as_str()]
+                .iter()
+                .any(|name| name.eq_ignore_ascii_case(wanted))
+        })
         .collect();
-    let matches: Vec<&(&ProjectSummary, &str)> = if wanted.contains('/') {
-        bound
-            .iter()
-            .filter(|(_, full)| full.eq_ignore_ascii_case(wanted))
-            .collect()
-    } else {
-        bound
-            .iter()
-            .filter(|(_, full)| {
-                full.rsplit('/')
-                    .next()
-                    .is_some_and(|name| name.eq_ignore_ascii_case(wanted))
-            })
-            .collect()
-    };
     match matches.as_slice() {
         [] => Err(Error::invalid(format!(
             "{wanted:?} is not in your repository list; see `speq list`"
@@ -149,14 +141,14 @@ mod tests {
     use super::*;
     use crate::api::{Capabilities, RuleSet};
 
-    fn project(id: &str, repo: Option<&str>) -> ProjectSummary {
+    fn project(id: &str, display: &str, repo: Option<&str>) -> ProjectSummary {
         let rules = RuleSet {
             allow: vec![],
             deny: vec![],
         };
         ProjectSummary {
             project_id: id.into(),
-            display_name: id.into(),
+            display_name: display.into(),
             repository_full_name: repo.map(Into::into),
             branch: "main".into(),
             roles: vec![],
@@ -173,10 +165,10 @@ mod tests {
     #[test]
     fn short_names_must_be_unique() {
         let projects = vec![
-            project("1", Some("acme/payment-specs")),
-            project("2", Some("other/payment-specs")),
-            project("3", Some("acme/cart-specs")),
-            project("4", None),
+            project("1", "Payment", Some("acme/payment-specs")),
+            project("2", "Payment", Some("other/payment-specs")),
+            project("3", "Cart", Some("acme/cart-specs")),
+            project("4", "Unbound", None),
         ];
         assert_eq!(
             resolve_repo(&projects, "cart-specs").unwrap().project_id,
@@ -195,5 +187,22 @@ mod tests {
             ambiguous.contains("acme/payment-specs") && ambiguous.contains("other/payment-specs")
         );
         assert!(resolve_repo(&projects, "missing").is_err());
+    }
+
+    #[test]
+    fn display_name_resolves_when_unique() {
+        let projects = vec![
+            project("1", "Engauge", Some("acme/engauge-specs")),
+            project("2", "Payment", Some("acme/payment-specs")),
+            project("3", "Payment", Some("other/payment-specs")),
+            project("4", "Orphan", None),
+        ];
+        assert_eq!(resolve_repo(&projects, "engauge").unwrap().project_id, "1");
+        let ambiguous = resolve_repo(&projects, "Payment").unwrap_err().to_string();
+        assert!(
+            ambiguous.contains("acme/payment-specs") && ambiguous.contains("other/payment-specs")
+        );
+        // A project without a repository cannot be initialized, even by display name.
+        assert!(resolve_repo(&projects, "Orphan").is_err());
     }
 }

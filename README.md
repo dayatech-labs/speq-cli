@@ -76,7 +76,7 @@ shell profile (Unix) or the user PATH entry (Windows) is left for you to remove;
 speq login                              # approve this device in your browser
 speq list                               # repositories you may use
 cd my-frontend-repo
-speq init payment-specs --type frontend # short name works when it is unique; otherwise owner/repo
+speq init payment-specs --type frontend # repo or project name works when it is unique; otherwise owner/repo
 speq pull                               # downloads every specs document into ./specs
 # ... edit files under specs/ ...
 speq status                             # unchanged / local-only / remote-only / conflict / deleted

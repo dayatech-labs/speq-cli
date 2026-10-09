@@ -79,7 +79,7 @@ pub enum Command {
 
     /// Choose a repository and prepare this directory as a workspace
     #[command(
-        after_help = "Arguments:\n  <REPO>  `owner/repo` from `speq list`, or just the name when it is unique\n\nExamples:\n  speq init payment-specs --type frontend\n  speq init acme/payment-specs --type backend --local-dir docs/specs\n  speq init payment-specs --type frontend --reconfigure\n\n"
+        after_help = "Arguments:\n  <REPO>  `owner/repo` from `speq list`, or the repo name or project name when it is unique\n\nExamples:\n  speq init payment-specs --type frontend\n  speq init acme/payment-specs --type backend --local-dir docs/specs\n  speq init payment-specs --type frontend --reconfigure\n\n"
     )]
     Init(InitArgs),
 
@@ -167,7 +167,7 @@ pub struct LogoutArgs {
 
 #[derive(Args, Debug)]
 pub struct InitArgs {
-    /// Repository: `owner/repo`, or a name that is unique in `speq list`
+    /// Repository: `owner/repo`, or a repo or project name that is unique in `speq list`
     pub repo: String,
     /// What this repository is: frontend, backend, or cli
     #[arg(long = "type", value_name = "TYPE")]
