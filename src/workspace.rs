@@ -43,6 +43,32 @@ pub struct LockState {
     pub head_sha: Option<String>,
     #[serde(default)]
     pub pending: Vec<String>,
+    /// Pending path → remote blob SHA its conflict markers were written against. An edit that
+    /// removed the markers is accepted as the resolution only while the remote still has that SHA.
+    #[serde(default)]
+    pub marked: BTreeMap<String, String>,
+    /// Head the last conflicted pull reconciled everything else to. Resolving the final conflict
+    /// moves `head_sha` there, so push works without another pull.
+    #[serde(default)]
+    pub pending_head: Option<String>,
+}
+
+/// Which version of a conflicting file is kept in `.speq/conflict/` for `speq resolve`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Side {
+    /// Your file as it was before the merge touched it.
+    Ours,
+    /// The remote file the merge was made against.
+    Theirs,
+}
+
+impl Side {
+    fn dir(self) -> &'static str {
+        match self {
+            Side::Ours => "ours",
+            Side::Theirs => "theirs",
+        }
+    }
 }
 
 impl LockState {
@@ -132,6 +158,9 @@ impl Workspace {
     pub fn base_dir(&self) -> PathBuf {
         self.speq_dir().join("base")
     }
+    fn conflict_dir(&self) -> PathBuf {
+        self.speq_dir().join("conflict")
+    }
 
     /// Serialise CLI processes working on this workspace; fails after a short grace when another one is running.
     pub fn guard(&self, env: &Env, shared: bool) -> Result<FileLock> {
@@ -182,14 +211,22 @@ impl Workspace {
     pub fn reset_sync_state(&self) -> Result<()> {
         fsx::remove_optional(&self.lock_path())?;
         fsx::remove_optional(&self.manifest_path())?;
-        match fs::remove_dir_all(self.base_dir()) {
-            Ok(()) => Ok(()),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(e) => Err(Error::Io {
-                context: "remove baseline copies".into(),
-                source: e,
-            }),
+        for (dir, what) in [
+            (self.base_dir(), "baseline copies"),
+            (self.conflict_dir(), "conflict copies"),
+        ] {
+            match fs::remove_dir_all(dir) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => {
+                    return Err(Error::Io {
+                        context: format!("remove {what}"),
+                        source: e,
+                    });
+                }
+            }
         }
+        Ok(())
     }
 
     // ------------------------------------------------------ working copy
@@ -277,6 +314,25 @@ impl Workspace {
     }
     pub fn remove_base(&self, canonical: &str) -> Result<()> {
         fsx::remove_optional(&self.base_path(canonical))
+    }
+
+    fn conflict_path(&self, side: Side, canonical: &str) -> PathBuf {
+        join_canonical(&self.conflict_dir().join(side.dir()), canonical)
+    }
+    pub fn read_conflict(&self, side: Side, canonical: &str) -> Result<Option<Vec<u8>>> {
+        fsx::read_optional(&self.conflict_path(side, canonical))
+    }
+    /// Keep (`Some`) or drop (`None`) one version of a conflicting file.
+    pub fn set_conflict(&self, side: Side, canonical: &str, bytes: Option<&[u8]>) -> Result<()> {
+        let path = self.conflict_path(side, canonical);
+        match bytes {
+            Some(bytes) => fsx::atomic_write(&path, bytes, Visibility::Shared),
+            None => fsx::remove_optional(&path),
+        }
+    }
+    pub fn forget_conflict(&self, canonical: &str) -> Result<()> {
+        self.set_conflict(Side::Ours, canonical, None)?;
+        self.set_conflict(Side::Theirs, canonical, None)
     }
 
     /// Hash every canonical Markdown file under `local_dir`. Symlinks are reported, never followed.

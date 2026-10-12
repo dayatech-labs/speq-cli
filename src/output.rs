@@ -7,6 +7,7 @@ use crate::init::{InitReport, ListReport};
 use crate::session::{LoginReport, LogoutReport};
 use crate::sync::pull::{PullReport, UpdateReport};
 use crate::sync::push::{PlannedChange, PushReport};
+use crate::sync::resolve::ResolveReport;
 use crate::sync::status::{DiffReport, StatusReport};
 use crate::template::{Item, Screen, Theme, Tone};
 use crate::uninstall::UninstallReport;
@@ -204,7 +205,11 @@ impl Human for InitReport {
 
 impl Human for PullReport {
     fn human(&self, theme: &Theme) -> String {
-        let changed = self.added.len() + self.updated.len() + self.deleted.len();
+        let changed = self.added.len()
+            + self.updated.len()
+            + self.deleted.len()
+            + self.merged.len()
+            + self.resolved.len();
         let mut s = Screen::new(theme);
         if !self.conflicts.is_empty() {
             s.title(
@@ -224,6 +229,8 @@ impl Human for PullReport {
             (self.updated.len(), "updated"),
             (self.deleted.len(), "deleted"),
             (self.adopted.len(), "adopted"),
+            (self.merged.len(), "merged"),
+            (self.resolved.len(), "resolved"),
         ]
         .iter()
         .filter(|(n, _)| *n > 0)
@@ -244,17 +251,40 @@ impl Human for PullReport {
             .section("Updated", items(Tone::Info, "~", &self.updated))
             .section("Deleted", items(Tone::Warn, "-", &self.deleted))
             .section("Adopted", items(Tone::Info, "=", &self.adopted))
+            .section("Merged", items(Tone::Info, "&", &self.merged))
+            .section("Resolved", items(Tone::Ok, "*", &self.resolved))
             .section(
                 "Conflicts",
                 self.conflicts
                     .iter()
-                    .map(|c| Item::new(Tone::Warn, "!", &c.path).detail(&c.reason))
+                    .map(|c| {
+                        let detail = if c.markers {
+                            format!("{} · conflict markers in the file", c.reason)
+                        } else {
+                            c.reason.clone()
+                        };
+                        Item::new(Tone::Warn, "!", &c.path).detail(&detail)
+                    })
                     .collect(),
             );
-        if !self.conflicts.is_empty() {
+        if !self.merged.is_empty() {
             s.hint(&format!(
-                "{} not applied. Run `speq diff <path>`, edit the file, then pull again; push stays blocked until then.",
-                plural(self.conflicts.len(), "path was", "paths were")
+                "{} combined your edits with the remote's. Review with `speq diff <path>` before `speq push`.",
+                plural(self.merged.len(), "file", "files")
+            ));
+        }
+        let marked = self.conflicts.iter().filter(|c| c.markers).count();
+        if marked > 0 {
+            s.hint(&format!(
+                "Open {} in your editor, resolve each conflict block (VS Code: Accept Current, Incoming or Both), save, then run `speq resolve --all`; push stays blocked until then.",
+                plural(marked, "marked file", "marked files")
+            ));
+        }
+        let unmarked = self.conflicts.len() - marked;
+        if unmarked > 0 {
+            s.hint(&format!(
+                "{} not applied. Run `speq diff <path>`, then `speq resolve <path>` to keep your file or add `--theirs` to take the remote's; push stays blocked until then.",
+                plural(unmarked, "path was", "paths were")
             ));
         }
         s.finish()
@@ -284,6 +314,85 @@ impl Human for UpdateReport {
             ("commit", short(&self.head_sha).to_string()),
         ]);
         s.finish()
+    }
+}
+
+impl Human for ResolveReport {
+    fn human(&self, theme: &Theme) -> String {
+        let mut s = Screen::new(theme);
+        let open = self.pending.len();
+        if self.resolved.is_empty() && open == 0 {
+            s.title(Tone::Ok, "No conflicts to resolve");
+            return s.finish();
+        }
+        if open == 0 {
+            s.title(Tone::Ok, "All conflicts resolved");
+        } else {
+            s.title(
+                Tone::Warn,
+                &format!(
+                    "Resolved {}, {} still open",
+                    self.resolved.len(),
+                    plural(open, "conflict", "conflicts")
+                ),
+            );
+        }
+        let still: Vec<&String> = self
+            .pending
+            .iter()
+            .filter(|p| !self.still_marked.contains(p) && !self.undecided.contains(p))
+            .collect();
+        s.section(
+            "Resolved",
+            self.resolved
+                .iter()
+                .map(|p| Item::new(Tone::Ok, "*", p))
+                .collect(),
+        )
+        .section(
+            "Still has conflict markers",
+            self.still_marked
+                .iter()
+                .map(|p| Item::new(Tone::Warn, "!", p))
+                .collect(),
+        )
+        .section(
+            "Needs a decision",
+            self.undecided
+                .iter()
+                .map(|p| Item::new(Tone::Warn, "?", p))
+                .collect(),
+        )
+        .section(
+            "Not resolved",
+            still
+                .into_iter()
+                .map(|p| Item::new(Tone::Warn, "!", p))
+                .collect(),
+        );
+        if !self.still_marked.is_empty() {
+            s.hint(
+                "Remove the conflict markers and save, then run `speq resolve <path>`; or take a side with `--ours` or `--theirs`.",
+            );
+        } else if !self.undecided.is_empty() {
+            s.hint(
+                "`--all` leaves conflicts without markers (a delete on one side) to you. See `speq diff <path>`, then `speq resolve <path>` keeps your side or add `--theirs` for the remote's.",
+            );
+        } else if open > 0 {
+            s.hint("Name the rest, or run `speq resolve --all`.");
+        } else if self.lock_advanced {
+            s.hint("Review with `speq status`, then run `speq push`.");
+        } else {
+            s.hint("Run `speq pull` to finish before pushing.");
+        }
+        s.finish()
+    }
+    fn exit_code(&self) -> u8 {
+        if self.pending.is_empty() {
+            exit::OK
+        } else {
+            exit::CONFLICT
+        }
     }
 }
 
@@ -369,7 +478,9 @@ impl Human for StatusReport {
             );
         }
         if conflicts {
-            s.hint("Run `speq diff <path>` to inspect, edit the file, then `speq pull`.");
+            s.hint(
+                "Run `speq diff <path>` to inspect, edit the file, then `speq resolve <path>` (or `--ours` / `--theirs`).",
+            );
         } else if !self.up_to_date {
             s.hint("Run `speq pull` to bring in the remote changes.");
         } else if has_local {

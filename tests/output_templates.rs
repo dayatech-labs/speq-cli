@@ -9,6 +9,7 @@ use speq::session::{LoginReport, LogoutReport};
 use speq::sync::plan::State;
 use speq::sync::pull::{Conflict, PullReport, UpdateReport};
 use speq::sync::push::{PlannedChange, PushReport};
+use speq::sync::resolve::ResolveReport;
 use speq::sync::status::{DiffReport, PathStatus, StatusReport};
 use speq::template::Theme;
 use speq::uninstall::UninstallReport;
@@ -52,6 +53,8 @@ fn pull_report() -> PullReport {
         updated: vec![],
         deleted: vec![],
         adopted: vec![],
+        merged: vec![],
+        resolved: vec![],
         conflicts: vec![],
         unchanged: 0,
         lock_advanced: true,
@@ -261,20 +264,145 @@ fn a_pull_with_conflicts_warns_exits_5_and_says_how_to_resolve() {
     report.deleted = strings(&["gone.md"]);
     report.conflicts = vec![Conflict {
         path: "prd.md".into(),
-        reason: "changed on both sides".into(),
+        reason: "deleted on the remote but changed locally".into(),
+        markers: false,
     }];
     let out = plain(&report);
     assert!(out.starts_with("! Pulled with 1 conflict\n"), "{out}");
     assert!(out.contains("  Deleted (1)\n    - gone.md\n"), "{out}");
     assert!(
-        out.contains("  Conflicts (1)\n    ! prd.md  changed on both sides\n"),
+        out.contains("  Conflicts (1)\n    ! prd.md  deleted on the remote but changed locally\n"),
         "{out}"
     );
     assert!(
-        out.ends_with("  → 1 path was not applied. Run `speq diff <path>`, edit the file, then pull again; push stays blocked until then."),
+        out.ends_with("  → 1 path was not applied. Run `speq diff <path>`, then `speq resolve <path>` to keep your file or add `--theirs` to take the remote's; push stays blocked until then."),
         "{out}"
     );
     assert_eq!(report.exit_code(), 5);
+}
+
+#[test]
+fn marked_conflicts_point_to_the_editor_and_resolved_ones_are_listed() {
+    let mut report = pull_report();
+    report.resolved = strings(&["done.md"]);
+    report.merged = strings(&["combined.md"]);
+    report.conflicts = vec![
+        Conflict {
+            path: "prd.md".into(),
+            reason: "changed both locally and on the remote".into(),
+            markers: true,
+        },
+        Conflict {
+            path: "gone.md".into(),
+            reason: "deleted on the remote but changed locally".into(),
+            markers: false,
+        },
+    ];
+    let out = plain(&report);
+    assert!(out.contains("1 merged · 1 resolved"), "{out}");
+    assert!(out.contains("  Merged (1)\n    & combined.md\n"), "{out}");
+    assert!(
+        out.contains("1 file combined your edits with the remote's. Review with `speq diff <path>` before `speq push`."),
+        "{out}"
+    );
+    assert!(out.contains("  Resolved (1)\n    * done.md\n"), "{out}");
+    assert!(
+        out.contains(
+            "! prd.md   changed both locally and on the remote · conflict markers in the file\n"
+        ),
+        "{out}"
+    );
+    assert!(
+        out.contains("Open 1 marked file in your editor, resolve each conflict block (VS Code: Accept Current, Incoming or Both), save, then run `speq resolve --all`"),
+        "{out}"
+    );
+    assert!(
+        out.contains("1 path was not applied. Run `speq diff <path>`"),
+        "{out}"
+    );
+    assert_eq!(report.exit_code(), 5);
+}
+
+fn resolve_report(resolved: &[&str], still_marked: &[&str], pending: &[&str]) -> ResolveReport {
+    ResolveReport {
+        choice: "edited",
+        resolved: strings(resolved),
+        still_marked: strings(still_marked),
+        undecided: vec![],
+        pending: strings(pending),
+        lock_advanced: pending.is_empty() && !resolved.is_empty(),
+    }
+}
+
+#[test]
+fn resolving_everything_points_to_review_and_push() {
+    let report = resolve_report(&["a.md", "b.md"], &[], &[]);
+    let out = plain(&report);
+    assert!(out.starts_with("✔ All conflicts resolved\n"), "{out}");
+    assert!(
+        out.contains("  Resolved (2)\n    * a.md\n    * b.md\n"),
+        "{out}"
+    );
+    assert!(
+        out.ends_with("→ Review with `speq status`, then run `speq push`."),
+        "{out}"
+    );
+    assert_eq!(report.exit_code(), 0);
+}
+
+#[test]
+fn files_that_still_have_markers_are_named_and_exit_5() {
+    let report = resolve_report(&["a.md"], &["b.md"], &["b.md", "c.md"]);
+    let out = plain(&report);
+    assert!(
+        out.starts_with("! Resolved 1, 2 conflicts still open\n"),
+        "{out}"
+    );
+    assert!(
+        out.contains("  Still has conflict markers (1)\n    ! b.md\n"),
+        "{out}"
+    );
+    assert!(out.contains("  Not resolved (1)\n    ! c.md\n"), "{out}");
+    assert!(
+        out.ends_with("→ Remove the conflict markers and save, then run `speq resolve <path>`; or take a side with `--ours` or `--theirs`."),
+        "{out}"
+    );
+    assert_eq!(report.exit_code(), 5);
+}
+
+#[test]
+fn unresolved_conflicts_without_markers_point_to_the_rest() {
+    let report = resolve_report(&["a.md"], &[], &["c.md"]);
+    let out = plain(&report);
+    assert!(
+        out.ends_with("→ Name the rest, or run `speq resolve --all`."),
+        "{out}"
+    );
+    assert_eq!(report.exit_code(), 5);
+}
+
+#[test]
+fn delete_conflicts_that_all_skipped_are_listed_with_what_to_do() {
+    let mut report = resolve_report(&["a.md"], &[], &["gone.md"]);
+    report.undecided = strings(&["gone.md"]);
+    let out = plain(&report);
+    assert!(
+        out.contains("  Needs a decision (1)\n    ? gone.md\n"),
+        "{out}"
+    );
+    assert!(!out.contains("Not resolved"), "{out}");
+    assert!(
+        out.ends_with("→ `--all` leaves conflicts without markers (a delete on one side) to you. See `speq diff <path>`, then `speq resolve <path>` keeps your side or add `--theirs` for the remote's."),
+        "{out}"
+    );
+    assert_eq!(report.exit_code(), 5);
+}
+
+#[test]
+fn nothing_pending_is_not_an_error() {
+    let report = resolve_report(&[], &[], &[]);
+    assert_eq!(plain(&report), "✔ No conflicts to resolve");
+    assert_eq!(report.exit_code(), 0);
 }
 
 #[test]
@@ -361,7 +489,7 @@ fn status_with_a_conflict_warns_exits_5_and_shows_both_sides() {
         "{out}"
     );
     assert!(
-        out.ends_with("  → Run `speq diff <path>` to inspect, edit the file, then `speq pull`."),
+        out.ends_with("  → Run `speq diff <path>` to inspect, edit the file, then `speq resolve <path>` (or `--ours` / `--theirs`)."),
         "{out}"
     );
     assert_eq!(report.exit_code(), 5);

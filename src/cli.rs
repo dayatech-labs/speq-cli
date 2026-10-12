@@ -91,7 +91,7 @@ pub enum Command {
 
     /// Download all specs and apply them without overwriting local work
     #[command(
-        after_help = "Examples:\n  speq pull\n\nLocal-only edits are kept. A file changed on both sides, a remote delete over a local edit, or a remote\nadd over an untracked file is reported as a conflict and left alone; push is blocked until you resolve it.\n\n"
+        after_help = "Examples:\n  speq pull\n\nLocal-only edits are kept. A file changed on both sides is merged line by line like Git: edits to different lines\nare combined, and only the regions both sides changed get conflict markers (<<<<<<< local, ||||||| base, >>>>>>>\nremote). Resolve those blocks in your editor (VS Code opens a merge editor), save, and run `speq pull` again. A remote\ndelete over a local edit is reported and left alone. Push is blocked until every conflict is resolved.\n\n"
     )]
     Pull,
 
@@ -112,6 +112,12 @@ pub enum Command {
         after_help = "Arguments:\n  <PATH>  document path relative to the specs folder\n\nExamples:\n  speq update epics/epic-payment/prd.md\n\nFails when the local copy changed; there is no force or discard option.\n\n"
     )]
     Update(UpdateArgs),
+
+    /// Finish conflicts after a pull, or take your side or the remote's
+    #[command(
+        after_help = "Arguments:\n  <PATH>...  conflicting documents relative to the specs folder, as printed by `speq status` (or use --all)\n\nExamples:\n  speq resolve epics/epic-payment/prd.md\n  speq resolve --all\n  speq resolve epics/epic-payment/prd.md --ours\n  speq resolve --all --theirs --yes\n\nWorks offline. Without a side, the file as you saved it is kept as your change on top of the remote, so `speq push`\ncan send it; a file that still has conflict markers is skipped. Without a side, --all only takes files that had\nmarkers: a delete on one side is never decided for you, name it instead. --ours restores your version from before the merge.\n--theirs replaces the file with the remote version and discards your edits to it: it asks first, and has no undo.\nPush stays blocked until no conflict is left.\n\n"
+    )]
+    Resolve(ResolveArgs),
 
     /// Send local changes to the API as one batch
     #[command(
@@ -150,6 +156,7 @@ impl Command {
             Command::Status => "status",
             Command::Diff(_) => "diff",
             Command::Update(_) => "update",
+            Command::Resolve(_) => "resolve",
             Command::Push => "push",
             Command::Context(_) => "context",
             Command::Upgrade(_) => "upgrade",
@@ -204,6 +211,25 @@ pub struct DiffArgs {
 pub struct UpdateArgs {
     /// Document path relative to the specs folder
     pub path: String,
+}
+
+#[derive(Args, Debug)]
+pub struct ResolveArgs {
+    /// Conflicting document paths relative to the specs folder
+    #[arg(required_unless_present = "all")]
+    pub paths: Vec<String>,
+    /// Resolve every pending conflict
+    #[arg(long, conflicts_with = "paths")]
+    pub all: bool,
+    /// Restore your version from before the merge
+    #[arg(long, conflicts_with = "theirs")]
+    pub ours: bool,
+    /// Replace the file with the remote version, discarding your edits
+    #[arg(long)]
+    pub theirs: bool,
+    /// Do not ask for confirmation when discarding your edits (--theirs)
+    #[arg(long, short = 'y')]
+    pub yes: bool,
 }
 
 #[derive(Args, Debug)]

@@ -2,6 +2,7 @@ mod support;
 
 use speq::context::context;
 use speq::error::{Error, exit};
+use speq::hashing::git_blob_sha;
 use speq::sync::{push, status};
 use support::{Fixture, PROJECT};
 
@@ -86,15 +87,39 @@ async fn conflicts_are_never_overwritten_and_block_push() {
         ]
     );
     assert!(!report.lock_advanced);
-    assert_eq!(f.read(PRD).as_deref(), Some("# local PRD\n"));
+    // Both-sides content is kept inside conflict markers, never dropped.
+    assert_eq!(
+        f.read(PRD).as_deref(),
+        Some(
+            "<<<<<<< local\n# local PRD\n||||||| base\n# PRD\n\nPayments.\n=======\n# remote PRD\n>>>>>>> remote\n"
+        )
+    );
+    assert_eq!(
+        f.read(NEW_DOC).as_deref(),
+        Some(
+            "<<<<<<< local\n# my frontend doc\n||||||| base\n=======\n# remote frontend doc\n>>>>>>> remote\n"
+        )
+    );
+    // A delete has nothing to mark: the local edit stays exactly as it was.
     assert_eq!(
         f.read("epics/epic-payment/product-brief.md").as_deref(),
         Some("# local brief\n")
     );
-    assert_eq!(f.read(NEW_DOC).as_deref(), Some("# my frontend doc\n"));
+    let has_markers = |p: &str| {
+        report
+            .conflicts
+            .iter()
+            .find(|c| c.path == p)
+            .unwrap()
+            .markers
+    };
+    assert!(has_markers(PRD) && has_markers(NEW_DOC));
+    assert!(!has_markers("epics/epic-payment/product-brief.md"));
     let lock = f.ws().load_lock().unwrap();
     assert_eq!(lock.head_sha, before_lock.head_sha);
     assert_eq!(lock.pending.len(), 3);
+    assert_eq!(lock.marked.len(), 2);
+    assert_eq!(lock.marked[PRD], git_blob_sha(b"# remote PRD\n"));
 
     // Push is refused while conflicts are pending, and no request is sent.
     let commits = f.api.commits();
@@ -103,6 +128,246 @@ async fn conflicts_are_never_overwritten_and_block_push() {
     assert_eq!(f.api.commits(), commits);
     // So is context, which needs a clean lock.
     assert!(context(&f.ws(), "epic-payment/create-payment").is_err());
+}
+
+/// A pulled workspace where `PRD` changed on both sides, so the file now holds conflict markers.
+async fn marked_prd_conflict() -> Fixture {
+    let f = Fixture::new().await;
+    f.pull().await.unwrap();
+    f.write(PRD, "# local PRD\n");
+    f.api.external_change(PRD, Some("# remote PRD\n"));
+    let report = f.pull().await.unwrap();
+    assert_eq!(report.conflicts.len(), 1);
+    f
+}
+
+#[tokio::test]
+async fn pulling_again_leaves_unresolved_markers_untouched() {
+    let f = marked_prd_conflict().await;
+    let marked = f.read(PRD).unwrap();
+    let lock = f.ws().load_lock().unwrap();
+
+    let again = f.pull().await.unwrap();
+    assert_eq!(again.conflicts.len(), 1);
+    assert!(again.conflicts[0].markers && !again.lock_advanced);
+    assert_eq!(
+        f.read(PRD).unwrap(),
+        marked,
+        "markers are never wrapped in markers"
+    );
+    assert_eq!(f.ws().load_lock().unwrap(), lock);
+
+    // The remote moving on does not rewrite a file the user is still editing.
+    f.api.external_change(PRD, Some("# remote PRD v3\n"));
+    let moved = f.pull().await.unwrap();
+    assert_eq!(moved.conflicts.len(), 1);
+    assert_eq!(f.read(PRD).unwrap(), marked);
+    assert_eq!(
+        f.ws().load_lock().unwrap().marked[PRD],
+        git_blob_sha(b"# remote PRD\n"),
+        "the markers still describe the remote they were written against"
+    );
+}
+
+#[tokio::test]
+async fn an_edit_that_removes_the_markers_resolves_the_conflict_and_can_be_pushed() {
+    let f = marked_prd_conflict().await;
+    f.write(PRD, "# merged PRD\n");
+
+    let report = f.pull().await.unwrap();
+    assert_eq!(report.resolved, vec![PRD.to_string()]);
+    assert!(report.conflicts.is_empty() && report.lock_advanced);
+    assert_eq!(
+        f.read(PRD).as_deref(),
+        Some("# merged PRD\n"),
+        "the edit is kept"
+    );
+    assert_eq!(f.ws().read_base(PRD).unwrap().unwrap(), b"# remote PRD\n");
+    let lock = f.ws().load_lock().unwrap();
+    assert!(lock.pending.is_empty() && lock.marked.is_empty());
+
+    let status = status::status(&f.device.env, &f.ws()).await.unwrap();
+    let state = |p: &str| status.files.iter().find(|x| x.path == p).unwrap().state;
+    assert_eq!(state(PRD), "local-only");
+
+    let pushed = push::push(&f.device.env, &f.ws()).await.unwrap();
+    assert_eq!(pushed.changes.len(), 1);
+    assert_eq!(f.api.file(PRD).as_deref(), Some("# merged PRD\n"));
+}
+
+#[tokio::test]
+async fn accepting_the_remote_side_is_adopted_with_nothing_to_push() {
+    let f = marked_prd_conflict().await;
+    f.write(PRD, "# remote PRD\n");
+
+    let report = f.pull().await.unwrap();
+    assert_eq!(report.adopted, vec![PRD.to_string()]);
+    assert!(report.resolved.is_empty() && report.lock_advanced);
+    let pushed = push::push(&f.device.env, &f.ws()).await.unwrap();
+    assert!(pushed.nothing_to_push);
+}
+
+#[tokio::test]
+async fn a_resolution_made_against_an_outdated_remote_reopens_the_conflict() {
+    let f = marked_prd_conflict().await;
+    f.write(PRD, "# merged PRD\n");
+    f.api.external_change(PRD, Some("# remote PRD v3\n")); // moved before the next pull
+
+    let report = f.pull().await.unwrap();
+    assert!(report.resolved.is_empty() && !report.lock_advanced);
+    assert_eq!(report.conflicts.len(), 1);
+    // The user's resolution is preserved next to the remote they have not seen yet.
+    assert_eq!(
+        f.read(PRD).as_deref(),
+        Some(
+            "<<<<<<< local\n# merged PRD\n||||||| base\n# PRD\n\nPayments.\n=======\n# remote PRD v3\n>>>>>>> remote\n"
+        )
+    );
+    assert_eq!(
+        f.ws().load_lock().unwrap().marked[PRD],
+        git_blob_sha(b"# remote PRD v3\n")
+    );
+    let commits = f.api.commits();
+    assert!(push::push(&f.device.env, &f.ws()).await.is_err());
+    assert_eq!(f.api.commits(), commits);
+}
+
+#[tokio::test]
+async fn resolving_one_conflict_keeps_the_others_pending() {
+    let f = Fixture::new().await;
+    f.pull().await.unwrap();
+    f.write(PRD, "# local PRD\n");
+    f.api.external_change(PRD, Some("# remote PRD\n"));
+    f.write(README, "# local readme\n");
+    f.api.external_change(README, Some("# remote readme\n"));
+    f.pull().await.unwrap();
+
+    f.write(PRD, "# merged PRD\n"); // README markers stay
+    let report = f.pull().await.unwrap();
+    assert_eq!(report.resolved, vec![PRD.to_string()]);
+    assert_eq!(report.conflicts.len(), 1);
+    assert_eq!(report.conflicts[0].path, README);
+    assert!(!report.lock_advanced);
+    let lock = f.ws().load_lock().unwrap();
+    assert_eq!(lock.pending, vec![README.to_string()]);
+    assert_eq!(lock.marked.keys().collect::<Vec<_>>(), vec![README]);
+    assert_eq!(f.read(PRD).as_deref(), Some("# merged PRD\n"));
+}
+
+const FIVE: &str = "one\ntwo\nthree\nfour\nfive\n";
+
+/// A pulled workspace whose `PRD` is a five-line document, so edits can land on different lines.
+async fn five_line_prd() -> Fixture {
+    let f = Fixture::new().await;
+    f.pull().await.unwrap();
+    f.api.external_change(PRD, Some(FIVE));
+    f.pull().await.unwrap();
+    assert_eq!(f.read(PRD).as_deref(), Some(FIVE));
+    f
+}
+
+#[tokio::test]
+async fn edits_to_different_lines_merge_cleanly_and_can_be_pushed() {
+    let f = five_line_prd().await;
+    f.write(PRD, "ONE\ntwo\nthree\nfour\nfive\n"); // local: first line
+    f.api
+        .external_change(PRD, Some("one\ntwo\nthree\nfour\nFIVE\n")); // remote: last line
+
+    let report = f.pull().await.unwrap();
+    assert_eq!(report.merged, vec![PRD.to_string()]);
+    assert!(report.conflicts.is_empty() && report.lock_advanced);
+    let merged = "ONE\ntwo\nthree\nfour\nFIVE\n";
+    assert_eq!(f.read(PRD).as_deref(), Some(merged));
+    // The remote is the new baseline, so the file is exactly my edit on top of it.
+    assert_eq!(
+        f.ws().read_base(PRD).unwrap().unwrap(),
+        b"one\ntwo\nthree\nfour\nFIVE\n"
+    );
+    let lock = f.ws().load_lock().unwrap();
+    assert!(lock.pending.is_empty() && lock.marked.is_empty());
+    let status = status::status(&f.device.env, &f.ws()).await.unwrap();
+    assert_eq!(
+        status.files.iter().find(|x| x.path == PRD).unwrap().state,
+        "local-only"
+    );
+
+    push::push(&f.device.env, &f.ws()).await.unwrap();
+    assert_eq!(f.api.file(PRD).as_deref(), Some(merged));
+}
+
+#[tokio::test]
+async fn only_the_lines_both_sides_changed_get_markers() {
+    let f = five_line_prd().await;
+    f.write(PRD, "ONE\ntwo\nthree\nLOCAL\nfive\n");
+    f.api
+        .external_change(PRD, Some("one\ntwo\nthree\nREMOTE\nfive\n"));
+
+    let report = f.pull().await.unwrap();
+    assert!(report.merged.is_empty() && !report.lock_advanced);
+    assert_eq!(report.conflicts.len(), 1);
+    assert!(report.conflicts[0].markers);
+    // The untouched lines and my non-conflicting edit are outside the block.
+    assert_eq!(
+        f.read(PRD).as_deref(),
+        Some(
+            "ONE\ntwo\nthree\n<<<<<<< local\nLOCAL\n||||||| base\nfour\n=======\nREMOTE\n>>>>>>> remote\nfive\n"
+        )
+    );
+    // The baseline is untouched until the conflict is resolved.
+    assert_eq!(f.ws().read_base(PRD).unwrap().unwrap(), FIVE.as_bytes());
+    let lock = f.ws().load_lock().unwrap();
+    assert_eq!(
+        lock.marked[PRD],
+        git_blob_sha(b"one\ntwo\nthree\nREMOTE\nfive\n")
+    );
+}
+
+#[tokio::test]
+async fn resolving_a_partial_conflict_keeps_the_merged_lines_and_pushes_them() {
+    let f = five_line_prd().await;
+    f.write(PRD, "ONE\ntwo\nthree\nLOCAL\nfive\n");
+    f.api
+        .external_change(PRD, Some("one\ntwo\nthree\nREMOTE\nfive\n"));
+    f.pull().await.unwrap();
+
+    // Like "Accept Both" in the editor: both lines kept, every marker removed.
+    f.write(PRD, "ONE\ntwo\nthree\nLOCAL\nREMOTE\nfive\n");
+    let report = f.pull().await.unwrap();
+    assert_eq!(report.resolved, vec![PRD.to_string()]);
+    assert!(report.lock_advanced);
+
+    push::push(&f.device.env, &f.ws()).await.unwrap();
+    assert_eq!(
+        f.api.file(PRD).as_deref(),
+        Some("ONE\ntwo\nthree\nLOCAL\nREMOTE\nfive\n")
+    );
+}
+
+#[tokio::test]
+async fn merging_one_file_does_not_disturb_other_pending_conflicts() {
+    let f = five_line_prd().await;
+    f.write(PRD, "ONE\ntwo\nthree\nfour\nfive\n");
+    f.api
+        .external_change(PRD, Some("one\ntwo\nthree\nfour\nFIVE\n")); // clean merge
+    f.write(README, "# local readme\n");
+    f.api.external_change(README, Some("# remote readme\n")); // conflict
+
+    let report = f.pull().await.unwrap();
+    assert_eq!(report.merged, vec![PRD.to_string()]);
+    assert_eq!(report.conflicts.len(), 1);
+    assert!(!report.lock_advanced);
+    assert_eq!(
+        f.read(PRD).as_deref(),
+        Some("ONE\ntwo\nthree\nfour\nFIVE\n")
+    );
+    let lock = f.ws().load_lock().unwrap();
+    assert_eq!(lock.pending, vec![README.to_string()]);
+    assert_eq!(lock.marked.keys().collect::<Vec<_>>(), vec![README]);
+    // The merged file already sits on the new baseline even though the pull did not finish.
+    assert_eq!(
+        f.ws().load_manifest().unwrap().files[PRD].sha,
+        git_blob_sha(b"one\ntwo\nthree\nfour\nFIVE\n")
+    );
 }
 
 #[tokio::test]

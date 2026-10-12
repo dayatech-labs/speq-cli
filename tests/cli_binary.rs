@@ -15,7 +15,7 @@ fn speq(args: &[&str]) -> (i32, String, String) {
     )
 }
 
-const COMMANDS: [&str; 13] = [
+const COMMANDS: [&str; 14] = [
     "login",
     "logout",
     "list",
@@ -25,6 +25,7 @@ const COMMANDS: [&str; 13] = [
     "status",
     "diff",
     "update",
+    "resolve",
     "push",
     "context",
     "upgrade",
@@ -227,4 +228,16 @@ fn only_the_top_level_help_shows_the_speq_cli_banner() {
         colored.starts_with("\x1b[1m\x1b[36m ____  ____"),
         "{colored}"
     );
+}
+
+#[test]
+fn resolve_rejects_contradictory_or_missing_targets() {
+    for args in [
+        vec!["resolve"],
+        vec!["resolve", "--all", "a.md"],
+        vec!["resolve", "--all", "--ours", "--theirs"],
+    ] {
+        let (code, _, stderr) = speq(&args);
+        assert_eq!(code, 2, "{args:?}: {stderr}");
+    }
 }

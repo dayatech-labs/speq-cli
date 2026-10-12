@@ -1,14 +1,34 @@
 //! Sync commands that talk to the API and keep the workspace consistent.
+pub mod markers;
 pub mod plan;
 pub mod pull;
 pub mod push;
+pub mod resolve;
 pub mod status;
 
 use crate::api::SyncManifest;
 use crate::error::{Error, Result};
 use crate::paths::is_canonical_markdown;
-use crate::workspace::{LocalScan, Workspace};
+use crate::workspace::{LocalScan, LockState, Side, Workspace};
 use std::collections::BTreeMap;
+
+/// Whether `local` still holds conflict markers: a labelled marker line, or, in a file `pull` marked,
+/// a `=======` left behind that none of its saved versions had.
+pub fn still_marked(ws: &Workspace, lock: &LockState, path: &str, local: &[u8]) -> Result<bool> {
+    if markers::has_markers(local) {
+        return Ok(true);
+    }
+    if !lock.marked.contains_key(path) {
+        return Ok(false);
+    }
+    let saved = [
+        ws.read_conflict(Side::Ours, path)?,
+        ws.read_conflict(Side::Theirs, path)?,
+        ws.read_base(path)?,
+    ];
+    let known: Vec<&[u8]> = saved.iter().flatten().map(Vec::as_slice).collect();
+    Ok(markers::has_stray_separator(local, &known))
+}
 
 /// Pulls retry from a fresh manifest at most this many times when the head moves underneath.
 pub const PULL_ATTEMPTS: u32 = 3;

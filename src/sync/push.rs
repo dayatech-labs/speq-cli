@@ -203,7 +203,7 @@ pub async fn push(env: &Env, ws: &Workspace) -> Result<PushReport> {
     }
     ws.save_lock(&LockState {
         head_sha: Some(result.head_sha.clone()),
-        pending: vec![],
+        ..LockState::default()
     })?;
     Ok(PushReport {
         changes,

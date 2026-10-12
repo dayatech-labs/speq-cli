@@ -7,6 +7,7 @@ use crate::error::{Error, Result};
 use crate::init::{self, InitOptions};
 use crate::output::emit;
 use crate::session::Session;
+use crate::sync::resolve::{self, Choice, Target};
 use crate::sync::{pull, push, status};
 use crate::uninstall;
 use crate::upgrade::{self, Install};
@@ -119,6 +120,7 @@ pub async fn run(cli: Cli, env: &Env) -> Result<u8> {
             json,
             &pull::update(env, &workspace()?, &args.path).await?,
         )),
+        Command::Resolve(args) => resolve_command(json, env, args),
         Command::Push => Ok(emit(json, &push::push(env, &workspace()?).await?)),
         Command::Context(args) => Ok(emit(json, &context::context(&workspace()?, &args.target)?)),
         Command::Upgrade(args) => upgrade_command(json, args).await,
@@ -202,6 +204,32 @@ async fn upgrade_command(json: bool, args: crate::cli::UpgradeArgs) -> Result<u8
             path: Some(exe.display().to_string()),
         },
     ))
+}
+
+fn resolve_command(json: bool, env: &Env, args: crate::cli::ResolveArgs) -> Result<u8> {
+    let ws = workspace()?;
+    let choice = match (args.ours, args.theirs) {
+        (true, _) => Choice::Ours,
+        (_, true) => Choice::Theirs,
+        _ => Choice::Edited,
+    };
+    if choice == Choice::Theirs && !args.yes {
+        let what = if args.all {
+            "every conflicting file".to_string()
+        } else {
+            args.paths.join(", ")
+        };
+        let prompt = format!("Replace {what} with the remote version? Your edits to it are lost");
+        if !confirm(&prompt)? {
+            return Err(Error::invalid("cancelled; nothing was changed"));
+        }
+    }
+    let target = if args.all {
+        Target::All
+    } else {
+        Target::Paths(&args.paths)
+    };
+    Ok(emit(json, &resolve::resolve(env, &ws, target, choice)?))
 }
 
 fn deinit_command(json: bool, env: &Env, args: crate::cli::DeinitArgs) -> Result<u8> {
