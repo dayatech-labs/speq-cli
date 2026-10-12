@@ -74,7 +74,7 @@ impl State {
             "# PRD\n\nPayments.\n".into(),
         );
         files.insert(
-            "epics/epic-payment/product-brief.md".into(),
+            "epics/epic-payment/briefs/br-001-overview.md".into(),
             "# Brief\n".into(),
         );
         files.insert(
@@ -82,11 +82,11 @@ impl State {
             "# Architecture\n".into(),
         );
         files.insert(
-            "epics/epic-payment/features/create-payment/README.md".into(),
+            "epics/epic-payment/stories/st-001-create-payment/README.md".into(),
             "# Create payment\n".into(),
         );
         files.insert(
-            "epics/epic-payment/features/create-payment/backend.md".into(),
+            "epics/epic-payment/stories/st-001-create-payment/tasks/be-001-api.md".into(),
             "# Backend\n".into(),
         );
         let mut projects = BTreeMap::new();
@@ -336,7 +336,7 @@ fn handle(
             .filter_map(|id| st.projects.get(id).map(|p| (id, p)))
             .map(|(id, p)| {
                 json!({ "project_id": id, "display_name": id, "repository_full_name": p.repo, "branch": "main", "roles": ["engineer"],
-                    "capabilities": { "create": { "allow": ["epics/*/features/*/*.md"], "deny": [] }, "update": { "allow": ["epics/*/features/*/*.md"], "deny": [] }, "can_delete": false, "can_restore": false, "can_manage": false } })
+                    "capabilities": { "create": { "allow": ["epics/*/stories/*/**"], "deny": [] }, "update": { "allow": ["epics/*/stories/*/**"], "deny": [] }, "can_delete": false, "can_restore": false, "can_manage": false } })
             })
             .collect();
         let body = json!({ "user_id": user, "authorization_version": st.auth_version.get(&user).copied().unwrap_or(1), "issued_at": iso(0), "expires_at": iso(st.snapshot_ttl), "projects": projects });

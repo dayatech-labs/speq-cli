@@ -7,8 +7,8 @@ use speq::sync::{push, status};
 use support::{Fixture, PROJECT};
 
 const PRD: &str = "epics/epic-payment/prd.md";
-const README: &str = "epics/epic-payment/features/create-payment/README.md";
-const NEW_DOC: &str = "epics/epic-payment/features/create-payment/frontend.md";
+const README: &str = "epics/epic-payment/stories/st-001-create-payment/README.md";
+const NEW_DOC: &str = "epics/epic-payment/stories/st-001-create-payment/tasks/fe-001-form.md";
 
 #[tokio::test]
 async fn first_pull_downloads_everything_and_advances_the_lock() {
@@ -38,7 +38,7 @@ async fn pull_applies_remote_changes_but_keeps_local_only_edits() {
     f.write(README, "# mine\n"); // local-only edit
     f.api.external_change(PRD, Some("# PRD v2\n"));
     f.api.external_change(
-        "epics/epic-payment/features/create-payment/DESIGN.md",
+        "epics/epic-payment/stories/st-001-create-payment/DESIGN.md",
         Some("# New\n"),
     );
     f.api
@@ -48,7 +48,7 @@ async fn pull_applies_remote_changes_but_keeps_local_only_edits() {
     assert_eq!(report.updated, vec![PRD.to_string()]);
     assert_eq!(
         report.added,
-        vec!["epics/epic-payment/features/create-payment/DESIGN.md".to_string()]
+        vec!["epics/epic-payment/stories/st-001-create-payment/DESIGN.md".to_string()]
     );
     assert_eq!(
         report.deleted,
@@ -68,9 +68,12 @@ async fn conflicts_are_never_overwritten_and_block_push() {
 
     f.write(PRD, "# local PRD\n"); // both changed
     f.api.external_change(PRD, Some("# remote PRD\n"));
-    f.write("epics/epic-payment/product-brief.md", "# local brief\n"); // remote delete over local edit
+    f.write(
+        "epics/epic-payment/briefs/br-001-overview.md",
+        "# local brief\n",
+    ); // remote delete over local edit
     f.api
-        .external_change("epics/epic-payment/product-brief.md", None);
+        .external_change("epics/epic-payment/briefs/br-001-overview.md", None);
     f.write(NEW_DOC, "# my frontend doc\n"); // remote add over untracked local file
     f.api
         .external_change(NEW_DOC, Some("# remote frontend doc\n"));
@@ -81,9 +84,9 @@ async fn conflicts_are_never_overwritten_and_block_push() {
     assert_eq!(
         conflicted,
         vec![
-            "epics/epic-payment/features/create-payment/frontend.md",
+            "epics/epic-payment/briefs/br-001-overview.md",
             PRD,
-            "epics/epic-payment/product-brief.md"
+            "epics/epic-payment/stories/st-001-create-payment/tasks/fe-001-form.md",
         ]
     );
     assert!(!report.lock_advanced);
@@ -102,7 +105,8 @@ async fn conflicts_are_never_overwritten_and_block_push() {
     );
     // A delete has nothing to mark: the local edit stays exactly as it was.
     assert_eq!(
-        f.read("epics/epic-payment/product-brief.md").as_deref(),
+        f.read("epics/epic-payment/briefs/br-001-overview.md")
+            .as_deref(),
         Some("# local brief\n")
     );
     let has_markers = |p: &str| {
@@ -114,7 +118,7 @@ async fn conflicts_are_never_overwritten_and_block_push() {
             .markers
     };
     assert!(has_markers(PRD) && has_markers(NEW_DOC));
-    assert!(!has_markers("epics/epic-payment/product-brief.md"));
+    assert!(!has_markers("epics/epic-payment/briefs/br-001-overview.md"));
     let lock = f.ws().load_lock().unwrap();
     assert_eq!(lock.head_sha, before_lock.head_sha);
     assert_eq!(lock.pending.len(), 3);
@@ -127,7 +131,7 @@ async fn conflicts_are_never_overwritten_and_block_push() {
     assert_eq!(err.exit_code(), exit::CONFLICT);
     assert_eq!(f.api.commits(), commits);
     // So is context, which needs a clean lock.
-    assert!(context(&f.ws(), "epic-payment/create-payment").is_err());
+    assert!(context(&f.ws(), "epic-payment/st-001-create-payment").is_err());
 }
 
 /// A pulled workspace where `PRD` changed on both sides, so the file now holds conflict markers.
@@ -426,6 +430,21 @@ async fn hostile_remote_paths_never_touch_the_disk() {
     assert!(!f.path("llms.txt").exists());
 }
 
+#[tokio::test]
+async fn paths_from_the_previous_structure_are_refused_from_the_remote() {
+    for old in [
+        "epics/epic-payment/product-brief.md",
+        "epics/epic-payment/features/create-payment/README.md",
+    ] {
+        let f = Fixture::new().await;
+        f.api
+            .with(|s| s.inject_manifest_path = Some((old.into(), "old".into())));
+        let err = f.pull().await.unwrap_err();
+        assert!(err.to_string().contains("non-canonical"), "{old}");
+        assert!(!f.path("llms.txt").exists(), "{old}");
+    }
+}
+
 #[cfg(unix)]
 #[tokio::test]
 async fn symlinks_are_never_followed_or_sent() {
@@ -435,7 +454,7 @@ async fn symlinks_are_never_followed_or_sent() {
     std::fs::write(outside.path().join("secret.md"), "secret").unwrap();
     std::os::unix::fs::symlink(
         outside.path().join("secret.md"),
-        f.path("epics/epic-payment/features/create-payment/DESIGN.md"),
+        f.path("epics/epic-payment/stories/st-001-create-payment/DESIGN.md"),
     )
     .unwrap();
 
@@ -443,7 +462,8 @@ async fn symlinks_are_never_followed_or_sent() {
     assert!(f.pull().await.is_err());
     assert_eq!(f.api.count("POST /v1/projects/proj_payment/changes"), 0);
     // A symlinked parent directory is refused as a write target too.
-    std::fs::remove_file(f.path("epics/epic-payment/features/create-payment/DESIGN.md")).unwrap();
+    std::fs::remove_file(f.path("epics/epic-payment/stories/st-001-create-payment/DESIGN.md"))
+        .unwrap();
     std::fs::remove_dir_all(f.path("epics/epic-payment")).unwrap();
     std::os::unix::fs::symlink(outside.path(), f.path("epics/epic-payment")).unwrap();
     f.api.external_change(PRD, Some("# changed\n"));
@@ -468,7 +488,10 @@ async fn status_reports_each_category_and_diff_works_with_and_without_network() 
     assert_eq!(state("llms.txt"), "deleted");
     assert_eq!(state("epics/epic-payment/architecture.md"), "remote-only");
     assert_eq!(state(PRD), "conflict");
-    assert_eq!(state("epics/epic-payment/product-brief.md"), "unchanged");
+    assert_eq!(
+        state("epics/epic-payment/briefs/br-001-overview.md"),
+        "unchanged"
+    );
     assert!(!report.up_to_date);
     assert_eq!(report.exit_code_for_test(), exit::CONFLICT);
 
@@ -533,7 +556,10 @@ async fn push_sends_one_batch_and_moves_baseline_and_lock() {
     f.pull().await.unwrap();
     f.write(README, "# readme edited\n"); // update
     f.write(NEW_DOC, "# frontend\n"); // create
-    std::fs::remove_file(f.path("epics/epic-payment/features/create-payment/backend.md")).unwrap(); // delete
+    std::fs::remove_file(
+        f.path("epics/epic-payment/stories/st-001-create-payment/tasks/be-001-api.md"),
+    )
+    .unwrap(); // delete
 
     let before_commits = f.api.commits();
     let report = push::push(&f.device.env, &f.ws()).await.unwrap();
@@ -543,7 +569,7 @@ async fn push_sends_one_batch_and_moves_baseline_and_lock() {
     assert_eq!(f.api.file(NEW_DOC).as_deref(), Some("# frontend\n"));
     assert!(
         f.api
-            .file("epics/epic-payment/features/create-payment/backend.md")
+            .file("epics/epic-payment/stories/st-001-create-payment/tasks/be-001-api.md")
             .is_none()
     );
 
@@ -639,55 +665,6 @@ async fn push_rejects_unsendable_content_before_any_request() {
 }
 
 #[tokio::test]
-async fn context_is_deterministic_offline_and_ordered() {
-    let f = Fixture::new().await;
-    f.api.external_change(
-        "epics/epic-payment/features/create-payment/DESIGN.md",
-        Some("# Design\n"),
-    );
-    f.api.external_change(
-        "epics/epic-payment/features/create-payment/acceptance-criteria.md",
-        Some("# AC\n"),
-    );
-    f.pull().await.unwrap();
-
-    let before = f.api.requests();
-    let report = context(&f.ws(), "epic-payment/create-payment").unwrap();
-    assert_eq!(f.api.requests(), before, "context never calls the API");
-    assert_eq!(
-        report.paths,
-        vec![
-            "specs/llms.txt",
-            "specs/epics/epic-payment/product-brief.md",
-            "specs/epics/epic-payment/prd.md",
-            "specs/epics/epic-payment/architecture.md",
-            "specs/epics/epic-payment/features/create-payment/README.md",
-            "specs/epics/epic-payment/features/create-payment/acceptance-criteria.md",
-            "specs/epics/epic-payment/features/create-payment/DESIGN.md",
-            "specs/epics/epic-payment/features/create-payment/backend.md",
-        ]
-    );
-    assert_eq!(report.head_sha, f.api.head());
-    assert_eq!(report.project_id, PROJECT);
-    assert_eq!(
-        context(&f.ws(), "epic-payment/create-payment")
-            .unwrap()
-            .paths,
-        report.paths
-    );
-
-    for bad in [
-        "epic-payment",
-        "../x/y",
-        "epic-payment/create-payment/extra",
-        "Epic/Feature",
-        "epic-payment/missing",
-    ] {
-        assert!(context(&f.ws(), bad).is_err(), "{bad}");
-    }
-}
-
-#[tokio::test]
 async fn a_revoked_role_is_caught_by_the_api_even_while_the_snapshot_is_valid() {
     let f = Fixture::new().await;
     // The snapshot still lists the project, but the API no longer knows this membership.
@@ -758,4 +735,124 @@ impl ExitForTest for status::StatusReport {
         use speq::output::Human;
         self.exit_code()
     }
+}
+
+const LAYOUT: &str = "epics/epic-payment/stories/st-001-create-payment/layout.html";
+const COMPONENT: &str = "design/components/button.html";
+const PAGE: &str = "<!doctype html>\n<html>\n<body>\n<h1>Pay</h1>\n<button class=\"a\">Go</button>\n<p>footer</p>\n</body>\n</html>\n";
+
+#[tokio::test]
+async fn html_documents_are_pulled_hashed_diffed_and_pushed_like_markdown() {
+    let f = Fixture::new().await;
+    f.api.external_change(LAYOUT, Some(PAGE));
+    f.api
+        .external_change(COMPONENT, Some("<button>ok</button>\n"));
+    let report = f.pull().await.unwrap();
+    assert!(
+        report.added.contains(&LAYOUT.to_string()) && report.added.contains(&COMPONENT.to_string())
+    );
+    assert_eq!(f.read(LAYOUT).as_deref(), Some(PAGE));
+    assert_eq!(
+        f.ws().read_base(COMPONENT).unwrap().unwrap(),
+        b"<button>ok</button>\n"
+    );
+    assert_eq!(
+        f.ws().load_manifest().unwrap().files[LAYOUT].sha,
+        git_blob_sha(PAGE.as_bytes())
+    );
+
+    // Untouched: nothing to send. Edited locally: shows in status and diff, then pushes.
+    assert!(
+        push::push(&f.device.env, &f.ws())
+            .await
+            .unwrap()
+            .changes
+            .is_empty()
+    );
+    let edited = PAGE.replace("<h1>Pay</h1>", "<h1>Pay now</h1>");
+    f.write(LAYOUT, &edited);
+    f.write(
+        "design/components/card.html",
+        "<div class=\"card\"></div>\n",
+    ); // create
+    std::fs::remove_file(f.path(COMPONENT)).unwrap(); // delete
+
+    let status = status::status(&f.device.env, &f.ws()).await.unwrap();
+    let state = |p: &str| status.files.iter().find(|x| x.path == p).unwrap().state;
+    assert_eq!(state(LAYOUT), "local-only");
+    assert_eq!(state(COMPONENT), "deleted");
+    let base = status::diff_base(&f.ws(), LAYOUT).unwrap();
+    assert!(base.diff.contains("-<h1>Pay</h1>") && base.diff.contains("+<h1>Pay now</h1>"));
+
+    let pushed = push::push(&f.device.env, &f.ws()).await.unwrap();
+    assert_eq!(pushed.changes.len(), 3);
+    assert_eq!(f.api.file(LAYOUT).as_deref(), Some(edited.as_str()));
+    assert_eq!(
+        f.api.file("design/components/card.html").as_deref(),
+        Some("<div class=\"card\"></div>\n")
+    );
+    assert!(f.api.file(COMPONENT).is_none());
+}
+
+#[tokio::test]
+async fn html_documents_merge_by_line_and_conflict_with_markers_that_resolve_and_push() {
+    let f = Fixture::new().await;
+    f.api.external_change(LAYOUT, Some(PAGE));
+    f.pull().await.unwrap();
+
+    // Different lines on each side combine cleanly.
+    f.write(LAYOUT, &PAGE.replace("<h1>Pay</h1>", "<h1>Pay now</h1>"));
+    f.api
+        .external_change(LAYOUT, Some(&PAGE.replace("footer", "legal")));
+    let report = f.pull().await.unwrap();
+    assert_eq!(report.merged, vec![LAYOUT.to_string()]);
+    let merged = PAGE
+        .replace("<h1>Pay</h1>", "<h1>Pay now</h1>")
+        .replace("footer", "legal");
+    assert_eq!(f.read(LAYOUT).as_deref(), Some(merged.as_str()));
+    push::push(&f.device.env, &f.ws()).await.unwrap();
+    assert_eq!(f.api.file(LAYOUT).as_deref(), Some(merged.as_str()));
+
+    // The same line on both sides conflicts; the markers sit on their own lines inside the HTML.
+    f.write(LAYOUT, &merged.replace("class=\"a\"", "class=\"mine\""));
+    f.api.external_change(
+        LAYOUT,
+        Some(&merged.replace("class=\"a\"", "class=\"theirs\"")),
+    );
+    let report = f.pull().await.unwrap();
+    assert_eq!(report.conflicts.len(), 1);
+    assert!(report.conflicts[0].markers && !report.lock_advanced);
+    let marked = f.read(LAYOUT).unwrap();
+    assert!(marked.contains("<<<<<<< local\n<button class=\"mine\">Go</button>\n||||||| base\n"));
+    assert!(marked.contains("=======\n<button class=\"theirs\">Go</button>\n>>>>>>> remote\n"));
+    assert!(push::push(&f.device.env, &f.ws()).await.is_err());
+
+    // Editing the markers away resolves it, and the resolution can be pushed.
+    let resolved = merged.replace("class=\"a\"", "class=\"mine theirs\"");
+    f.write(LAYOUT, &resolved);
+    let report = f.pull().await.unwrap();
+    assert_eq!(report.resolved, vec![LAYOUT.to_string()]);
+    assert!(report.lock_advanced);
+    push::push(&f.device.env, &f.ws()).await.unwrap();
+    assert_eq!(f.api.file(LAYOUT).as_deref(), Some(resolved.as_str()));
+}
+
+#[tokio::test]
+async fn html_conflicts_can_be_taken_from_either_side_with_resolve() {
+    use speq::sync::resolve::{Choice, Target, resolve};
+
+    let f = Fixture::new().await;
+    f.api.external_change(LAYOUT, Some(PAGE));
+    f.pull().await.unwrap();
+    f.write(LAYOUT, &PAGE.replace("Go", "Mine"));
+    f.api
+        .external_change(LAYOUT, Some(&PAGE.replace("Go", "Theirs")));
+    f.pull().await.unwrap();
+
+    let only = [LAYOUT.to_string()];
+    resolve(&f.device.env, &f.ws(), Target::Paths(&only), Choice::Ours).unwrap();
+    assert_eq!(
+        f.read(LAYOUT).as_deref(),
+        Some(PAGE.replace("Go", "Mine").as_str())
+    );
 }

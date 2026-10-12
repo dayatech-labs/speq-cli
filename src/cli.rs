@@ -125,9 +125,9 @@ pub enum Command {
     )]
     Push,
 
-    /// Print the files a coding agent should read for one feature
+    /// Print the files a coding agent should read for one story
     #[command(
-        after_help = "Arguments:\n  <TARGET>  `<epic>/<feature>`, for example epic-payment/create-payment\n\nExamples:\n  speq context epic-payment/create-payment\n  speq context epic-payment/create-payment --json\n\nPrints one path per line in a fixed order, from the local copy (no network). Requires a clean workspace.\n\n"
+        after_help = "Arguments:\n  <TARGET>  `<epic>/<story>` where <story> is the story folder name, for example epic-payment/st-001-create-payment\n\nExamples:\n  speq context epic-payment/st-001-create-payment\n  speq context epic-payment/st-001-create-payment --json\n\nPrints one path per line in a fixed order, from the local copy (no network): llms.txt, README.md, architecture.md, the epic's briefs, prd.md and architecture.md, then the story's README.md, acceptance-criteria.md, DESIGN.md, layout.html and tasks. Only files that exist are listed. Requires a clean workspace.\n\n"
     )]
     Context(ContextArgs),
 
@@ -234,7 +234,7 @@ pub struct ResolveArgs {
 
 #[derive(Args, Debug)]
 pub struct ContextArgs {
-    /// `<epic>/<feature>`
+    /// `<epic>/<story>`, for example `epic-payment/st-001-create-payment`
     pub target: String,
 }
 

@@ -4,7 +4,7 @@ use crate::env::Env;
 use crate::error::{Error, IoContext, Result};
 use crate::fsx::{self, FileLock, Visibility};
 use crate::hashing::git_blob_sha;
-use crate::paths::{self, is_canonical_markdown, is_valid_local_dir, join_canonical};
+use crate::paths::{self, is_canonical_document, is_valid_local_dir, join_canonical};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
@@ -81,7 +81,7 @@ impl LockState {
 pub struct LocalScan {
     /// Canonical path → Git blob SHA of the local content.
     pub files: BTreeMap<String, String>,
-    /// Files ignored with the reason (not canonical Markdown, hidden directory, non-UTF-8 name).
+    /// Files ignored with the reason (not a canonical document, hidden directory, non-UTF-8 name).
     pub skipped: Vec<(String, &'static str)>,
     /// Symlinks and special files inside the working copy: never followed, never sent.
     pub unsafe_paths: Vec<String>,
@@ -240,7 +240,7 @@ impl Workspace {
 
     /// Reject targets that are not canonical documents, or whose path crosses a symlink.
     pub fn check_target(&self, canonical: &str) -> Result<()> {
-        if !is_canonical_markdown(canonical) {
+        if !is_canonical_document(canonical) {
             return Err(Error::invalid(format!(
                 "{canonical:?} is not a canonical specs document path"
             )));
@@ -335,7 +335,7 @@ impl Workspace {
         self.set_conflict(Side::Theirs, canonical, None)
     }
 
-    /// Hash every canonical Markdown file under `local_dir`. Symlinks are reported, never followed.
+    /// Hash every canonical document (Markdown, `llms.txt`, HTML) under `local_dir`. Symlinks are reported, never followed.
     pub fn scan(&self) -> Result<LocalScan> {
         let mut scan = LocalScan::default();
         let specs = self.specs_dir();
@@ -385,12 +385,11 @@ fn walk(dir: &Path, prefix: &str, scan: &mut LocalScan) -> Result<()> {
                 walk(&entry.path(), &format!("{rel}/"), scan)?;
             }
         } else if kind.is_file() {
-            if is_canonical_markdown(&rel) {
+            if is_canonical_document(&rel) {
                 let bytes = fs::read(entry.path()).ctx(format!("read {rel}"))?;
                 scan.files.insert(rel, git_blob_sha(&bytes));
             } else if !name.starts_with('.') {
-                scan.skipped
-                    .push((rel, "not a canonical Markdown document path"));
+                scan.skipped.push((rel, "not a canonical document path"));
             }
         } else {
             scan.unsafe_paths.push(rel);
@@ -433,12 +432,13 @@ pub fn ensure_gitignore(root: &Path, local_dir: &str) -> Result<()> {
     fsx::atomic_write(&path, updated.as_bytes(), Visibility::Shared)
 }
 
-pub fn ensure_valid_epic_feature(epic: &str, feature: &str) -> Result<()> {
-    if paths::is_folder_name(epic) && paths::is_folder_name(feature) {
+/// The epic and story folder names `speq context <epic>/<story>` accepts.
+pub fn ensure_valid_epic_story(epic: &str, story: &str) -> Result<()> {
+    if paths::is_folder_name(epic) && paths::is_story_folder(story) {
         Ok(())
     } else {
         Err(Error::invalid(
-            "the epic and the feature must be lowercase folder names such as `epic-payment/create-payment`",
+            "the epic must be a lowercase folder name and the story a folder named `st-<number>-<name>`, such as `epic-payment/st-001-create-payment`",
         ))
     }
 }

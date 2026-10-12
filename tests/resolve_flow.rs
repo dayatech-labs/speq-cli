@@ -9,9 +9,9 @@ use speq::workspace::Side;
 use support::Fixture;
 
 const PRD: &str = "epics/epic-payment/prd.md";
-const README: &str = "epics/epic-payment/features/create-payment/README.md";
-const BRIEF: &str = "epics/epic-payment/product-brief.md";
-const NEW_DOC: &str = "epics/epic-payment/features/create-payment/frontend.md";
+const README: &str = "epics/epic-payment/stories/st-001-create-payment/README.md";
+const BRIEF: &str = "epics/epic-payment/briefs/br-001-overview.md";
+const NEW_DOC: &str = "epics/epic-payment/stories/st-001-create-payment/tasks/fe-001-form.md";
 
 const FIVE: &str = "one\ntwo\nthree\nfour\nfive\n";
 const PRD_LOCAL: &str = "ONE\ntwo\nthree\nLOCAL\nfive\n";

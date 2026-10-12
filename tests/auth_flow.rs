@@ -211,12 +211,12 @@ async fn role_change_refreshes_the_snapshot_after_a_403() {
     let f = support::Fixture::new().await;
     f.api.with(|s| s.forbid_writes = true);
     f.write(
-        "epics/epic-payment/features/create-payment/DESIGN.md",
+        "epics/epic-payment/stories/st-001-create-payment/DESIGN.md",
         "# CLI\n",
     );
     f.pull().await.unwrap();
     f.write(
-        "epics/epic-payment/features/create-payment/DESIGN.md",
+        "epics/epic-payment/stories/st-001-create-payment/DESIGN.md",
         "# CLI\n",
     );
     let before = f.api.count("GET /v1/projects");

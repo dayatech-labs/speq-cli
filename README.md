@@ -82,7 +82,7 @@ speq pull                               # downloads every specs document into ./
 speq status                             # unchanged / local-only / remote-only / conflict / deleted
 speq diff epics/epic-payment/prd.md           # against the latest remote (add --base to compare offline)
 speq push                               # one batch through the API
-speq context epic-payment/create-payment   # files a coding agent should read, one per line
+speq context epic-payment/st-001-create-payment   # files a coding agent should read for one story, one per line
 ```
 
 `speq help` lists every command; `speq <command> --help` shows usage, arguments, flags, examples, and exit codes.
@@ -102,9 +102,26 @@ Text output follows one template (`src/template.rs`): a title with an icon (`✔
 | `update <path>` | apply the latest remote version of one file, only when it has no local changes |
 | `resolve <path>... \| --all [--ours \| --theirs]` | finish conflicts after a pull, offline: keep the file you edited, restore your version (`--ours`) or take the remote's (`--theirs`, discards your edits; asks first). See [Resolving conflicts](#resolving-conflicts) |
 | `push` | send local changes as one batch; refused while the workspace has conflicts |
-| `context <epic>/<feature>` | deterministic list of context files, from the local copy |
+| `context <epic>/<story>` | deterministic list of context files for one story (`st-NNN-name` folder), from the local copy: `llms.txt`, root `README.md` and `architecture.md`, the epic's briefs, `prd.md`, `architecture.md`, then the story's `README.md`, `acceptance-criteria.md`, `DESIGN.md`, `layout.html`, and tasks. Only files that exist |
 | `upgrade` | check for / install a newer `speq` binary |
 | `uninstall` | remove local data and, for an official install, the binary |
+
+### Specs layout
+
+Only these paths are documents `speq` syncs (the API enforces the same rules; anything else under `specs/` is ignored and listed by `status`):
+
+```text
+llms.txt, README.md, architecture.md
+design/**.md and design/**.html
+epics/<epic>/prd.md, architecture.md
+epics/<epic>/briefs/br-NNN-<name>.md
+epics/<epic>/decisions/dr-NN-<name>.md
+epics/<epic>/stories/st-NNN-<name>/README.md, acceptance-criteria.md, DESIGN.md, layout.html
+epics/<epic>/stories/st-NNN-<name>/tasks/<type>-NNN-<name>.md      (type: 2-8 lowercase letters, e.g. fe, be)
+```
+
+HTML documents sync, diff, merge, and resolve line by line exactly like Markdown. The older layout
+(`product-brief.md`, `features/<feature>/...`) is no longer recognised.
 
 ### How sync stays safe
 

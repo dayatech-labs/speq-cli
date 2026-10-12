@@ -8,7 +8,7 @@ pub mod status;
 
 use crate::api::SyncManifest;
 use crate::error::{Error, Result};
-use crate::paths::is_canonical_markdown;
+use crate::paths::is_canonical_document;
 use crate::workspace::{LocalScan, LockState, Side, Workspace};
 use std::collections::BTreeMap;
 
@@ -37,7 +37,7 @@ pub const PULL_ATTEMPTS: u32 = 3;
 pub fn remote_shas(manifest: &SyncManifest) -> Result<BTreeMap<String, String>> {
     let mut shas = BTreeMap::new();
     for file in &manifest.files {
-        if !is_canonical_markdown(&file.path) {
+        if !is_canonical_document(&file.path) {
             return Err(Error::Other(format!(
                 "the API returned a non-canonical path {:?}; refusing to sync",
                 file.path
