@@ -1,0 +1,2 @@
+# Test fixture: a project UUID in an address round-trip test, not a credential.
+3b6971990eb1a5205438356c7422c694b0c9686f:src/repo.rs:generic-api-key:137
