@@ -968,8 +968,11 @@ impl Machine {
         let api = FakeApi::start();
         let home = tempfile::tempdir().expect("home");
         std::fs::write(home.path().join(".gitconfig"), "").expect("gitconfig");
-        // Windows resolves the local app-data folder as `%USERPROFILE%\AppData\Local` and fails when it is missing.
-        std::fs::create_dir_all(home.path().join("AppData").join("Local")).expect("app data");
+        // Windows resolves the app-data folders under `%USERPROFILE%\AppData` and `ProjectDirs` fails unless both
+        // `Local` and `Roaming` exist.
+        for dir in ["Local", "Roaming"] {
+            std::fs::create_dir_all(home.path().join("AppData").join(dir)).expect("app data");
+        }
         let store = home.path().join("tokens.json");
         let device = Device::with_store(&api, Arc::new(speq::dev_store::FileStore::new(&store)));
         device.login().await;
