@@ -1,5 +1,7 @@
 //! The specs repository: an ordinary Git repository made by `speq clone`. It fetches from the API's read-only Git
-//! endpoint and pushes through `git-remote-speq`, so its push URL (`speq::<api>/v1/projects/<id>`) is what marks it.
+//! endpoint and pushes through `git-remote-speq` (push URL `speq::<api>/v1/projects/<id>`). What marks it is
+//! `speq.address`, not `origin`: a user may change or remove `origin` like in any Git repository, and speq must still
+//! recognise the folder to say how to put `origin` back.
 use crate::api::parse_api_url;
 use crate::error::{Error, Result};
 use crate::git::Git;
@@ -10,6 +12,8 @@ use url::Url;
 pub const TRANSPORT: &str = "speq::";
 /// The folder `speq clone` uses inside an implementation repository, and where speq looks for it from there.
 pub const DEFAULT_DIR: &str = "specs";
+/// Git config key holding the repository's [`address`], written by `speq clone`.
+pub const ADDRESS_KEY: &str = "speq.address";
 /// Where the older, pre-Git speq kept a workspace's state.
 pub const LEGACY_DIR: &str = ".speq";
 
@@ -79,12 +83,19 @@ impl SpecsRepo {
             return Ok(None);
         }
         let root = PathBuf::from(String::from_utf8_lossy(&top.stdout).trim());
-        let push = git.output(Some(&root), ["config", "--get", "remote.origin.pushurl"])?;
-        let push = String::from_utf8_lossy(&push.stdout).trim().to_string();
-        let Some(address) = push.strip_prefix(TRANSPORT) else {
-            return Ok(None);
+        let get = |key: &str| -> Result<String> {
+            let out = git.output(Some(&root), ["config", "--get", key])?;
+            Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
         };
-        let (api_url, project_id) = parse_address(address)?;
+        let mut address = get(ADDRESS_KEY)?;
+        if address.is_empty() {
+            // Cloned before `speq.address` existed: the push URL was the mark then.
+            match get("remote.origin.pushurl")?.strip_prefix(TRANSPORT) {
+                Some(rest) => address = rest.to_string(),
+                None => return Ok(None),
+            }
+        }
+        let (api_url, project_id) = parse_address(&address)?;
         Ok(Some(SpecsRepo {
             root,
             api_url,
@@ -116,6 +127,37 @@ impl SpecsRepo {
         Err(Error::NotInitialized)
     }
 
+    /// How to point `origin` back at this repository's project, or None when it already does. Best effort: speq
+    /// runs it after every Git command, so a failure to read the config only skips the advice.
+    pub fn origin_repair(&self, git: &Git) -> Option<Vec<String>> {
+        let out = git
+            .output(
+                Some(&self.root),
+                ["config", "--get-regexp", r"^remote\.origin\."],
+            )
+            .ok()?;
+        // Exit 1 means no such keys: `origin` was removed or renamed.
+        if !out.status.success() && out.status.code() != Some(1) {
+            return None;
+        }
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        let (mut urls, mut push_urls) = (Vec::new(), Vec::new());
+        for line in stdout.lines() {
+            match line.split_once(' ') {
+                Some(("remote.origin.url", value)) => urls.push(value.to_string()),
+                Some(("remote.origin.pushurl", value)) => push_urls.push(value.to_string()),
+                _ => {}
+            }
+        }
+        repair_commands(
+            !stdout.is_empty(),
+            &fetch_url(&self.api_url, &self.project_id),
+            &format!("{TRANSPORT}{}", address(&self.api_url, &self.project_id)),
+            &urls,
+            &push_urls,
+        )
+    }
+
     /// Where Git should run for a command typed in `cwd`: `cwd` itself inside the repository (so relative paths
     /// mean what the user sees), else the repository root.
     pub fn git_dir_for(&self, cwd: &Path) -> Option<PathBuf> {
@@ -125,6 +167,39 @@ impl SpecsRepo {
             .is_some_and(|(cwd, root)| cwd.starts_with(root));
         (!inside).then(|| self.root.clone())
     }
+}
+
+/// The speq commands that make `origin` fetch from `fetch` and push to `push` again, given whether `origin` exists
+/// and its current URLs.
+fn repair_commands(
+    exists: bool,
+    fetch: &str,
+    push: &str,
+    urls: &[String],
+    push_urls: &[String],
+) -> Option<Vec<String>> {
+    if !exists {
+        return Some(vec![
+            format!("speq remote add -t main origin {fetch}"),
+            format!("speq remote set-url --push origin {push}"),
+            "speq fetch origin".to_string(),
+            "speq branch -u origin/main main".to_string(),
+        ]);
+    }
+    let mut commands = Vec::new();
+    for (current, key, flag, url) in [
+        (urls, "url", "", fetch),
+        (push_urls, "pushurl", "--push ", push),
+    ] {
+        if *current != [url] {
+            // `remote set-url` cannot replace several values at once, and every extra push URL would get the push.
+            if current.len() > 1 {
+                commands.push(format!("speq config --unset-all remote.origin.{key}"));
+            }
+            commands.push(format!("speq remote set-url {flag}origin {url}"));
+        }
+    }
+    (!commands.is_empty()).then_some(commands)
 }
 
 #[cfg(test)]
@@ -164,5 +239,68 @@ mod tests {
         ] {
             assert!(parse_address(bad).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn origin_repair_names_only_what_is_wrong() {
+        const FETCH: &str = "https://speq.example.com/v1/projects/p/git";
+        const PUSH: &str = "speq::https://speq.example.com/v1/projects/p";
+        let v = |urls: &[&str]| urls.iter().map(|u| u.to_string()).collect::<Vec<_>>();
+        let repair = |exists, urls: &[&str], push: &[&str]| {
+            repair_commands(exists, FETCH, PUSH, &v(urls), &v(push))
+        };
+
+        assert_eq!(repair(true, &[FETCH], &[PUSH]), None);
+        assert_eq!(
+            repair(
+                true,
+                &["https://github.com/acme/payment-specs.git"],
+                &[PUSH]
+            )
+            .unwrap(),
+            [format!("speq remote set-url origin {FETCH}")]
+        );
+        // Without a push URL Git would push to the read-only fetch URL.
+        assert_eq!(
+            repair(true, &[FETCH], &[]).unwrap(),
+            [format!("speq remote set-url --push origin {PUSH}")]
+        );
+        assert_eq!(
+            repair(
+                true,
+                &["https://github.com/a/b.git"],
+                &["speq::https://speq.example.com/v1/projects/other"]
+            )
+            .unwrap(),
+            [
+                format!("speq remote set-url origin {FETCH}"),
+                format!("speq remote set-url --push origin {PUSH}"),
+            ]
+        );
+        // An extra push URL would receive every push too, and `set-url` cannot replace several values.
+        assert_eq!(
+            repair(true, &[FETCH], &[PUSH, "https://github.com/a/b.git"]).unwrap(),
+            [
+                "speq config --unset-all remote.origin.pushurl".to_string(),
+                format!("speq remote set-url --push origin {PUSH}"),
+            ]
+        );
+        assert_eq!(
+            repair(true, &[FETCH, FETCH], &[PUSH]).unwrap(),
+            [
+                "speq config --unset-all remote.origin.url".to_string(),
+                format!("speq remote set-url origin {FETCH}"),
+            ]
+        );
+        // Removed or renamed: added again, fetched, and tracked by main.
+        assert_eq!(
+            repair(false, &[], &[]).unwrap(),
+            [
+                format!("speq remote add -t main origin {FETCH}"),
+                format!("speq remote set-url --push origin {PUSH}"),
+                "speq fetch origin".to_string(),
+                "speq branch -u origin/main main".to_string(),
+            ]
+        );
     }
 }

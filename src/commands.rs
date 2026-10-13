@@ -89,6 +89,19 @@ fn current_dir() -> Result<PathBuf> {
     })
 }
 
+/// After a Git command, says how to restore `origin` if it no longer points at the project: checked afterwards, so
+/// the command that changed it is answered at once and the one that fixes it stays quiet.
+fn warn_about_origin(git: &Git, repo: &SpecsRepo) {
+    if let Some(commands) = repo.origin_repair(git) {
+        eprintln!(
+            "speq: origin no longer points to this Speq project, so fetch, pull, and push may fail. Restore it with:"
+        );
+        for command in commands {
+            eprintln!("  {command}");
+        }
+    }
+}
+
 /// Runs a Git route and returns Git's exit code.
 pub fn run_git(route: Route) -> Result<u8> {
     let git = Git::locate(helper_dir())?;
@@ -97,7 +110,9 @@ pub fn run_git(route: Route) -> Result<u8> {
         Route::GitHelp(args) => git.passthrough(None, args),
         Route::Git(args) => {
             let repo = SpecsRepo::discover(&git, &cwd)?;
-            git.passthrough(repo.git_dir_for(&cwd).as_deref(), args)
+            let code = git.passthrough(repo.git_dir_for(&cwd).as_deref(), args);
+            warn_about_origin(&git, &repo);
+            code
         }
         Route::SquashPush(args) => {
             let repo = SpecsRepo::discover(&git, &cwd)?;
@@ -106,7 +121,9 @@ pub fn run_git(route: Route) -> Result<u8> {
             if squashed > 1 {
                 eprintln!("speq: squashed {squashed} commits into one");
             }
-            git.passthrough(dir.as_deref(), args)
+            let code = git.passthrough(dir.as_deref(), args);
+            warn_about_origin(&git, &repo);
+            code
         }
         Route::Speq => Err(Error::Other("not a Git command".into())),
     }

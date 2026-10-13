@@ -119,6 +119,7 @@ and every Git command exits with Git's code.
 ### What `speq clone` sets up
 
 ```text
+speq.address             <api>/v1/projects/<id>              marks the folder as this project's specs repository
 remote.origin.url        <api>/v1/projects/<id>/git          fetch: the API's read-only Git endpoint
 remote.origin.pushurl    speq::<api>/v1/projects/<id>        push: git-remote-speq → POST /git/push
 credential.<api>.helper  speq                                git-credential-speq hands Git your Speq token
@@ -128,7 +129,9 @@ pull.rebase=true, rebase.autoStash=true                      pulls rebase, so pu
 merge.conflictStyle=diff3                                    conflicts show the base version too
 ```
 
-Only `main` is fetched. Because it is plain Git, editors and other Git tools work too, such as VS Code's Source Control
+Only `main` is fetched. If `origin` is changed or removed, speq still recognises the folder by `speq.address` and,
+after every Git command, prints the commands that point `origin` back (see [docs/usage.md](docs/usage.md)). Because it
+is plain Git, editors and other Git tools work too, such as VS Code's Source Control
 and Sync. They run `git` directly, so they need `git-remote-speq` and `git-credential-speq` on your `PATH`, which the
 installers take care of.
 

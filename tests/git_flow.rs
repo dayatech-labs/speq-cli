@@ -733,3 +733,138 @@ async fn deinit_outside_any_specs_folder_changes_nothing() {
     assert!(out.stderr.contains("Not a Speq specs repository"));
     assert!(elsewhere.join("file.txt").exists());
 }
+
+const ORIGIN_WARNING: &str = "speq: origin no longer points to this Speq project";
+
+/// Runs the commands speq printed to restore `origin`, exactly as a user would copy them.
+fn run_printed_repair(m: &Machine, specs: &Path, stderr: &str) {
+    let commands: Vec<&str> = stderr
+        .lines()
+        .skip_while(|l| !l.starts_with(ORIGIN_WARNING))
+        .skip(1)
+        .take_while(|l| l.starts_with("  speq "))
+        .collect();
+    assert!(!commands.is_empty(), "{stderr}");
+    for command in commands {
+        let args: Vec<&str> = command.split_whitespace().skip(1).collect();
+        m.run(specs, &args).ok();
+    }
+}
+
+#[tokio::test]
+async fn a_changed_origin_is_explained_and_the_printed_commands_restore_it() {
+    let m = Machine::new().await;
+    let (app, specs) = m.clone_into_app();
+    let address = format!("{}/v1/projects/{PROJECT}", m.api.url);
+    assert_eq!(
+        m.run(&specs, &["config", "speq.address"])
+            .ok()
+            .stdout
+            .trim(),
+        address
+    );
+    // Untouched origin: no advice.
+    assert!(
+        !m.run(&app, &["status"])
+            .ok()
+            .stderr
+            .contains(ORIGIN_WARNING)
+    );
+
+    // Pointing the push somewhere else is answered by the very command that does it.
+    let elsewhere = "http://127.0.0.1:1/acme/payment-specs.git";
+    let changed = m
+        .run(
+            &specs,
+            &["remote", "set-url", "--push", "origin", elsewhere],
+        )
+        .ok();
+    assert!(
+        changed.stderr.contains(ORIGIN_WARNING),
+        "{}",
+        changed.stderr
+    );
+    assert!(
+        changed.stderr.contains(&format!(
+            "  speq remote set-url --push origin speq::{address}\n"
+        )),
+        "{}",
+        changed.stderr
+    );
+    assert!(
+        !changed.stderr.contains("set-url origin "),
+        "{}",
+        changed.stderr
+    );
+
+    // The folder is still a specs repository: every command keeps working and keeps saying how to fix it.
+    m.write(&specs.join(PRD), "# PRD\n\nRefunds within 30 days.\n");
+    m.run(
+        &specs,
+        &["commit", "-q", "-am", "docs: add the refund rule"],
+    )
+    .ok();
+    let push = m.run(&specs, &["push"]);
+    assert_ne!(push.code, 0);
+    assert!(push.stderr.contains(ORIGIN_WARNING), "{}", push.stderr);
+    assert!(m.api.with(|s| s.pushes.is_empty()));
+
+    run_printed_repair(&m, &specs, &changed.stderr);
+    let pushed = m.run(&app, &["push"]).ok();
+    assert!(!pushed.stderr.contains(ORIGIN_WARNING), "{}", pushed.stderr);
+    assert_eq!(m.api.head(), head(&m, &specs));
+}
+
+#[tokio::test]
+async fn a_removed_origin_can_be_added_back_with_the_printed_commands() {
+    let m = Machine::new().await;
+    let (app, specs) = m.clone_into_app();
+
+    let removed = m.run(&app, &["remote", "remove", "origin"]).ok();
+    assert!(
+        removed.stderr.contains(&format!(
+            "  speq remote add -t main origin {}/v1/projects/{PROJECT}/git\n",
+            m.api.url
+        )),
+        "{}",
+        removed.stderr
+    );
+    // Not locked out: speq still finds the repository, from the app too.
+    m.run(&app, &["log", "--oneline"]).ok();
+
+    m.api
+        .external_change(PRD, Some("# PRD\n\nChanged on the web.\n"));
+    run_printed_repair(&m, &specs, &removed.stderr);
+    let status = m.run(&specs, &["status", "-sb"]).ok();
+    assert!(
+        status
+            .stdout
+            .starts_with("## main...origin/main [behind 1]\n"),
+        "{}",
+        status.stdout
+    );
+    assert!(!status.stderr.contains(ORIGIN_WARNING), "{}", status.stderr);
+
+    m.run(&app, &["pull", "-q"]).ok();
+    commit(&m, &specs, PRD, "# PRD\n\nBack online.\n", "docs: reword");
+    m.run(&app, &["push"]).ok();
+    assert_eq!(m.api.head(), head(&m, &specs));
+}
+
+#[tokio::test]
+async fn deinit_still_works_without_origin() {
+    let m = Machine::new().await;
+    let (app, specs) = m.clone_into_app();
+    m.run(&app, &["remote", "remove", "origin"]).ok();
+    m.run(&app, &["deinit", "--yes"]).ok();
+    assert!(!specs.exists());
+}
+
+#[tokio::test]
+async fn a_repository_cloned_before_speq_address_is_still_recognised() {
+    let m = Machine::new().await;
+    let (app, specs) = m.clone_into_app();
+    m.run(&specs, &["config", "--unset", "speq.address"]).ok();
+    let out = m.run(&app, &["status"]).ok();
+    assert!(!out.stderr.contains(ORIGIN_WARNING), "{}", out.stderr);
+}

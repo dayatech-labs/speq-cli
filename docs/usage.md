@@ -19,8 +19,9 @@ install Git when it is missing.
 4. [Everyday flow](#4-everyday-flow)
 5. [When there is a conflict](#5-when-there-is-a-conflict)
 6. [Pushes rejected for other reasons](#6-pushes-rejected-for-other-reasons)
-7. [Starting over](#7-starting-over)
-8. [Exit codes](#8-exit-codes)
+7. [If `origin` was changed or removed](#7-if-origin-was-changed-or-removed)
+8. [Starting over](#8-starting-over)
+9. [Exit codes](#9-exit-codes)
 
 ## 1. speq's own commands
 
@@ -312,7 +313,26 @@ written to the remote.
 | `... must be a regular file` | A document is a symlink or executable | Replace it with a plain file, then amend |
 | `not logged in to Speq; run speq login` | The token expired or you logged out | `speq login`, then push again |
 
-## 7. Starting over
+## 7. If `origin` was changed or removed
+
+`origin` is an ordinary Git remote, so `speq remote set-url`, `speq remote remove origin`, or `speq remote rename`
+work as in Git. Pushes and fetches only work while `origin` points at the Speq project, though: fetch from the API's
+read-only endpoint, push through `speq::`. When it does not, every Git command through speq ends with a warning and the
+exact commands that restore it, for example:
+
+```text
+speq: origin no longer points to this Speq project, so fetch, pull, and push may fail. Restore it with:
+  speq remote set-url --push origin speq::https://speq-api.example.com/v1/projects/<id>
+```
+
+Run them as printed. speq keeps recognising the folder in the meantime (it is marked by `speq.address` in the
+repository's config, not by `origin`), so `speq deinit` also still works.
+
+Pointing `origin` elsewhere gives no way around the push rules. Your Speq token is only ever sent to the Speq API it
+belongs to, another Speq project checks your role there, and pushing straight to GitHub needs GitHub access of your
+own.
+
+## 8. Starting over
 
 To throw away the local copy and clone again from the remote:
 
@@ -325,7 +345,7 @@ speq clone acme/payment-specs
 `speq deinit --yes` skips the confirmation (for automation). Your login and the `.gitignore` entry stay. Folders made by
 the older speq (`.speq/` and its specs folder) are removed by the same command.
 
-## 8. Exit codes
+## 9. Exit codes
 
 speq's own commands:
 

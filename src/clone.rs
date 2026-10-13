@@ -184,6 +184,11 @@ fn prepare(
     config(
         git,
         target,
+        &[repo::ADDRESS_KEY, &repo::address(api_url, project_id)],
+    )?;
+    config(
+        git,
+        target,
         &["remote.origin.url", &repo::fetch_url(api_url, project_id)],
     )?;
     config(
