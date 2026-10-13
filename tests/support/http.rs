@@ -11,7 +11,8 @@ pub struct Request {
     pub method: String,
     pub url: String,
     pub headers: HashMap<String, String>,
-    pub body: String,
+    /// Raw bytes: Git's pack negotiation is binary.
+    pub body: Vec<u8>,
 }
 
 pub struct Reply {
@@ -52,7 +53,7 @@ fn read_request(stream: &TcpStream) -> Option<Request> {
         method,
         url,
         headers,
-        body: String::from_utf8_lossy(&body).into_owned(),
+        body,
     })
 }
 

@@ -38,11 +38,15 @@ CI menjalankan `fmt`, `clippy`, dan `test` di macOS (arm64), Linux (musl), dan W
 ## Struktur
 
 ```text
-src/main.rs, cli.rs, commands.rs   titik masuk, definisi argumen, dan handler perintah
+src/main.rs, cli.rs, commands.rs   titik masuk (juga sebagai git-remote-speq/git-credential-speq), argumen, routing ke Git
+src/git.rs, repo.rs                menjalankan Git dengan env bersih; menemukan repository specs (push URL speq::)
+src/clone.rs, context.rs           `speq list`, `speq clone`, `speq context`
+src/remote_helper.rs, squash.rs    git-remote-speq (push ke POST /git/push) dan `speq push --squash`
+src/git_auth.rs, links.rs          git-credential-speq; link helper di samping binary
 src/api.rs                         client HTTP ke API Speq
-src/session.rs, credentials.rs     login, token, dan penyimpanan di credential store OS
-src/workspace.rs, snapshot.rs      sinkronisasi tiga arah, lock, manifest, baseline
-src/paths.rs, fsx.rs, hashing.rs   path aman, tulis atomik, hash blob Git
+src/session.rs, credentials.rs     login, token, dan penyimpanan di credential store OS (dev_store.rs: hanya build debug)
+src/snapshot.rs                    cache capability
+src/paths.rs, fsx.rs, hashing.rs   path kanonik dan pola policy, tulis atomik, hash
 src/upgrade.rs                     self-upgrade
 src/output.rs, error.rs            keluaran manusia/JSON dan kode keluar
 tests/                             tes integrasi melawan API palsu (tests/support/)
@@ -52,8 +56,8 @@ docs/releasing.md                  proses rilis
 
 ## Aturan yang wajib diikuti
 
-- **Keamanan sinkronisasi** (lihat README, "How sync stays safe"): tidak ada opsi force atau buang-lokal, `pull` tidak menimpa kerja lokal, tulis lewat file sementara lalu rename atomik, symlink dan path di luar `specs/` tidak pernah diikuti, dan `push` tidak pernah di-retry otomatis. Perubahan yang melonggarkan ini perlu diskusi dulu.
-- **Kredensial**: token hanya di credential store OS. Log tidak boleh memuat token atau isi dokumen; `SPEQ_LOG=debug` hanya menampilkan method, path, status, dan request ID. Tes tidak boleh menyentuh credential store, scheduler, atau jaringan sungguhan.
+- **Perilaku Git tetap milik Git** (lihat README, "How pushing works"): perintah selain milik speq diteruskan apa adanya ke Git, kode keluar Git diteruskan, dan speq tidak menulis ulang history tanpa diminta (`--squash` opt-in, menolak bila ada staged changes atau cabang belum memuat `origin/main`). Helper menolak force push, delete, branch selain `main`, path non-dokumen, symlink, dan file non-UTF-8 sebelum mengirim apa pun; keputusan akhir tetap di API. Perubahan yang melonggarkan ini perlu diskusi dulu.
+- **Kredensial**: token hanya di credential store OS, tidak pernah di konfigurasi Git; `git-credential-speq` hanya menjawab untuk origin API yang menerbitkannya. Log tidak boleh memuat token atau isi dokumen; `SPEQ_LOG=debug` hanya menampilkan method, path, status, dan request ID. Tes tidak boleh menyentuh credential store, scheduler, atau jaringan sungguhan.
 - **Kode keluar** (0–7, tabel di README) adalah kontrak untuk skrip dan agen. Jangan mengubah artinya; kasus baru memakai kode yang sudah ada, atau didiskusikan dulu.
 - **Keluaran `--json`** harus tetap stabil: error dalam JSON di stderr. Menambah field boleh; mengubah atau menghapus field adalah perubahan breaking.
 - **Otorisasi** selalu diputuskan API. Cache capability hanya petunjuk tampilan dan tidak boleh dipakai untuk mengizinkan tulis.

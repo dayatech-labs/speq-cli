@@ -5,7 +5,7 @@ PackageLocale: en-US
 Publisher: Dayatech
 PackageName: Speq
 License: Proprietary
-ShortDescription: Sync product specs into implementation repositories
+ShortDescription: Work on product specs with Git commands, through the Speq API
 Installers:
   - Architecture: x64
     InstallerType: zip
@@ -13,6 +13,13 @@ Installers:
     NestedInstallerFiles:
       - RelativeFilePath: speq.exe
         PortableCommandAlias: speq
+      - RelativeFilePath: git-remote-speq.exe
+        PortableCommandAlias: git-remote-speq
+      - RelativeFilePath: git-credential-speq.exe
+        PortableCommandAlias: git-credential-speq
+    Dependencies:
+      PackageDependencies:
+        - PackageIdentifier: Git.Git
     InstallerUrl: @WINDOWS_URL@
     InstallerSha256: @WINDOWS_SHA256@
 ManifestType: singleton

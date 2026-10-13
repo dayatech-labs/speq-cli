@@ -1,13 +1,12 @@
 mod support;
 
-use speq::credentials::CredentialStore;
 use speq::error::Error;
 use speq::session::Session;
 use speq::snapshot;
 use speq::uninstall::uninstall;
 use speq::upgrade::Install;
 use std::path::PathBuf;
-use support::{Device, FakeApi, Fixture};
+use support::{Device, FakeApi};
 
 /// A stand-in for the installed binary, in its own directory.
 fn fake_binary() -> (tempfile::TempDir, PathBuf) {
@@ -94,15 +93,37 @@ async fn a_binary_the_installer_did_not_place_is_never_deleted() {
 }
 
 #[tokio::test]
-async fn workspaces_are_left_untouched() {
-    let fx = Fixture::new().await;
-    fx.write("epics/a/prd.md", "my edit");
+async fn specs_repositories_and_helpers_of_other_installs_are_left_untouched() {
+    let api = FakeApi::start();
+    let device = Device::new(&api);
+    device.login().await;
+    let specs = tempfile::tempdir().unwrap();
+    std::fs::write(specs.path().join("prd.md"), "my edit").unwrap();
     let (_dir, exe) = fake_binary();
+    speq::links::ensure(&exe);
 
-    uninstall(&fx.device.env, &exe, &Install::Official).unwrap();
+    uninstall(&device.env, &exe, &BREW).unwrap();
 
-    assert_eq!(fx.read("epics/a/prd.md").as_deref(), Some("my edit"));
-    assert!(fx.workspace_dir.path().join(".speq/config.toml").exists());
+    assert_eq!(
+        std::fs::read_to_string(specs.path().join("prd.md")).unwrap(),
+        "my edit"
+    );
+    assert!(
+        speq::links::helper_paths(&exe).iter().all(|h| h.exists()),
+        "a package manager owns them"
+    );
+}
+
+#[tokio::test]
+async fn an_official_uninstall_also_removes_the_git_helpers() {
+    let api = FakeApi::start();
+    let device = Device::new(&api);
+    let (_dir, exe) = fake_binary();
+    speq::links::ensure(&exe);
+
+    uninstall(&device.env, &exe, &Install::Official).unwrap();
+
+    assert!(speq::links::helper_paths(&exe).iter().all(|h| !h.exists()));
 }
 
 #[tokio::test]

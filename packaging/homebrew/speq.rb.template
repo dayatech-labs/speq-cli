@@ -1,7 +1,10 @@
 class Speq < Formula
-  desc "Sync product specs into implementation repositories"
+  desc "Work on product specs with Git commands, through the Speq API"
   homepage "https://github.com/dayatech-labs/speq-cli"
   version "@VERSION@"
+
+  # speq runs Git; macOS has it (Command Line Tools), Linux gets Homebrew's.
+  uses_from_macos "git"
 
   on_macos do
     on_arm do
@@ -23,6 +26,9 @@ class Speq < Formula
 
   def install
     bin.install "speq"
+    # Git runs speq under these names: the remote helper for `speq::` URLs, and the credential helper.
+    bin.install_symlink "speq" => "git-remote-speq"
+    bin.install_symlink "speq" => "git-credential-speq"
   end
 
   test do

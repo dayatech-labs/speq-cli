@@ -1,7 +1,6 @@
 //! Application-data directory for per-OS-user state: capability snapshot and locks.
 //! It is separate from any workspace and from the credential store.
 use crate::error::{Error, Result};
-use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use url::Url;
 
@@ -46,12 +45,5 @@ impl AppDirs {
             })
             .collect();
         self.root.join("origins").join(slug)
-    }
-
-    /// Lock file coordinating CLI processes that operate on one workspace.
-    pub fn workspace_lock(&self, workspace_root: &Path) -> PathBuf {
-        let digest = Sha256::digest(workspace_root.to_string_lossy().as_bytes());
-        let short: String = digest.iter().take(8).map(|b| format!("{b:02x}")).collect();
-        self.root.join("workspaces").join(format!("{short}.lock"))
     }
 }

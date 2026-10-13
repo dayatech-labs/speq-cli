@@ -1,5 +1,5 @@
-//! `speq uninstall`: remove this machine's Speq state and, when the official installer placed it, the binary.
-//! Workspaces are never touched, and the server-side session is not ended (that is `speq logout --all`).
+//! `speq uninstall`: remove this machine's Speq state and, when the official installer placed it, the binary and its
+//! Git helpers. Specs repositories are never touched, and the server-side session is not ended (`speq logout --all`).
 use crate::env::Env;
 use crate::error::{IoContext, Result};
 use crate::fsx::FileLock;
@@ -44,7 +44,18 @@ pub fn uninstall(env: &Env, exe: &Path, install: &Install) -> Result<UninstallRe
 
     let removed_binary = match install {
         Install::Official => {
+            crate::links::remove(exe)?;
             remove_binary(exe)?;
+            if cfg!(windows)
+                && let Some(git) = private_git(exe)
+                && let Err(e) = std::fs::remove_dir_all(&git)
+                && e.kind() != std::io::ErrorKind::NotFound
+            {
+                manual_steps.push(format!(
+                    "delete {} (the copy of Git the installer added for speq): {e}",
+                    git.display()
+                ));
+            }
             manual_steps.extend(official_leftovers(exe));
             Some(exe.display().to_string())
         }
@@ -86,6 +97,15 @@ fn remove_binary(exe: &Path) -> Result<()> {
     std::fs::rename(exe, &old).ctx(format!("move {} aside", exe.display()))
 }
 
+/// The private Git the Windows installer puts next to `<...>\Speq\bin\speq.exe`, at `<...>\Speq\git`.
+pub fn private_git(exe: &Path) -> Option<std::path::PathBuf> {
+    let bin = exe.parent()?;
+    if bin.file_name()? != "bin" {
+        return None;
+    }
+    Some(bin.parent()?.join("git"))
+}
+
 /// The installer edits the shell profile (Unix) or the user PATH (Windows); undoing that is the user's call.
 fn official_leftovers(exe: &Path) -> Vec<String> {
     let dir = exe.parent().map(|p| p.display().to_string());
@@ -103,5 +123,19 @@ fn official_leftovers(exe: &Path) -> Vec<String> {
             "the installer may have added ~/.local/bin to your PATH with a `# added by the speq installer` line in your shell profile (~/.zshrc, ~/.bashrc, ~/.bash_profile, or ~/.profile); remove it if nothing else lives there"
                 .into(),
         ]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_private_git_sits_next_to_the_installers_bin_folder() {
+        assert_eq!(
+            private_git(Path::new("/home/a/AppData/Local/Speq/bin/speq.exe")),
+            Some(Path::new("/home/a/AppData/Local/Speq/git").to_path_buf())
+        );
+        assert_eq!(private_git(Path::new("/usr/local/speq")), None);
     }
 }

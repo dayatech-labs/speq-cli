@@ -174,6 +174,33 @@ pub fn is_canonical_document(path: &str) -> bool {
     document_kind(path).is_some()
 }
 
+/// A role-policy path pattern, as the API matches it: `*` is exactly one segment, a trailing `**` one or more.
+pub fn matches_rule(pattern: &str, path: &str) -> bool {
+    let patterns: Vec<&str> = pattern.split('/').collect();
+    let segments: Vec<&str> = path.split('/').collect();
+    for (index, p) in patterns.iter().enumerate() {
+        if *p == "**" {
+            return segments.len() > index;
+        }
+        match segments.get(index) {
+            Some(s) if *p == "*" || p == s => {}
+            _ => return false,
+        }
+    }
+    patterns.len() == segments.len()
+}
+
+/// The epic and story folder names `speq context <epic>/<story>` accepts.
+pub fn ensure_valid_epic_story(epic: &str, story: &str) -> crate::error::Result<()> {
+    if is_folder_name(epic) && is_story_folder(story) {
+        Ok(())
+    } else {
+        Err(crate::error::Error::invalid(
+            "the epic must be a lowercase folder name and the story a folder named `st-<number>-<name>`, such as `epic-payment/st-001-create-payment`",
+        ))
+    }
+}
+
 /// Join a canonical `a/b/c.md` path onto a directory using the platform separator.
 pub fn join_canonical(base: &Path, canonical: &str) -> PathBuf {
     canonical
@@ -435,6 +462,25 @@ mod tests {
         )));
         assert!(is_canonical_document("design/a/b/c/d/e/f/g.md"));
         assert!(!is_canonical_document("design/a/b/c/d/e/f/g/h.md"));
+    }
+
+    #[test]
+    fn rule_patterns_match_like_the_api() {
+        let story = "epics/pay/stories/st-001-a/README.md";
+        assert!(matches_rule("epics/*/stories/*/README.md", story));
+        assert!(matches_rule("epics/*/stories/**", story));
+        assert!(matches_rule("**", "llms.txt"));
+        assert!(matches_rule("llms.txt", "llms.txt"));
+        assert!(!matches_rule("epics/*/prd.md", story));
+        assert!(
+            !matches_rule("epics/*", "epics/pay/prd.md"),
+            "* is one segment"
+        );
+        assert!(
+            !matches_rule("epics/pay/**", "epics/pay"),
+            "** needs at least one segment"
+        );
+        assert!(!matches_rule("design/**", "designs/a.md"));
     }
 
     #[test]

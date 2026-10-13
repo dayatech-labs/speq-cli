@@ -1,16 +1,11 @@
 //! The human success template: one layout for every command. Each test pins the exact plain text of one report,
 //! so a change to the layout is a visible, deliberate edit here.
 use speq::api::{Capabilities, ProjectSummary, RuleSet};
+use speq::clone::{CloneReport, ListReport};
 use speq::context::ContextReport;
-use speq::deinit::DeinitReport;
-use speq::init::{InitReport, ListReport};
-use speq::output::{Human, login_prompt, push_preview};
+use speq::deinit::{AtRisk, DeinitReport};
+use speq::output::{Human, login_prompt};
 use speq::session::{LoginReport, LogoutReport};
-use speq::sync::plan::State;
-use speq::sync::pull::{Conflict, PullReport, UpdateReport};
-use speq::sync::push::{PlannedChange, PushReport};
-use speq::sync::resolve::ResolveReport;
-use speq::sync::status::{DiffReport, PathStatus, StatusReport};
 use speq::template::Theme;
 use speq::uninstall::UninstallReport;
 use speq::upgrade::{CheckReport, UpgradeReport};
@@ -46,43 +41,6 @@ fn project(repo: Option<&str>, name: &str, roles: &[&str]) -> ProjectSummary {
     }
 }
 
-fn pull_report() -> PullReport {
-    PullReport {
-        head_sha: SHA.into(),
-        added: vec![],
-        updated: vec![],
-        deleted: vec![],
-        adopted: vec![],
-        merged: vec![],
-        resolved: vec![],
-        conflicts: vec![],
-        unchanged: 0,
-        lock_advanced: true,
-    }
-}
-
-fn path_status(path: &str, state: State, local: &'static str, remote: &'static str) -> PathStatus {
-    PathStatus {
-        path: path.into(),
-        state: state.as_str(),
-        local,
-        remote,
-    }
-}
-
-fn status_report(files: Vec<PathStatus>, up_to_date: bool) -> StatusReport {
-    StatusReport {
-        project_id: "p1".into(),
-        lock_head_sha: Some(SHA.into()),
-        remote_head_sha: SHA.into(),
-        up_to_date,
-        pending: vec![],
-        files,
-        skipped: vec![],
-        unsafe_paths: vec![],
-    }
-}
-
 #[test]
 fn login_shows_the_account_and_the_next_command() {
     let report = LoginReport {
@@ -93,7 +51,7 @@ fn login_shows_the_account_and_the_next_command() {
     };
     assert_eq!(
         plain(&report),
-        "✔ Logged in\n\n  account  Ana <ana@example.com>\n  access   2 repositories\n\n  → Run `speq list` to see them, then `speq init <repo>`."
+        "✔ Logged in\n\n  account  Ana <ana@example.com>\n  access   2 repositories\n\n  → Run `speq list` to see them, then `speq clone <repo>`."
     );
 }
 
@@ -145,7 +103,7 @@ fn list_is_a_table_with_a_next_step() {
     };
     assert_eq!(
         plain(&report),
-        "2 repositories you can use\n\n  REPOSITORY          PROJECT  ROLES\n  acme/payment-specs  Payment  editor, viewer\n  (not bound)         Orphan   viewer\n\n  → Run `speq init <repo>` in your implementation repository."
+        "2 repositories you can use\n\n  REPOSITORY          PROJECT  ROLES\n  acme/payment-specs  Payment  editor, viewer\n  (not bound)         Orphan   viewer\n\n  → Run `speq clone <repo>` in your implementation repository."
     );
 }
 
@@ -163,39 +121,27 @@ fn an_empty_list_says_so_and_names_who_can_help() {
 }
 
 #[test]
-fn init_reports_the_workspace_and_warns_when_sync_state_was_reset() {
-    let mut report = InitReport {
+fn clone_reports_the_folder_commit_author_and_the_git_way_forward() {
+    let mut report = CloneReport {
         project_id: "p1".into(),
         repository: "acme/payment-specs".into(),
-        branch: "main".into(),
-        local_dir: "specs".into(),
-        reconfigured: false,
-        sync_state_reset: false,
+        path: "specs".into(),
+        head_sha: Some(SHA.into()),
+        author: "Ana <ana@example.com>".into(),
+        ignored_in: Some("/work/app/.gitignore".into()),
     };
     assert_eq!(
         plain(&report),
-        "✔ Workspace initialized\n\n  repository  acme/payment-specs\n  branch      main\n  folder      ./specs\n\n  → Run `speq pull` to download the specs."
+        "✔ Cloned acme/payment-specs\n\n  folder      ./specs\n  commit      0123456789ab\n  author      Ana <ana@example.com>\n  ignored in  /work/app/.gitignore\n\n  It is a Git repository: use Git's commands through speq, from here or inside the folder.\n\n  → Edit, then `speq status`, `speq commit -am \"docs: ...\"` and `speq push`."
     );
-    report.reconfigured = true;
-    report.sync_state_reset = true;
+    report.head_sha = None;
+    report.ignored_in = None;
     let out = plain(&report);
-    assert!(out.starts_with("✔ Workspace reconfigured\n"), "{out}");
     assert!(
-        out.contains("\n  ! The source changed, so sync state was cleared;"),
+        out.contains("  commit  (the remote branch is empty)\n"),
         "{out}"
     );
-}
-
-#[test]
-fn deinit_lists_what_was_removed_and_what_stayed() {
-    let report = DeinitReport {
-        root: "/work/app".into(),
-        specs_dir: "specs".into(),
-    };
-    assert_eq!(
-        plain(&report),
-        "✔ Workspace removed\n\n  workspace  /work/app\n  removed    .speq/ and specs/\n\n  .gitignore, your login, and the binary were left untouched.\n\n  → Run `speq init <repo>` to set up again."
-    );
+    assert!(!out.contains("ignored in"), "{out}");
 }
 
 #[test]
@@ -208,7 +154,7 @@ fn uninstall_is_clean_only_when_nothing_is_left_to_do() {
     };
     assert_eq!(
         plain(&report),
-        "✔ Removed speq's local data\n\n  credentials  removed\n  cached data  removed (/home/ana/.local/share/speq)\n  binary       removed (/home/ana/.local/bin/speq)\n\n  Workspaces (specs/ and .speq/) were left untouched; `speq deinit` removes them."
+        "✔ Removed speq's local data\n\n  credentials  removed\n  cached data  removed (/home/ana/.local/share/speq)\n  binary       removed (/home/ana/.local/bin/speq)\n\n  Specs repositories were left untouched; `speq deinit` removes one."
     );
 
     report.removed_binary = None;
@@ -232,368 +178,6 @@ fn uninstall_is_clean_only_when_nothing_is_left_to_do() {
         "{out}"
     );
     assert!(out.starts_with("! "), "{out}");
-}
-
-#[test]
-fn a_pull_without_changes_is_already_up_to_date() {
-    let mut report = pull_report();
-    report.unchanged = 4;
-    assert_eq!(
-        plain(&report),
-        "✔ Already up to date\n\n  commit   0123456789ab\n  summary  4 unchanged or kept"
-    );
-    assert_eq!(report.exit_code(), 0);
-}
-
-#[test]
-fn a_pull_groups_paths_by_what_happened_and_hides_empty_groups() {
-    let mut report = pull_report();
-    report.added = strings(&["a.md", "b.md"]);
-    report.updated = strings(&["c.md"]);
-    report.adopted = strings(&["e.md"]);
-    report.unchanged = 7;
-    assert_eq!(
-        plain(&report),
-        "✔ Pulled the latest specs\n\n  commit   0123456789ab\n  summary  2 added · 1 updated · 1 adopted · 7 unchanged or kept\n\n  Added (2)\n    + a.md\n    + b.md\n\n  Updated (1)\n    ~ c.md\n\n  Adopted (1)\n    = e.md"
-    );
-}
-
-#[test]
-fn a_pull_with_conflicts_warns_exits_5_and_says_how_to_resolve() {
-    let mut report = pull_report();
-    report.deleted = strings(&["gone.md"]);
-    report.conflicts = vec![Conflict {
-        path: "prd.md".into(),
-        reason: "deleted on the remote but changed locally".into(),
-        markers: false,
-    }];
-    let out = plain(&report);
-    assert!(out.starts_with("! Pulled with 1 conflict\n"), "{out}");
-    assert!(out.contains("  Deleted (1)\n    - gone.md\n"), "{out}");
-    assert!(
-        out.contains("  Conflicts (1)\n    ! prd.md  deleted on the remote but changed locally\n"),
-        "{out}"
-    );
-    assert!(
-        out.ends_with("  → 1 path was not applied. Run `speq diff <path>`, then `speq resolve <path>` to keep your file or add `--theirs` to take the remote's; push stays blocked until then."),
-        "{out}"
-    );
-    assert_eq!(report.exit_code(), 5);
-}
-
-#[test]
-fn marked_conflicts_point_to_the_editor_and_resolved_ones_are_listed() {
-    let mut report = pull_report();
-    report.resolved = strings(&["done.md"]);
-    report.merged = strings(&["combined.md"]);
-    report.conflicts = vec![
-        Conflict {
-            path: "prd.md".into(),
-            reason: "changed both locally and on the remote".into(),
-            markers: true,
-        },
-        Conflict {
-            path: "gone.md".into(),
-            reason: "deleted on the remote but changed locally".into(),
-            markers: false,
-        },
-    ];
-    let out = plain(&report);
-    assert!(out.contains("1 merged · 1 resolved"), "{out}");
-    assert!(out.contains("  Merged (1)\n    & combined.md\n"), "{out}");
-    assert!(
-        out.contains("1 file combined your edits with the remote's. Review with `speq diff <path>` before `speq push`."),
-        "{out}"
-    );
-    assert!(out.contains("  Resolved (1)\n    * done.md\n"), "{out}");
-    assert!(
-        out.contains(
-            "! prd.md   changed both locally and on the remote · conflict markers in the file\n"
-        ),
-        "{out}"
-    );
-    assert!(
-        out.contains("Open 1 marked file in your editor, resolve each conflict block (VS Code: Accept Current, Incoming or Both), save, then run `speq resolve --all`"),
-        "{out}"
-    );
-    assert!(
-        out.contains("1 path was not applied. Run `speq diff <path>`"),
-        "{out}"
-    );
-    assert_eq!(report.exit_code(), 5);
-}
-
-fn resolve_report(resolved: &[&str], still_marked: &[&str], pending: &[&str]) -> ResolveReport {
-    ResolveReport {
-        choice: "edited",
-        resolved: strings(resolved),
-        still_marked: strings(still_marked),
-        undecided: vec![],
-        pending: strings(pending),
-        lock_advanced: pending.is_empty() && !resolved.is_empty(),
-    }
-}
-
-#[test]
-fn resolving_everything_points_to_review_and_push() {
-    let report = resolve_report(&["a.md", "b.md"], &[], &[]);
-    let out = plain(&report);
-    assert!(out.starts_with("✔ All conflicts resolved\n"), "{out}");
-    assert!(
-        out.contains("  Resolved (2)\n    * a.md\n    * b.md\n"),
-        "{out}"
-    );
-    assert!(
-        out.ends_with("→ Review with `speq status`, then run `speq push`."),
-        "{out}"
-    );
-    assert_eq!(report.exit_code(), 0);
-}
-
-#[test]
-fn files_that_still_have_markers_are_named_and_exit_5() {
-    let report = resolve_report(&["a.md"], &["b.md"], &["b.md", "c.md"]);
-    let out = plain(&report);
-    assert!(
-        out.starts_with("! Resolved 1, 2 conflicts still open\n"),
-        "{out}"
-    );
-    assert!(
-        out.contains("  Still has conflict markers (1)\n    ! b.md\n"),
-        "{out}"
-    );
-    assert!(out.contains("  Not resolved (1)\n    ! c.md\n"), "{out}");
-    assert!(
-        out.ends_with("→ Remove the conflict markers and save, then run `speq resolve <path>`; or take a side with `--ours` or `--theirs`."),
-        "{out}"
-    );
-    assert_eq!(report.exit_code(), 5);
-}
-
-#[test]
-fn unresolved_conflicts_without_markers_point_to_the_rest() {
-    let report = resolve_report(&["a.md"], &[], &["c.md"]);
-    let out = plain(&report);
-    assert!(
-        out.ends_with("→ Name the rest, or run `speq resolve --all`."),
-        "{out}"
-    );
-    assert_eq!(report.exit_code(), 5);
-}
-
-#[test]
-fn delete_conflicts_that_all_skipped_are_listed_with_what_to_do() {
-    let mut report = resolve_report(&["a.md"], &[], &["gone.md"]);
-    report.undecided = strings(&["gone.md"]);
-    let out = plain(&report);
-    assert!(
-        out.contains("  Needs a decision (1)\n    ? gone.md\n"),
-        "{out}"
-    );
-    assert!(!out.contains("Not resolved"), "{out}");
-    assert!(
-        out.ends_with("→ `--all` leaves conflicts without markers (a delete on one side) to you. See `speq diff <path>`, then `speq resolve <path>` keeps your side or add `--theirs` for the remote's."),
-        "{out}"
-    );
-    assert_eq!(report.exit_code(), 5);
-}
-
-#[test]
-fn nothing_pending_is_not_an_error() {
-    let report = resolve_report(&[], &[], &[]);
-    assert_eq!(plain(&report), "✔ No conflicts to resolve");
-    assert_eq!(report.exit_code(), 0);
-}
-
-#[test]
-fn update_tells_whether_anything_changed() {
-    let report = |result| UpdateReport {
-        path: "epics/a/prd.md".into(),
-        result,
-        head_sha: SHA.into(),
-    };
-    assert_eq!(
-        plain(&report("up-to-date")),
-        "✔ Already up to date\n\n  file    epics/a/prd.md\n  commit  0123456789ab"
-    );
-    assert!(plain(&report("updated")).starts_with("✔ Applied the latest version\n"));
-}
-
-#[test]
-fn a_clean_status_is_one_line_of_good_news_and_two_commits() {
-    let report = status_report(
-        vec![path_status("a.md", State::Unchanged, "none", "none")],
-        true,
-    );
-    assert_eq!(
-        plain(&report),
-        "✔ Workspace is up to date\n\n  last sync  0123456789ab\n  remote     0123456789ab"
-    );
-    assert_eq!(report.exit_code(), 0);
-}
-
-#[test]
-fn status_marks_each_change_by_direction_and_suggests_the_next_command() {
-    let report = status_report(
-        vec![
-            path_status("a.md", State::Unchanged, "none", "none"),
-            path_status("b.md", State::LocalOnly, "modified", "none"),
-            path_status("c.md", State::Deleted, "deleted", "none"),
-        ],
-        true,
-    );
-    assert_eq!(
-        plain(&report),
-        "ℹ Workspace has changes\n\n  last sync  0123456789ab\n  remote     0123456789ab\n\n  Changes (2)\n    ↑ b.md  local-only · local modified\n    - c.md  deleted · removed locally\n\n  → Run `speq push` to send your local changes."
-    );
-
-    let behind = status_report(
-        vec![path_status("d.md", State::RemoteOnly, "none", "added")],
-        false,
-    );
-    let out = plain(&behind);
-    assert!(
-        out.contains("    ↓ d.md  remote-only · remote added\n"),
-        "{out}"
-    );
-    assert!(
-        out.ends_with("→ Run `speq pull` to bring in the remote changes."),
-        "{out}"
-    );
-}
-
-#[test]
-fn status_with_a_conflict_warns_exits_5_and_shows_both_sides() {
-    let mut report = status_report(
-        vec![path_status("a.md", State::Conflict, "modified", "modified")],
-        false,
-    );
-    report.lock_head_sha = None;
-    report.pending = strings(&["a.md"]);
-    report.skipped = strings(&["notes.tmp"]);
-    report.unsafe_paths = strings(&["link.md"]);
-    let out = plain(&report);
-    assert!(out.starts_with("! Workspace has conflicts\n"), "{out}");
-    assert!(out.contains("  last sync  none\n"), "{out}");
-    assert!(
-        out.contains("    ! a.md  conflict · local modified, remote modified\n"),
-        "{out}"
-    );
-    assert!(out.contains("  Ignored (1)\n    · notes.tmp\n"), "{out}");
-    assert!(
-        out.contains("    ! link.md  symbolic link or special file; never followed\n"),
-        "{out}"
-    );
-    assert!(
-        out.contains("  ! 1 conflict pending from the last pull; `speq push` is blocked.\n"),
-        "{out}"
-    );
-    assert!(
-        out.ends_with("  → Run `speq diff <path>` to inspect, edit the file, then `speq resolve <path>` (or `--ours` / `--theirs`)."),
-        "{out}"
-    );
-    assert_eq!(report.exit_code(), 5);
-}
-
-#[test]
-fn a_newer_remote_without_file_changes_is_reported_as_such() {
-    let out = plain(&status_report(vec![], false));
-    assert!(out.starts_with("ℹ The remote has newer specs\n"), "{out}");
-}
-
-#[test]
-fn diff_keeps_the_unified_format_and_only_adds_color_on_request() {
-    let diff = "--- remote/a.md\n+++ local/a.md\n@@ -1 +1 @@\n-old\n+new\n";
-    let report = DiffReport {
-        path: "a.md".into(),
-        against: "remote",
-        identical: false,
-        diff: diff.into(),
-    };
-    assert_eq!(plain(&report), diff.trim_end());
-    let colored = report.human(&Theme::new(true));
-    assert!(colored.contains("\x1b[31m-old"), "{colored}");
-    assert!(colored.contains("\x1b[32m+new"), "{colored}");
-}
-
-#[test]
-fn identical_files_say_what_they_were_compared_with() {
-    let report = |against| DiffReport {
-        path: "a.md".into(),
-        against,
-        identical: true,
-        diff: String::new(),
-    };
-    assert_eq!(
-        plain(&report("remote")),
-        "✔ No differences\n\n  file           a.md\n  compared with  the latest remote copy"
-    );
-    assert!(plain(&report("base")).ends_with("the last synced copy"));
-}
-
-#[test]
-fn push_previews_before_sending_and_reports_the_commit_after() {
-    let changes = vec![
-        PlannedChange {
-            action: "create",
-            path: "new.md".into(),
-        },
-        PlannedChange {
-            action: "update",
-            path: "edited.md".into(),
-        },
-        PlannedChange {
-            action: "delete",
-            path: "old.md".into(),
-        },
-    ];
-    // Stderr is not a terminal under `cargo test`, so the preview is plain.
-    assert_eq!(
-        push_preview(&changes),
-        "ℹ Pushing 3 changes\n\n  Changes (3)\n    + new.md     create\n    ~ edited.md  update\n    - old.md     delete"
-    );
-    let report = PushReport {
-        changes,
-        commit_sha: Some(SHA.into()),
-        head_sha: Some(SHA.into()),
-        replayed: false,
-        nothing_to_push: false,
-    };
-    assert_eq!(
-        plain(&report),
-        "✔ Pushed 3 changes\n\n  commit  0123456789ab"
-    );
-}
-
-#[test]
-fn push_edge_cases_are_explained() {
-    let empty = PushReport {
-        changes: vec![],
-        commit_sha: None,
-        head_sha: None,
-        replayed: false,
-        nothing_to_push: true,
-    };
-    assert_eq!(
-        plain(&empty),
-        "ℹ Nothing to push\n\n  There are no local changes since the last sync."
-    );
-    let replayed = PushReport {
-        changes: vec![PlannedChange {
-            action: "update",
-            path: "a.md".into(),
-        }],
-        commit_sha: Some(SHA.into()),
-        head_sha: Some(SHA.into()),
-        replayed: true,
-        nothing_to_push: false,
-    };
-    let out = plain(&replayed);
-    assert!(out.starts_with("✔ Pushed 1 change\n"), "{out}");
-    assert!(
-        out.ends_with("  ℹ These changes were already applied earlier."),
-        "{out}"
-    );
 }
 
 #[test]
@@ -668,4 +252,40 @@ fn the_login_prompt_shows_the_url_and_only_mentions_the_browser_when_it_failed()
         failed.contains("\n  ! Could not open a browser automatically; open the URL above.\n"),
         "{failed}"
     );
+}
+
+#[test]
+fn deinit_says_what_was_removed_what_was_lost_and_how_to_start_again() {
+    let report = DeinitReport {
+        removed: strings(&["/work/app/specs"]),
+        lost: Some(AtRisk {
+            uncommitted: 1,
+            unpushed: 2,
+            stashes: 0,
+        }),
+        was_inside: false,
+        legacy: false,
+    };
+    assert_eq!(
+        plain(&report),
+        "✔ Specs repository removed\n\n  removed  /work/app/specs\n  lost     1 uncommitted change, 2 unpushed commits\n\n  Your login and the .gitignore entry were left in place.\n\n  → Run `speq clone <repo>` to start again."
+    );
+    let old = DeinitReport {
+        removed: strings(&["/work/app/specs", "/work/app/.speq"]),
+        lost: None,
+        was_inside: true,
+        legacy: true,
+    };
+    let out = plain(&old);
+    assert!(
+        out.starts_with(
+            "✔ Older speq workspace removed\n\n  removed  /work/app/specs, /work/app/.speq\n"
+        ),
+        "{out}"
+    );
+    assert!(
+        out.contains("\n  ! Your shell was inside it: run `cd ..`.\n"),
+        "{out}"
+    );
+    assert!(!out.contains("lost"), "{out}");
 }

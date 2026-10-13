@@ -14,6 +14,8 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 /// Reads are retried on 429/503 only, waiting at most this long per attempt.
 const MAX_RETRY_WAIT: u64 = 30;
 const READ_ATTEMPTS: u32 = 3;
+/// A push re-creates up to 20 commits on GitHub one call at a time.
+const PUSH_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// Accept `https` URLs, and plain `http` only for loopback (a local API during development).
 pub fn parse_api_url(raw: &str) -> Result<Url> {
@@ -130,82 +132,35 @@ pub struct Me {
     pub name: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
-pub struct SyncFile {
-    pub path: String,
-    pub sha: String,
-    pub size: u64,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct SyncManifest {
-    pub head_sha: String,
-    pub files: Vec<SyncFile>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct Document {
-    pub path: String,
-    pub content: String,
-    pub document_sha: String,
-    pub head_sha: String,
-}
-
+/// One commit of a `git push`, as `POST /git/push` takes it.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-#[serde(tag = "action", rename_all = "snake_case")]
-pub enum ChangeOperation {
-    Create {
-        path: String,
-        content: String,
-    },
-    Update {
-        path: String,
-        content: String,
-        document_sha: String,
-    },
-    Delete {
-        path: String,
-        document_sha: String,
-    },
+pub struct PushedCommit {
+    pub sha: String,
+    /// The object exactly as `git cat-file commit` prints it.
+    pub raw: String,
+    /// The parent `changes` are relative to.
+    pub base: String,
+    pub changes: Vec<PushedChange>,
 }
 
-impl ChangeOperation {
-    pub fn path(&self) -> &str {
-        match self {
-            ChangeOperation::Create { path, .. }
-            | ChangeOperation::Update { path, .. }
-            | ChangeOperation::Delete { path, .. } => path,
-        }
-    }
-
-    pub fn action(&self) -> &'static str {
-        match self {
-            ChangeOperation::Create { .. } => "create",
-            ChangeOperation::Update { .. } => "update",
-            ChangeOperation::Delete { .. } => "delete",
-        }
-    }
+/// A path that differs from the commit's base; `content: None` deletes it.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct PushedChange {
+    pub path: String,
+    pub content: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
-pub struct ChangesRequest<'a> {
-    pub base_commit_sha: &'a str,
-    pub operations: &'a [ChangeOperation],
+pub struct GitPushRequest<'a> {
+    pub old_head: &'a str,
+    pub commits: &'a [PushedCommit],
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct ChangedPath {
-    pub action: String,
-    pub path: String,
-    pub document_sha: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct ChangesResult {
-    pub commit_sha: String,
+pub struct GitPushResult {
     pub head_sha: String,
+    pub commits: u32,
     pub replayed: bool,
-    pub operations: Vec<ChangedPath>,
 }
 
 // ------------------------------------------------------------------ client
@@ -223,6 +178,7 @@ struct Call<'a> {
     json: Option<serde_json::Value>,
     headers: Vec<(&'static str, String)>,
     retry: bool,
+    timeout: Option<Duration>,
 }
 
 impl Client {
@@ -268,6 +224,9 @@ impl Client {
             }
             if let Some(body) = &call.json {
                 request = request.json(body);
+            }
+            if let Some(timeout) = call.timeout {
+                request = request.timeout(timeout);
             }
             let response = request
                 .send()
@@ -319,6 +278,7 @@ impl Client {
             json: None,
             headers: vec![],
             retry: true,
+            timeout: None,
         }
     }
 
@@ -335,6 +295,7 @@ impl Client {
             json: Some(json),
             headers: vec![],
             retry: false,
+            timeout: None,
         }
     }
 
@@ -401,41 +362,30 @@ impl Client {
         })
     }
 
-    // ---- documents
+    // ---- git
 
-    pub async fn sync(&self, token: &SecretString, project_id: &str) -> Result<SyncManifest> {
-        let path = format!("/v1/projects/{project_id}/sync");
-        Self::json(self.send(self.get_call(&path, &[], token)).await?).await
-    }
-
-    pub async fn document(
-        &self,
-        token: &SecretString,
-        project_id: &str,
-        doc_path: &str,
-        head_sha: Option<&str>,
-    ) -> Result<Document> {
-        let path = format!("/v1/projects/{project_id}/docs");
-        let mut query = vec![("path", doc_path)];
-        if let Some(head) = head_sha {
-            query.push(("head_sha", head));
+    /// The branch head on GitHub right now.
+    pub async fn git_head(&self, token: &SecretString, project_id: &str) -> Result<String> {
+        #[derive(Deserialize)]
+        struct Head {
+            head_sha: String,
         }
-        Self::json(self.send(self.get_call(&path, &query, token)).await?).await
+        let path = format!("/v1/projects/{project_id}/git/head");
+        let head: Head = Self::json(self.send(self.get_call(&path, &[], token)).await?).await?;
+        Ok(head.head_sha)
     }
 
-    /// One batch commit. Never retried automatically: the caller decides, reusing the same key.
-    pub async fn changes(
+    /// Re-creates the commits on the remote and moves its branch. Never retried automatically.
+    pub async fn git_push(
         &self,
         token: &SecretString,
         project_id: &str,
-        idempotency_key: &str,
-        request: &ChangesRequest<'_>,
-    ) -> Result<ChangesResult> {
-        let path = format!("/v1/projects/{project_id}/changes");
+        request: &GitPushRequest<'_>,
+    ) -> Result<GitPushResult> {
+        let path = format!("/v1/projects/{project_id}/git/push");
         let body = serde_json::to_value(request).map_err(|e| Error::Other(e.to_string()))?;
         let mut call = self.post_call(&path, Some(token), body);
-        call.headers
-            .push(("Idempotency-Key", idempotency_key.to_string()));
+        call.timeout = Some(PUSH_TIMEOUT);
         Self::json(self.send(call).await?).await
     }
 }

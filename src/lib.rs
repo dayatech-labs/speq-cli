@@ -1,22 +1,28 @@
 //! Speq CLI library: everything the `speq` binary does, testable without a terminal.
 pub mod api;
 pub mod cli;
+pub mod clone;
 pub mod commands;
 pub mod context;
 pub mod credentials;
 pub mod deinit;
+#[cfg(debug_assertions)]
+pub mod dev_store;
 pub mod dirs;
 pub mod env;
 pub mod error;
 pub mod fsx;
+pub mod git;
+pub mod git_auth;
 pub mod hashing;
-pub mod init;
+pub mod links;
 pub mod output;
 pub mod paths;
+pub mod remote_helper;
+pub mod repo;
 pub mod session;
 pub mod snapshot;
-pub mod sync;
+pub mod squash;
 pub mod template;
 pub mod uninstall;
 pub mod upgrade;
-pub mod workspace;

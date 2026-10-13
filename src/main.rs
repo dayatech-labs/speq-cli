@@ -1,7 +1,9 @@
-use speq::commands::{parse_args, run};
+use speq::commands::{Route, parse_args, route, run, run_git};
 use speq::env::Env;
 use speq::error::{Error, exit};
+use speq::links::{Invocation, invocation};
 use speq::output::{render_error, stderr_color};
+use std::ffi::OsString;
 use std::process::ExitCode;
 use tracing_subscriber::EnvFilter;
 
@@ -15,11 +17,7 @@ fn report_error(json: bool, error: &Error) {
 }
 
 fn main() -> ExitCode {
-    let cli = match parse_args(std::env::args()) {
-        Ok(cli) => cli,
-        // Clap prints help/version/usage errors itself and picks the exit code (0 or 2).
-        Err(e) => e.exit(),
-    };
+    let args: Vec<OsString> = std::env::args_os().collect();
     // Logs go to stderr, at `warn` unless SPEQ_LOG says otherwise. Tokens and content are never logged.
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -28,7 +26,36 @@ fn main() -> ExitCode {
         .with_writer(std::io::stderr)
         .init();
 
-    let json = cli.json;
+    // The same binary is Git's remote helper and credential helper, under those names.
+    let argv0 = args
+        .first()
+        .map(std::path::PathBuf::from)
+        .unwrap_or_default();
+    match invocation(&argv0) {
+        Invocation::RemoteHelper => return ExitCode::from(speq::remote_helper::main(&args)),
+        Invocation::CredentialHelper => return ExitCode::from(speq::git_auth::main(&args)),
+        Invocation::Speq => {}
+    }
+
+    let json = args.iter().skip(1).any(|a| a == "--json");
+    match route(args.get(1..).unwrap_or_default()) {
+        Route::Speq => {}
+        git => {
+            return match run_git(git) {
+                Ok(code) => ExitCode::from(code),
+                Err(e) => {
+                    report_error(json, &e);
+                    ExitCode::from(e.exit_code())
+                }
+            };
+        }
+    }
+
+    let cli = match parse_args(args.iter().map(|a| a.to_string_lossy().into_owned())) {
+        Ok(cli) => cli,
+        // Clap prints help/version/usage errors itself and picks the exit code (0 or 2).
+        Err(e) => e.exit(),
+    };
     let open_browser = !matches!(&cli.command, speq::cli::Command::Login(a) if a.no_browser);
     let runtime = match tokio::runtime::Builder::new_current_thread()
         .enable_all()

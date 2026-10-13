@@ -7,16 +7,23 @@
 # Installs the `speq` binary into ~/.local/bin without sudo. It downloads SHA256SUMS over HTTPS,
 # verifies the binary against it before installing, and never asks for credentials or workspace URLs.
 # Authentication happens afterwards, explicitly, with `speq login`.
+#
+# speq runs Git for you, so the installer also checks for Git 2.28+ and, when it is missing, offers to
+# install it with the system's own tool (it always asks first, and asks for sudo itself when needed).
 set -eu
 
 RELEASES="${SPEQ_RELEASE_URL:-https://github.com/dayatech-labs/speq-cli/releases}"
 VERSION=""
+YES=0
+CHECK_GIT=1
 
 usage() {
   cat <<USAGE
-Usage: install.sh [--version <x.y.z>]
+Usage: install.sh [--version <x.y.z>] [--yes] [--no-git]
 
   --version <x.y.z>   install that exact release (default: the latest stable release)
+  -y, --yes           install Git without asking when it is missing
+  --no-git            do not check for Git
   -h, --help          show this help
 
 Installs to \$HOME/.local/bin. Re-running is safe.
@@ -47,6 +54,8 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --version) [ $# -ge 2 ] || fail "--version needs a value"; VERSION="${2#v}"; shift 2 ;;
     --version=*) VERSION="${1#--version=}"; VERSION="${VERSION#v}"; shift ;;
+    -y|--yes) YES=1; shift ;;
+    --no-git) CHECK_GIT=0; shift ;;
     -h|--help) usage; exit 0 ;;
     *) usage >&2; fail "unknown argument: $1" ;;
   esac
@@ -126,8 +135,78 @@ chmod 755 "$staged"
 "$staged" --version >/dev/null 2>&1 || fail "the downloaded binary does not run on this system; nothing was installed"
 mv -f "$staged" "$bin_dir/speq"
 staged=""
+# Git runs speq under these names: the remote helper for `speq::` URLs, and the credential helper.
+for helper in git-remote-speq git-credential-speq; do
+  ln -sf speq "$bin_dir/$helper"
+done
 printf 'Installed speq %s to %s/speq\n' "$version" "$bin_dir"
 print_banner
+
+# ---- Git: every command except login/list/clone/context is Git's own, run by speq
+git_ok() {
+  v=$(git --version 2>/dev/null) || return 1
+  v=${v#git version }
+  major=${v%%.*}
+  rest=${v#*.}
+  minor=${rest%%[!0-9]*}
+  case "$major" in ""|*[!0-9]*) return 1 ;; esac
+  case "$minor" in ""|*[!0-9]*) return 1 ;; esac
+  [ "$major" -gt 2 ] || { [ "$major" -eq 2 ] && [ "$minor" -ge 28 ]; }
+}
+
+git_install_command() {
+  sudo=""
+  [ "$(id -u)" -eq 0 ] || sudo="sudo "
+  if [ "$os" = Darwin ]; then
+    if command -v brew >/dev/null 2>&1; then echo "brew install git"; else echo "xcode-select --install"; fi
+  elif command -v apt-get >/dev/null 2>&1; then echo "${sudo}apt-get update && ${sudo}apt-get install -y git"
+  elif command -v dnf >/dev/null 2>&1; then echo "${sudo}dnf install -y git"
+  elif command -v yum >/dev/null 2>&1; then echo "${sudo}yum install -y git"
+  elif command -v pacman >/dev/null 2>&1; then echo "${sudo}pacman -S --noconfirm git"
+  elif command -v zypper >/dev/null 2>&1; then echo "${sudo}zypper --non-interactive install git"
+  elif command -v apk >/dev/null 2>&1; then echo "${sudo}apk add git"
+  fi
+}
+
+# Under `curl ... | sh` stdin is this script, so questions and answers go through the terminal.
+have_tty() { ( : </dev/tty ) 2>/dev/null; }
+
+ask() {
+  [ "$YES" -eq 1 ] && return 0
+  have_tty || return 1
+  printf '%s [Y/n] ' "$1" >/dev/tty
+  read -r answer </dev/tty || return 1
+  case "$answer" in ""|y|Y|yes|Yes|YES) return 0 ;; *) return 1 ;; esac
+}
+
+ensure_git() {
+  [ "$CHECK_GIT" -eq 1 ] || return 0
+  git_ok && return 0
+  cmd=$(git_install_command)
+  printf '\nspeq runs Git for you (status, commit, pull, push, ...), and Git 2.28 or newer was not found.\n'
+  if [ -z "$cmd" ]; then
+    printf 'Install Git with your package manager, then run: speq login\n'
+    return 0
+  fi
+  if ! ask "Install Git now with \`$cmd\`?"; then
+    printf 'Skipped. Install it later with: %s\n' "$cmd"
+    return 0
+  fi
+  # Never let the command read the rest of this script from stdin.
+  if have_tty; then sh -c "$cmd" </dev/tty; else sh -c "$cmd" </dev/null; fi || {
+    printf 'Installing Git did not finish; run it yourself: %s\n' "$cmd"
+    return 0
+  }
+  if [ "$cmd" = "xcode-select --install" ]; then
+    printf 'Finish the installation in the window that opened (it brings Git), then run: speq login\n'
+  elif git_ok; then
+    printf 'Git is installed.\n'
+  else
+    printf 'Git is still not available; open a new terminal or install it yourself: %s\n' "$cmd"
+  fi
+}
+
+ensure_git
 
 # ---- PATH: add it for future shells only if it is missing, without duplicating the line
 case ":$PATH:" in
@@ -146,4 +225,4 @@ case ":$PATH:" in
     printf '\n%s is not on your PATH yet. It was added to %s.\nReload your shell (or run: export PATH="$HOME/.local/bin:$PATH") and then run: speq login\n' "$bin_dir" "$rc"
     exit 0 ;;
 esac
-printf 'Next: run `speq login`.\n'
+printf 'Next: run `speq login`, then `speq clone <repo>`.\n'

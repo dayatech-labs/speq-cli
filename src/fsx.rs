@@ -89,6 +89,40 @@ pub fn remove_optional(path: &Path) -> Result<()> {
     }
 }
 
+/// Removes a directory tree; one that is already gone is fine. Symbolic links inside are removed, never followed.
+/// On Windows read-only files (Git's object packs) are made writable first, or the delete would fail half-way.
+pub fn remove_tree(path: &Path) -> Result<()> {
+    #[cfg(windows)]
+    clear_read_only(path);
+    match fs::remove_dir_all(path) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(Error::Io {
+            context: format!("remove {}", path.display()),
+            source: e,
+        }),
+        _ => Ok(()),
+    }
+}
+
+#[cfg(windows)]
+fn clear_read_only(path: &Path) {
+    let Ok(meta) = fs::symlink_metadata(path) else {
+        return;
+    };
+    if meta.file_type().is_symlink() {
+        return;
+    }
+    if meta.is_dir() {
+        for entry in fs::read_dir(path).into_iter().flatten().flatten() {
+            clear_read_only(&entry.path());
+        }
+    } else if meta.permissions().readonly() {
+        let mut permissions = meta.permissions();
+        #[allow(clippy::permissions_set_readonly_false)]
+        permissions.set_readonly(false);
+        let _ = fs::set_permissions(path, permissions);
+    }
+}
+
 /// An OS advisory lock held until dropped (or the process dies).
 #[derive(Debug)]
 pub struct FileLock {

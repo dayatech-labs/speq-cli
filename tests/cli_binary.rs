@@ -1,4 +1,5 @@
-//! The real binary: help, version, usage errors. None of these touch credentials or the network.
+//! The real binary: help, version, usage errors, and what reaches Git. None of these touch credentials or the
+//! network.
 use std::process::Command;
 
 fn speq(args: &[&str]) -> (i32, String, String) {
@@ -15,18 +16,12 @@ fn speq(args: &[&str]) -> (i32, String, String) {
     )
 }
 
-const COMMANDS: [&str; 14] = [
+const COMMANDS: [&str; 8] = [
     "login",
     "logout",
     "list",
-    "init",
+    "clone",
     "deinit",
-    "pull",
-    "status",
-    "diff",
-    "update",
-    "resolve",
-    "push",
     "context",
     "upgrade",
     "uninstall",
@@ -48,6 +43,28 @@ fn help_lists_every_command_with_a_summary_and_exit_codes() {
         assert!(out.contains(&format!("  {c} ")), "missing {c} in help");
     }
     assert!(out.contains("Exit codes:"));
+    // The Git commands people need most, the push rules, and Git's manual are listed too.
+    assert!(
+        out.contains("Git commands:\n  speq status | diff | log | show "),
+        "{out}"
+    );
+    for line in [
+        "  speq add | restore | rm | mv ",
+        "  speq commit ",
+        "  speq pull | fetch ",
+        "  speq push  ",
+        "  speq push --squash ",
+        "  speq switch | branch | stash | rebase ",
+        "  speq help <git command> ",
+    ] {
+        assert!(out.contains(line), "missing {line:?} in help");
+    }
+    assert!(
+        out.contains("Pushes go to main only: no force push"),
+        "{out}"
+    );
+    // What Git commands are comes before the first steps.
+    assert!(out.find("Git commands:") < out.find("Get started:"));
 }
 
 #[test]
@@ -62,42 +79,92 @@ fn every_command_help_has_usage_arguments_flags_examples_and_exit_codes() {
         // `speq help <command>` is equivalent.
         assert_eq!(speq(&["help", c]).1, out, "{c}");
     }
-    let (_, init, _) = speq(&["init", "--help"]);
+    let (_, clone, _) = speq(&["clone", "--help"]);
     assert!(
-        init.contains("--local-dir") && init.contains("--reconfigure") && !init.contains("--type")
+        clone.contains("<REPO>") && clone.contains("[DIR]"),
+        "{clone}"
     );
     let (_, upgrade, _) = speq(&["upgrade", "--help"]);
     assert!(
         upgrade.contains("--check") && upgrade.contains("--yes") && upgrade.contains("--version")
     );
-    let (_, diff, _) = speq(&["diff", "--help"]);
-    assert!(diff.contains("--base"));
 }
 
 #[test]
-fn usage_errors_exit_2_and_force_flags_do_not_exist() {
-    assert_eq!(speq(&["pull", "--feature", "x"]).0, 2);
-    assert_eq!(speq(&["update", "--force", "a.md"]).0, 2);
-    assert_eq!(speq(&["nope"]).0, 2);
-    assert_eq!(speq(&["diff"]).0, 2);
+fn usage_errors_of_speq_commands_exit_2() {
+    assert_eq!(speq(&["clone"]).0, 2);
+    assert_eq!(speq(&["upgrade", "--force"]).0, 2);
+    assert_eq!(speq(&["context"]).0, 2);
+    assert_eq!(speq(&["login", "extra"]).0, 2);
 }
 
 #[test]
-fn commands_outside_a_workspace_exit_7_without_touching_the_network() {
+fn git_commands_outside_a_specs_repository_exit_7_without_touching_the_network() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    for args in [&["status"][..], &["nope"], &["commit", "-m", "x"]] {
+        let out = Command::new(env!("CARGO_BIN_EXE_speq"))
+            .args(args)
+            .current_dir(dir.path())
+            .env("GIT_CEILING_DIRECTORIES", dir.path())
+            .output()
+            .expect("run");
+        assert_eq!(out.status.code(), Some(7), "{args:?}");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            stderr.starts_with("✖ Not a Speq specs repository\n"),
+            "{stderr}"
+        );
+        assert!(stderr.contains("→ Run `speq clone <repo>` (see `speq list`)"));
+    }
+}
+
+#[test]
+fn without_git_speq_says_how_to_install_it() {
     let dir = tempfile::tempdir().expect("tempdir");
     let out = Command::new(env!("CARGO_BIN_EXE_speq"))
         .args(["status"])
         .current_dir(dir.path())
+        .env("PATH", dir.path())
+        .env_remove("SPEQ_GIT")
+        .output()
+        .expect("run");
+    assert_eq!(out.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.starts_with("✖ Git is required\n"), "{stderr}");
+    assert!(stderr.contains("→ "), "{stderr}");
+}
+
+#[test]
+fn json_errors_also_cover_git_commands() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let out = Command::new(env!("CARGO_BIN_EXE_speq"))
+        .args(["--json", "status"])
+        .current_dir(dir.path())
+        .env("GIT_CEILING_DIRECTORIES", dir.path())
         .output()
         .expect("run");
     assert_eq!(out.status.code(), Some(7));
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(stderr.starts_with("✖ Not a Speq workspace\n"));
-    assert!(stderr.contains("→ Run `speq init <repo>`"));
-    assert!(
-        !stderr.contains('\x1b'),
-        "no colors when stderr is not a terminal"
-    );
+    let body: serde_json::Value = serde_json::from_slice(&out.stderr).expect("json error");
+    assert_eq!(body["error"]["code"], "not_initialized");
+}
+
+#[test]
+fn help_and_version_never_need_git_or_a_repository() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    for args in [
+        &["--version"][..],
+        &["help"],
+        &["help", "clone"],
+        &["clone", "--help"],
+    ] {
+        let out = Command::new(env!("CARGO_BIN_EXE_speq"))
+            .args(args)
+            .current_dir(dir.path())
+            .env("PATH", dir.path())
+            .output()
+            .expect("run");
+        assert_eq!(out.status.code(), Some(0), "{args:?}");
+    }
 }
 
 #[test]
@@ -132,29 +199,6 @@ fn uninstall_without_a_terminal_asks_for_yes_and_changes_nothing() {
     assert!(std::path::Path::new(env!("CARGO_BIN_EXE_speq")).exists());
 }
 
-#[test]
-fn deinit_without_a_terminal_asks_for_yes_and_deletes_nothing() {
-    let dir = tempfile::tempdir().expect("tempdir");
-    std::fs::create_dir_all(dir.path().join(".speq")).unwrap();
-    std::fs::write(
-        dir.path().join(".speq/config.toml"),
-        "[spec_source]\nproject_id = \"p\"\nrepository = \"acme/specs\"\nbranch = \"main\"\nlocal_dir = \"specs\"\n",
-    )
-    .unwrap();
-    std::fs::create_dir_all(dir.path().join("specs")).unwrap();
-
-    let out = Command::new(env!("CARGO_BIN_EXE_speq"))
-        .arg("deinit")
-        .current_dir(dir.path())
-        .output()
-        .expect("run speq");
-
-    assert_eq!(out.status.code(), Some(7));
-    assert!(String::from_utf8_lossy(&out.stderr).contains("--yes"));
-    assert!(dir.path().join(".speq/config.toml").exists());
-    assert!(dir.path().join("specs").exists());
-}
-
 fn speq_env(args: &[&str], key: &str, value: &str) -> String {
     let out = Command::new(env!("CARGO_BIN_EXE_speq"))
         .args(args)
@@ -168,19 +212,19 @@ fn speq_env(args: &[&str], key: &str, value: &str) -> String {
 
 #[test]
 fn help_is_plain_when_piped_and_colored_when_forced() {
-    let (_, plain, _) = speq(&["init", "--help"]);
+    let (_, plain, _) = speq(&["clone", "--help"]);
     assert!(
         !plain.contains('\x1b'),
         "piped help must have no ANSI codes"
     );
 
-    let colored = speq_env(&["init", "--help"], "CLICOLOR_FORCE", "1");
+    let colored = speq_env(&["clone", "--help"], "CLICOLOR_FORCE", "1");
     assert!(colored.contains('\x1b'), "forced help should be colored");
     // Clap-generated parts and our hand-written sections are both painted.
     assert!(colored.contains("\x1b[1m\x1b[33mUsage:"), "{colored}");
     assert!(colored.contains("\x1b[1m\x1b[33mExamples:"), "{colored}");
     assert!(
-        colored.contains("\x1b[1m\x1b[32mspeq init payment-specs"),
+        colored.contains("\x1b[1m\x1b[32mspeq clone payment-specs"),
         "{colored}"
     );
     assert!(colored.contains("\x1b[36m<REPO>"), "{colored}");
@@ -191,6 +235,14 @@ fn help_is_plain_when_piped_and_colored_when_forced() {
 
     let top = speq_env(&["help"], "CLICOLOR_FORCE", "1");
     assert!(top.contains("\x1b[1m\x1b[33mGet started:"), "{top}");
+    assert!(top.contains("\x1b[1m\x1b[33mGit commands:"), "{top}");
+    // Only the command is painted; its description after the column gap stays plain.
+    assert!(
+        top.contains(
+            "\x1b[1m\x1b[32mspeq commit\x1b[0m                              record staged changes"
+        ),
+        "{top}"
+    );
 }
 
 #[test]
@@ -220,7 +272,7 @@ fn only_the_top_level_help_shows_the_speq_cli_banner() {
         assert!(text.contains(logo), "{args:?}");
         assert!(text.contains("Usage: speq"), "{args:?}");
     }
-    let (_, sub, _) = speq(&["pull", "--help"]);
+    let (_, sub, _) = speq(&["clone", "--help"]);
     assert!(!sub.contains("_____"), "subcommand help has no banner");
 
     let colored = speq_env(&["help"], "CLICOLOR_FORCE", "1");
@@ -228,16 +280,4 @@ fn only_the_top_level_help_shows_the_speq_cli_banner() {
         colored.starts_with("\x1b[1m\x1b[36m ____  ____"),
         "{colored}"
     );
-}
-
-#[test]
-fn resolve_rejects_contradictory_or_missing_targets() {
-    for args in [
-        vec!["resolve"],
-        vec!["resolve", "--all", "a.md"],
-        vec!["resolve", "--all", "--ours", "--theirs"],
-    ] {
-        let (code, _, stderr) = speq(&args);
-        assert_eq!(code, 2, "{args:?}: {stderr}");
-    }
 }

@@ -50,8 +50,10 @@ pub enum Error {
     Conflict(String),
     #[error("{0}")]
     Invalid(String),
-    #[error("not a Speq workspace (no .speq/config.toml found); run `speq init <repo>`")]
+    #[error("not inside a Speq specs repository; run `speq clone <repo>`")]
     NotInitialized,
+    #[error("{0}")]
+    GitMissing(String),
     #[error("{context}: {source}")]
     Io {
         context: String,
@@ -79,7 +81,10 @@ impl Error {
             },
             Error::Conflict(_) => exit::CONFLICT,
             Error::Invalid(_) | Error::NotInitialized => exit::INVALID,
-            Error::Io { .. } | Error::CredentialStore(_) | Error::Other(_) => exit::FAILURE,
+            Error::Io { .. }
+            | Error::CredentialStore(_)
+            | Error::GitMissing(_)
+            | Error::Other(_) => exit::FAILURE,
         }
     }
 
@@ -92,6 +97,7 @@ impl Error {
             Error::Conflict(_) => "conflict",
             Error::Invalid(_) => "invalid",
             Error::NotInitialized => "not_initialized",
+            Error::GitMissing(_) => "git_missing",
             Error::Io { .. } => "io",
             Error::CredentialStore(_) => "credential_store",
             Error::Other(_) => "error",
@@ -115,7 +121,8 @@ impl Error {
             },
             Error::Conflict(_) => "Conflict",
             Error::Invalid(_) => "Invalid request",
-            Error::NotInitialized => "Not a Speq workspace",
+            Error::NotInitialized => "Not a Speq specs repository",
+            Error::GitMissing(_) => "Git is required",
             Error::Io { .. } => "File error",
             Error::CredentialStore(_) => "Credential store error",
             Error::Other(_) => "Something went wrong",
@@ -130,13 +137,14 @@ impl Error {
                 "Your token expired or was revoked, so the local credentials were removed.".into()
             }
             Error::NotInitialized => {
-                "No .speq/config.toml was found in this directory or any parent.".into()
+                "Neither this directory, its repository, nor a specs/ folder above it is a repository made by `speq clone`.".into()
             }
             Error::Api(e) => e.message.clone(),
             Error::Network(m)
             | Error::Conflict(m)
             | Error::Invalid(m)
             | Error::CredentialStore(m)
+            | Error::GitMissing(m)
             | Error::Other(m) => m.clone(),
             Error::Io { context, source } => format!("{context}: {source}"),
         }
@@ -146,7 +154,8 @@ impl Error {
     pub fn hint(&self) -> Option<String> {
         match self {
             Error::NotLoggedIn | Error::SessionExpired => Some("Run `speq login`".into()),
-            Error::NotInitialized => Some("Run `speq init <repo>`".into()),
+            Error::NotInitialized => Some("Run `speq clone <repo>` (see `speq list`)".into()),
+            Error::GitMissing(_) => Some(crate::git::install_hint().into()),
             Error::Network(_) => Some("Check your connection and try again".into()),
             Error::Api(e) => match e.status {
                 401 => Some("Run `speq login`".into()),

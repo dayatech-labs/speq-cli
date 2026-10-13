@@ -104,6 +104,10 @@ jobs:
           cp "target/$target/release/speq${{ matrix.exe }}" "dist/speq-$version-$target${{ matrix.exe }}"
           cp "target/$target/release/speq${{ matrix.exe }}" "stage/speq${{ matrix.exe }}"
           cp README.md stage/
+          # Git runs speq as git-remote-speq and git-credential-speq: copies on Windows, links elsewhere.
+          for helper in git-remote-speq git-credential-speq; do
+            if [ "${{ matrix.pack }}" = "zip" ]; then cp stage/speq.exe "stage/$helper.exe"; else ln -s speq "stage/$helper"; fi
+          done
           if [ "${{ matrix.pack }}" = "zip" ]; then
             (cd stage && 7z a -tzip "../dist/speq-$version-$target.zip" .)
           else

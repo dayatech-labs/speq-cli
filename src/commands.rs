@@ -1,19 +1,116 @@
-//! Dispatch from the parsed command line to the library, then to output.
+//! Dispatch from the command line: speq's own commands go to the library, everything else to Git.
 use crate::cli::{Cli, Command, banner, exit_code_help, paint_help};
+use crate::clone::{self, CloneOptions};
 use crate::context;
 use crate::deinit;
 use crate::env::Env;
 use crate::error::{Error, Result};
-use crate::init::{self, InitOptions};
+use crate::git::Git;
+use crate::links;
 use crate::output::emit;
+use crate::repo::SpecsRepo;
 use crate::session::Session;
-use crate::sync::resolve::{self, Choice, Target};
-use crate::sync::{pull, push, status};
+use crate::squash;
 use crate::uninstall;
 use crate::upgrade::{self, Install};
-use crate::workspace::Workspace;
 use clap::{CommandFactory, FromArgMatches};
+use std::ffi::OsString;
 use std::io::{IsTerminal, Write};
+use std::path::{Path, PathBuf};
+
+/// Commands speq answers itself; any other command is Git's.
+pub const SPEQ_COMMANDS: [&str; 8] = [
+    "login",
+    "logout",
+    "list",
+    "clone",
+    "deinit",
+    "context",
+    "upgrade",
+    "uninstall",
+];
+
+/// Where a command line goes.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Route {
+    /// One of [`SPEQ_COMMANDS`], help, or version: parsed by Clap.
+    Speq,
+    /// `git <args>` in the specs repository.
+    Git(Vec<OsString>),
+    /// `speq push --squash [push args]`: squash, then `git push <push args>`.
+    SquashPush(Vec<OsString>),
+    /// `speq help <git command>`: Git's manual, needs no repository.
+    GitHelp(Vec<OsString>),
+}
+
+/// Decides from the arguments after the program name. speq's global flags (`--json`, `--api-url`) may come first;
+/// anything else that starts with `-` is a Git option (`-C`, `-c`, `--no-pager`) and goes to Git with the rest.
+pub fn route(args: &[OsString]) -> Route {
+    let mut rest = args;
+    loop {
+        match rest.first().and_then(|a| a.to_str()) {
+            Some("--json") => rest = &rest[1..],
+            Some("--api-url") => rest = rest.get(2..).unwrap_or(&[]),
+            Some(a) if a.starts_with("--api-url=") => rest = &rest[1..],
+            _ => break,
+        }
+    }
+    let first = rest.first().and_then(|a| a.to_str());
+    match first {
+        None | Some("help" | "-h" | "--help" | "-V" | "--version") => {
+            let topic = rest.get(1).and_then(|a| a.to_str());
+            match (first, topic) {
+                (Some("help"), Some(topic)) if !SPEQ_COMMANDS.contains(&topic) => {
+                    Route::GitHelp(rest.to_vec())
+                }
+                _ => Route::Speq,
+            }
+        }
+        Some(command) if SPEQ_COMMANDS.contains(&command) => Route::Speq,
+        Some("push") if rest.iter().any(|a| a == "--squash") => {
+            Route::SquashPush(rest.iter().filter(|a| *a != "--squash").cloned().collect())
+        }
+        _ => Route::Git(rest.to_vec()),
+    }
+}
+
+/// The directory of the running binary: Git finds speq's helpers there.
+fn helper_dir() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    // Best effort: a missing helper only matters for fetch/push, and `speq clone` reports it clearly.
+    let _ = links::ensure(&exe);
+    exe.parent().map(Path::to_path_buf)
+}
+
+fn current_dir() -> Result<PathBuf> {
+    std::env::current_dir().map_err(|e| Error::Io {
+        context: "read the current directory".into(),
+        source: e,
+    })
+}
+
+/// Runs a Git route and returns Git's exit code.
+pub fn run_git(route: Route) -> Result<u8> {
+    let git = Git::locate(helper_dir())?;
+    let cwd = current_dir()?;
+    match route {
+        Route::GitHelp(args) => git.passthrough(None, args),
+        Route::Git(args) => {
+            let repo = SpecsRepo::discover(&git, &cwd)?;
+            git.passthrough(repo.git_dir_for(&cwd).as_deref(), args)
+        }
+        Route::SquashPush(args) => {
+            let repo = SpecsRepo::discover(&git, &cwd)?;
+            let dir = repo.git_dir_for(&cwd);
+            let squashed = squash::squash(&git, dir.as_deref())?;
+            if squashed > 1 {
+                eprintln!("speq: squashed {squashed} commits into one");
+            }
+            git.passthrough(dir.as_deref(), args)
+        }
+        Route::Speq => Err(Error::Other("not a Git command".into())),
+    }
+}
 
 /// The Clap command with the shared exit-code table appended to every command's help.
 pub fn build_command() -> clap::Command {
@@ -54,13 +151,6 @@ pub fn parse_args<I: IntoIterator<Item = String>>(
     Cli::from_arg_matches(&matches)
 }
 
-fn workspace() -> Result<Workspace> {
-    Workspace::discover(&std::env::current_dir().map_err(|e| Error::Io {
-        context: "read the current directory".into(),
-        source: e,
-    })?)
-}
-
 fn confirm(prompt: &str) -> Result<bool> {
     if !std::io::stdin().is_terminal() {
         return Err(Error::invalid(
@@ -87,42 +177,54 @@ pub async fn run(cli: Cli, env: &Env) -> Result<u8> {
     match cli.command {
         Command::Login(_) => Ok(emit(json, &Session::new(env).login().await?)),
         Command::Logout(args) => Ok(emit(json, &Session::new(env).logout(args.all).await?)),
-        Command::List => Ok(emit(json, &init::list(env).await?)),
-        Command::Init(args) => {
-            let root = std::env::current_dir().map_err(|e| Error::Io {
-                context: "read the current directory".into(),
-                source: e,
-            })?;
-            let root = std::fs::canonicalize(&root).map_err(|e| Error::Io {
-                context: "resolve the current directory".into(),
-                source: e,
-            })?;
-            let options = InitOptions {
+        Command::List => Ok(emit(json, &clone::list(env).await?)),
+        Command::Clone(args) => {
+            let git = Git::locate(helper_dir())?;
+            let options = CloneOptions {
                 repo: &args.repo,
-                local_dir: &args.local_dir,
-                reconfigure: args.reconfigure,
+                dir: args.dir.as_deref(),
             };
-            Ok(emit(json, &init::init(env, &root, options).await?))
+            Ok(emit(
+                json,
+                &clone::clone(env, &git, &current_dir()?, options).await?,
+            ))
         }
-        Command::Deinit(args) => deinit_command(json, env, args),
-        Command::Pull => Ok(emit(json, &pull::pull(env, &workspace()?).await?)),
-        Command::Status => Ok(emit(json, &status::status(env, &workspace()?).await?)),
-        Command::Diff(args) => {
-            let ws = workspace()?;
-            let report = if args.base {
-                status::diff_base(&ws, &args.path)?
-            } else {
-                status::diff_remote(env, &ws, &args.path).await?
-            };
-            Ok(emit(json, &report))
+        Command::Deinit(args) => {
+            let git = Git::locate(None)?;
+            let cwd = current_dir()?;
+            let target = deinit::find(&git, &cwd)?;
+            if !args.yes {
+                let folders = deinit::folders(&target)
+                    .iter()
+                    .map(|f| f.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(" and ");
+                let lost = match &target {
+                    deinit::Target::Repo(repo) => match deinit::at_risk(&git, &repo.root)? {
+                        risk if risk.is_empty() => {
+                            "Everything in it was pushed; nothing else is lost.".to_string()
+                        }
+                        risk => format!("This loses {}.", risk.describe()),
+                    },
+                    deinit::Target::Legacy { .. } => {
+                        "Local edits that were never pushed are lost.".to_string()
+                    }
+                };
+                if !confirm(&format!("Delete {folders}? {lost}"))? {
+                    return Err(Error::invalid("cancelled; nothing was changed"));
+                }
+            }
+            Ok(emit(json, &deinit::deinit(&git, &target, &cwd)?))
         }
-        Command::Update(args) => Ok(emit(
-            json,
-            &pull::update(env, &workspace()?, &args.path).await?,
-        )),
-        Command::Resolve(args) => resolve_command(json, env, args),
-        Command::Push => Ok(emit(json, &push::push(env, &workspace()?).await?)),
-        Command::Context(args) => Ok(emit(json, &context::context(&workspace()?, &args.target)?)),
+        Command::Context(args) => {
+            let git = Git::locate(None)?;
+            let cwd = current_dir()?;
+            let repo = SpecsRepo::discover(&git, &cwd)?;
+            Ok(emit(
+                json,
+                &context::context(&git, &repo, &cwd, &args.target)?,
+            ))
+        }
         Command::Upgrade(args) => upgrade_command(json, args).await,
         Command::Uninstall(args) => uninstall_command(json, env, args),
     }
@@ -195,6 +297,8 @@ async fn upgrade_command(json: bool, args: crate::cli::UpgradeArgs) -> Result<u8
         return Err(Error::invalid("cancelled; nothing was changed"));
     }
     upgrade::install_binary(&http, &artifact.binary, &exe, &target).await?;
+    // On Windows the helpers are copies of the binary: bring them up to date with it.
+    links::ensure(&exe);
     Ok(emit(
         json,
         &upgrade::UpgradeReport {
@@ -204,47 +308,6 @@ async fn upgrade_command(json: bool, args: crate::cli::UpgradeArgs) -> Result<u8
             path: Some(exe.display().to_string()),
         },
     ))
-}
-
-fn resolve_command(json: bool, env: &Env, args: crate::cli::ResolveArgs) -> Result<u8> {
-    let ws = workspace()?;
-    let choice = match (args.ours, args.theirs) {
-        (true, _) => Choice::Ours,
-        (_, true) => Choice::Theirs,
-        _ => Choice::Edited,
-    };
-    if choice == Choice::Theirs && !args.yes {
-        let what = if args.all {
-            "every conflicting file".to_string()
-        } else {
-            args.paths.join(", ")
-        };
-        let prompt = format!("Replace {what} with the remote version? Your edits to it are lost");
-        if !confirm(&prompt)? {
-            return Err(Error::invalid("cancelled; nothing was changed"));
-        }
-    }
-    let target = if args.all {
-        Target::All
-    } else {
-        Target::Paths(&args.paths)
-    };
-    Ok(emit(json, &resolve::resolve(env, &ws, target, choice)?))
-}
-
-fn deinit_command(json: bool, env: &Env, args: crate::cli::DeinitArgs) -> Result<u8> {
-    let ws = workspace()?;
-    if !args.yes {
-        let prompt = format!(
-            "Delete {} in {}? Local edits that were not pushed are lost",
-            deinit::targets(&ws),
-            ws.root.display()
-        );
-        if !confirm(&prompt)? {
-            return Err(Error::invalid("cancelled; nothing was changed"));
-        }
-    }
-    Ok(emit(json, &deinit::deinit(env, &ws)?))
 }
 
 fn uninstall_command(json: bool, env: &Env, args: crate::cli::UninstallArgs) -> Result<u8> {
@@ -261,4 +324,93 @@ fn uninstall_command(json: bool, env: &Env, args: crate::cli::UninstallArgs) -> 
         }
     }
     Ok(emit(json, &uninstall::uninstall(env, &exe, &install)?))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(list: &[&str]) -> Vec<OsString> {
+        list.iter().map(OsString::from).collect()
+    }
+
+    #[test]
+    fn every_command_clap_knows_is_routed_to_speq_and_nothing_else() {
+        let mut clap: Vec<String> = build_command()
+            .get_subcommands()
+            .map(|c| c.get_name().to_string())
+            .filter(|name| name != "help")
+            .collect();
+        let mut routed: Vec<String> = SPEQ_COMMANDS.iter().map(|c| c.to_string()).collect();
+        clap.sort();
+        routed.sort();
+        assert_eq!(clap, routed);
+    }
+
+    #[test]
+    fn speq_commands_help_and_version_stay_with_speq() {
+        for line in [
+            &[][..],
+            &["login"],
+            &["--json", "list"],
+            &["--api-url", "http://localhost:8787", "clone", "x"],
+            &["--api-url=http://localhost:8787", "context", "a/b"],
+            &["help"],
+            &["help", "clone"],
+            &["--help"],
+            &["-V"],
+            &["upgrade", "--check"],
+            &["deinit", "--yes"],
+        ] {
+            assert_eq!(route(&args(line)), Route::Speq, "{line:?}");
+        }
+    }
+
+    #[test]
+    fn everything_else_is_git() {
+        assert_eq!(route(&args(&["status"])), Route::Git(args(&["status"])));
+        assert_eq!(
+            route(&args(&["commit", "-am", "docs: x"])),
+            Route::Git(args(&["commit", "-am", "docs: x"]))
+        );
+        assert_eq!(
+            route(&args(&["--no-pager", "log", "--oneline"])),
+            Route::Git(args(&["--no-pager", "log", "--oneline"]))
+        );
+        assert_eq!(
+            route(&args(&["-C", "specs", "status"])),
+            Route::Git(args(&["-C", "specs", "status"]))
+        );
+        // speq's global flags are not Git's.
+        assert_eq!(
+            route(&args(&["--json", "status"])),
+            Route::Git(args(&["status"]))
+        );
+        assert_eq!(route(&args(&["push"])), Route::Git(args(&["push"])));
+        assert_eq!(route(&args(&["init"])), Route::Git(args(&["init"])));
+    }
+
+    #[test]
+    fn help_for_a_git_command_is_gits_manual() {
+        assert_eq!(
+            route(&args(&["help", "commit"])),
+            Route::GitHelp(args(&["help", "commit"]))
+        );
+    }
+
+    #[test]
+    fn squash_is_only_an_opt_in_push_flag() {
+        assert_eq!(
+            route(&args(&["push", "--squash"])),
+            Route::SquashPush(args(&["push"]))
+        );
+        assert_eq!(
+            route(&args(&["push", "origin", "--squash", "HEAD:main"])),
+            Route::SquashPush(args(&["push", "origin", "HEAD:main"]))
+        );
+        assert_eq!(
+            route(&args(&["commit", "--squash", "HEAD"])),
+            Route::Git(args(&["commit", "--squash", "HEAD"]))
+        );
+    }
 }

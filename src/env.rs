@@ -7,6 +7,15 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use url::Url;
 
+/// The OS credential store; in debug builds, a file named by `SPEQ_DEV_CREDENTIAL_FILE` instead (tests).
+fn store() -> Arc<dyn CredentialStore> {
+    #[cfg(debug_assertions)]
+    if let Some(store) = crate::dev_store::FileStore::from_env() {
+        return store;
+    }
+    Arc::new(KeyringStore)
+}
+
 pub struct Env {
     pub api_url: Url,
     pub client: Client,
@@ -21,7 +30,7 @@ impl Env {
         Ok(Env {
             client: Client::new(api_url.clone())?,
             dirs: AppDirs::discover()?,
-            creds: Arc::new(KeyringStore),
+            creds: store(),
             api_url,
             open_browser,
         })

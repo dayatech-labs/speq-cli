@@ -23,13 +23,37 @@ pub const LONG_VERSION: &str = concat!(
 const EXIT_CODES: &str = "\
 Exit codes:
   0  success
-  1  unexpected failure (I/O, internal)
+  1  unexpected failure (I/O, internal, Git missing)
   2  invalid usage
   3  not logged in or session expired
   4  network or server unavailable (including rate limits)
-  5  conflict: unresolved conflicts, rejected push, or workspace not clean
+  5  conflict
   6  permission denied by the API
-  7  invalid input or workspace state (unknown path, not initialized, ambiguous repo)";
+  7  invalid input or state (unknown repository, not a specs repository)
+Any other command is Git's, and exits with Git's code.";
+
+/// The Git commands speq users need most, the push rules, and the first steps: below the command list of `speq help`.
+const TOP_HELP: &str = "\
+Git commands:
+  speq status | diff | log | show          see what changed, and who changed it
+  speq add | restore | rm | mv             stage changes, or undo them
+  speq commit                              record staged changes, authored as your Speq account
+  speq pull | fetch                        get the latest specs (pull rebases your commits on top)
+  speq push                                send your commits to main, checked against your role
+  speq push --squash                       fold the commits not yet pushed into one, then push
+  speq switch | branch | stash | rebase    local work, exactly as in Git
+  speq merge | reset | checkout | blame    ...and any other Git command, with Git's flags
+  speq help <git command>                  Git's manual for that command
+
+Git commands run in the specs repository you are in, or in ./specs from the repository around it.
+Pushes go to main only: no force push, no tags or other branches, at most 20 commits, documents only.
+
+Get started:
+  speq login
+  speq list
+  speq clone <repo>
+  speq status
+  speq commit -am \"docs: ...\" && speq push";
 
 #[derive(Parser, Debug)]
 #[command(
@@ -37,11 +61,12 @@ Exit codes:
     styles = STYLES,
     version = env!("CARGO_PKG_VERSION"),
     long_version = LONG_VERSION,
-    about = "Sync product specs into your implementation repository",
-    long_about = "Speq brings the product specs repository into your repository's specs/ folder, \
-                  shows what changed on either side, and sends your edits back through the Speq API. \
-                  It never talks to GitHub directly and never needs GitHub credentials.",
-    after_help = "Run `speq <command> --help` for usage, arguments, flags, examples, and exit codes.\n\nGet started: speq login && speq list && speq init <repo> && speq pull",
+    about = "Work on your product specs with the Git commands you already know",
+    long_about = "speq clones a product's specs repository as an ordinary Git repository and runs Git for you: \
+                  `speq status`, `speq add`, `speq commit`, `speq pull`, `speq push`, `speq log`, ... are Git's own \
+                  commands. Fetches and pushes go through the Speq API with your Speq login, so no GitHub account or \
+                  credentials are needed, and every push is checked against your role.",
+    after_help = TOP_HELP,
     arg_required_else_help = true
 )]
 pub struct Cli {
@@ -67,7 +92,7 @@ pub enum Command {
 
     /// Delete the local credential and cache (--all also ends every other device)
     #[command(
-        after_help = "Examples:\n  speq logout\n  speq logout --all\n\nA token cannot be revoked on its own. Plain `logout` forgets it on this machine only; --all ends every token\nyour account holds, on every device and in the Web app. Workspace files and `.speq/` are left untouched.\n\n"
+        after_help = "Examples:\n  speq logout\n  speq logout --all\n\nA token cannot be revoked on its own. Plain `logout` forgets it on this machine only; --all ends every token\nyour account holds, on every device and in the Web app. Specs repositories are left untouched.\n\n"
     )]
     Logout(LogoutArgs),
 
@@ -77,57 +102,21 @@ pub enum Command {
     )]
     List,
 
-    /// Choose a repository and prepare this directory as a workspace
+    /// Clone a specs repository from `speq list` as a Git repository wired to Speq
     #[command(
-        after_help = "Arguments:\n  <REPO>  `owner/repo` from `speq list`, or the repo name or project name when it is unique\n\nExamples:\n  speq init payment-specs\n  speq init acme/payment-specs --local-dir docs/specs\n  speq init payment-specs --reconfigure\n\n"
+        after_help = "Arguments:\n  <REPO>  `owner/repo` from `speq list`, or the repo name or project name when it is unique\n  [DIR]   folder to create (default: `specs` inside a Git repository, which is then ignored there; else the repo name)\n\nExamples:\n  speq clone payment-specs\n  speq clone acme/payment-specs docs/specs\n\nAfterwards use Git's commands through speq: speq status, speq add, speq commit, speq pull, speq push, speq log.\nPulls rebase, line endings are kept byte for byte, and commits are authored with your Speq account email.\n\n"
     )]
-    Init(InitArgs),
+    Clone(CloneArgs),
 
-    /// Delete this workspace's .speq/ and specs folder
+    /// Delete the specs repository (or an older speq workspace) to start over
     #[command(
-        after_help = "Examples:\n  speq deinit\n  speq deinit --yes\n\nThe inverse of `speq init`: removes `.speq/` and the specs folder from the workspace, including local edits that\nwere never pushed. Run `speq push` first to keep them. Nothing else is touched: `.gitignore`, your login, and the\nbinary stay. Use `speq init` and `speq pull` to start over.\n\n"
+        after_help = "Examples:\n  speq deinit\n  speq deinit --yes\n\nThe inverse of `speq clone`: deletes the specs repository you are in, or ./specs from the repository around it,\nwith its Git history. Changes that were not committed or not pushed, and stashes, are lost: the confirmation names\nthem, and `speq push` first keeps them. A workspace of the older speq (`.speq/` and its specs folder) is removed the\nsame way. Your login and the `.gitignore` entry stay, so `speq clone <repo>` starts again right away.\n\n"
     )]
     Deinit(DeinitArgs),
 
-    /// Download all specs and apply them without overwriting local work
-    #[command(
-        after_help = "Examples:\n  speq pull\n\nLocal-only edits are kept. A file changed on both sides is merged line by line like Git: edits to different lines\nare combined, and only the regions both sides changed get conflict markers (<<<<<<< local, ||||||| base, >>>>>>>\nremote). Resolve those blocks in your editor (VS Code opens a merge editor), save, and run `speq pull` again. A remote\ndelete over a local edit is reported and left alone. Push is blocked until every conflict is resolved.\n\n"
-    )]
-    Pull,
-
-    /// Compare the working copy, the last sync, and the latest remote
-    #[command(
-        after_help = "Categories: unchanged, local-only, remote-only, conflict, deleted (removed locally).\n\nExamples:\n  speq status\n  speq status --json\n\nExits 5 when any path is in conflict.\n\n"
-    )]
-    Status,
-
-    /// Show a diff of a file against the latest remote (or the last sync with --base)
-    #[command(
-        after_help = "Arguments:\n  <PATH>  document path relative to the specs folder, as printed by `speq status`\n\nExamples:\n  speq diff epics/epic-payment/prd.md\n  speq diff epics/epic-payment/prd.md --base\n\n--base works offline.\n\n"
-    )]
-    Diff(DiffArgs),
-
-    /// Apply the latest remote version of one file if it has no local changes
-    #[command(
-        after_help = "Arguments:\n  <PATH>  document path relative to the specs folder\n\nExamples:\n  speq update epics/epic-payment/prd.md\n\nFails when the local copy changed; there is no force or discard option.\n\n"
-    )]
-    Update(UpdateArgs),
-
-    /// Finish conflicts after a pull, or take your side or the remote's
-    #[command(
-        after_help = "Arguments:\n  <PATH>...  conflicting documents relative to the specs folder, as printed by `speq status` (or use --all)\n\nExamples:\n  speq resolve epics/epic-payment/prd.md\n  speq resolve --all\n  speq resolve epics/epic-payment/prd.md --ours\n  speq resolve --all --theirs --yes\n\nWorks offline. Without a side, the file as you saved it is kept as your change on top of the remote, so `speq push`\ncan send it; a file that still has conflict markers is skipped. Without a side, --all only takes files that had\nmarkers: a delete on one side is never decided for you, name it instead. --ours restores your version from before the merge.\n--theirs replaces the file with the remote version and discards your edits to it: it asks first, and has no undo.\nPush stays blocked until no conflict is left.\n\n"
-    )]
-    Resolve(ResolveArgs),
-
-    /// Send local changes to the API as one batch
-    #[command(
-        after_help = "Examples:\n  speq push\n\nLists the paths and actions first. Refused when the workspace has conflicts or is not clean. On a\nrejection (HTTP 403/409) nothing is committed, nothing is retried automatically, and your files are untouched;\nuse `speq status`, `speq diff <path>`, and `speq pull`. Writes are decided by the API.\n\n"
-    )]
-    Push,
-
     /// Print the files a coding agent should read for one story
     #[command(
-        after_help = "Arguments:\n  <TARGET>  `<epic>/<story>` where <story> is the story folder name, for example epic-payment/st-001-create-payment\n\nExamples:\n  speq context epic-payment/st-001-create-payment\n  speq context epic-payment/st-001-create-payment --json\n\nPrints one path per line in a fixed order, from the local copy (no network): llms.txt, README.md, architecture.md, the epic's briefs, prd.md and architecture.md, then the story's README.md, acceptance-criteria.md, DESIGN.md, layout.html and tasks. Only files that exist are listed. Requires a clean workspace.\n\n"
+        after_help = "Arguments:\n  <TARGET>  `<epic>/<story>` where <story> is the story folder name, for example epic-payment/st-001-create-payment\n\nExamples:\n  speq context epic-payment/st-001-create-payment\n  speq context epic-payment/st-001-create-payment --json\n\nPrints one path per line (relative to this directory) in a fixed order, from the working tree (no network): llms.txt, README.md, architecture.md, the epic's briefs, prd.md and architecture.md, then the story's README.md, acceptance-criteria.md, DESIGN.md, layout.html and tasks. Only files that exist are listed.\n\n"
     )]
     Context(ContextArgs),
 
@@ -139,7 +128,7 @@ pub enum Command {
 
     /// Remove speq's local data and, when the installer put it there, the binary
     #[command(
-        after_help = "Examples:\n  speq uninstall\n  speq uninstall --yes\n\nRemoves the stored credential and the cache, then the binary if it was placed by the\nofficial installer. Binaries managed by Homebrew, Scoop, WinGet, or another package manager are left in place and\nthe matching package-manager command is shown. Workspaces (`specs/` and `.speq/`) are never touched (see `speq deinit`), and the\nserver-side session is not ended: run `speq logout --all` first for that. Only the credential of the current API\norigin is removed.\n\n"
+        after_help = "Examples:\n  speq uninstall\n  speq uninstall --yes\n\nRemoves the stored credential and the cache, then the binary if it was placed by the\nofficial installer. Binaries managed by Homebrew, Scoop, WinGet, or another package manager are left in place and\nthe matching package-manager command is shown. Specs repositories are never touched (see `speq deinit`), and the\nserver-side session is not ended: run `speq logout --all` first for that. Only the credential of the current API\norigin is removed.\n\n"
     )]
     Uninstall(UninstallArgs),
 }
@@ -150,14 +139,8 @@ impl Command {
             Command::Login(_) => "login",
             Command::Logout(_) => "logout",
             Command::List => "list",
-            Command::Init(_) => "init",
+            Command::Clone(_) => "clone",
             Command::Deinit(_) => "deinit",
-            Command::Pull => "pull",
-            Command::Status => "status",
-            Command::Diff(_) => "diff",
-            Command::Update(_) => "update",
-            Command::Resolve(_) => "resolve",
-            Command::Push => "push",
             Command::Context(_) => "context",
             Command::Upgrade(_) => "upgrade",
             Command::Uninstall(_) => "uninstall",
@@ -180,54 +163,16 @@ pub struct LogoutArgs {
 }
 
 #[derive(Args, Debug)]
-pub struct InitArgs {
+pub struct CloneArgs {
     /// Repository: `owner/repo`, or a repo or project name that is unique in `speq list`
     pub repo: String,
-    /// Folder for the specs, relative to this directory
-    #[arg(long, default_value = "specs", value_name = "DIR")]
-    pub local_dir: String,
-    /// Replace the existing configuration of this workspace
-    #[arg(long)]
-    pub reconfigure: bool,
+    /// Folder to create
+    pub dir: Option<String>,
 }
 
 #[derive(Args, Debug)]
 pub struct DeinitArgs {
     /// Do not ask for confirmation
-    #[arg(long, short = 'y')]
-    pub yes: bool,
-}
-
-#[derive(Args, Debug)]
-pub struct DiffArgs {
-    /// Document path relative to the specs folder
-    pub path: String,
-    /// Compare with the last synced baseline instead of the latest remote (offline)
-    #[arg(long)]
-    pub base: bool,
-}
-
-#[derive(Args, Debug)]
-pub struct UpdateArgs {
-    /// Document path relative to the specs folder
-    pub path: String,
-}
-
-#[derive(Args, Debug)]
-pub struct ResolveArgs {
-    /// Conflicting document paths relative to the specs folder
-    #[arg(required_unless_present = "all")]
-    pub paths: Vec<String>,
-    /// Resolve every pending conflict
-    #[arg(long, conflicts_with = "paths")]
-    pub all: bool,
-    /// Restore your version from before the merge
-    #[arg(long, conflicts_with = "theirs")]
-    pub ours: bool,
-    /// Replace the file with the remote version, discarding your edits
-    #[arg(long)]
-    pub theirs: bool,
-    /// Do not ask for confirmation when discarding your edits (--theirs)
     #[arg(long, short = 'y')]
     pub yes: bool,
 }
@@ -266,12 +211,13 @@ pub fn exit_code_help() -> &'static str {
 /// Paints the hand-written help text (`after_help`) with the same palette as [`STYLES`]:
 /// section headings, example commands, `<ARGS>`, and exit-code numbers.
 pub fn paint_help(text: &str) -> String {
-    const HEADINGS: [&str; 5] = [
+    const HEADINGS: [&str; 6] = [
         "Examples:",
         "Arguments:",
         "Categories:",
         "Exit codes:",
         "Get started:",
+        "Git commands:",
     ];
     let header = STYLES.get_header();
     let literal = STYLES.get_literal();
@@ -296,6 +242,11 @@ pub fn paint_help(text: &str) -> String {
             match section {
                 "Examples:" | "Get started:" if body.starts_with("speq ") => {
                     format!("  {}", wrap(literal, body))
+                }
+                // The command is painted; its description, after the column gap, stays plain.
+                "Git commands:" if body.starts_with("speq ") => {
+                    let end = body.find("  ").unwrap_or(body.len());
+                    format!("  {}{}", wrap(literal, &body[..end]), &body[end..])
                 }
                 "Arguments:" if body.starts_with('<') => {
                     let end = body.find('>').map_or(body.len(), |i| i + 1);

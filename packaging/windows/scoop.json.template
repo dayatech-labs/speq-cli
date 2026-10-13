@@ -1,6 +1,6 @@
 {
   "version": "@VERSION@",
-  "description": "Sync product specs into implementation repositories",
+  "description": "Work on product specs with Git commands, through the Speq API",
   "homepage": "https://github.com/dayatech-labs/speq-cli",
   "license": "Proprietary",
   "architecture": {
@@ -9,7 +9,8 @@
       "hash": "@WINDOWS_SHA256@"
     }
   },
-  "bin": "speq.exe",
+  "bin": ["speq.exe", "git-remote-speq.exe", "git-credential-speq.exe"],
+  "suggest": { "Git": "git" },
   "checkver": { "github": "https://github.com/dayatech-labs/speq-cli" },
   "autoupdate": {
     "architecture": {

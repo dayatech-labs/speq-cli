@@ -1,10 +1,9 @@
 mod support;
 
-use speq::credentials::CredentialStore;
 use speq::error::Error;
 use speq::session::Session;
 use speq::snapshot;
-use support::{Device, FakeApi, REPO};
+use support::{Device, FakeApi};
 
 #[tokio::test]
 async fn login_stores_the_token_only_in_the_credential_store_plus_snapshot() {
@@ -135,7 +134,7 @@ async fn list_uses_the_valid_snapshot_without_calling_the_api() {
     let device = Device::new(&api);
     device.login().await;
     let before = api.requests();
-    let list = speq::init::list(&device.env).await.unwrap();
+    let list = speq::clone::list(&device.env).await.unwrap();
     assert_eq!(list.projects.len(), 3);
     assert_eq!(
         api.requests(),
@@ -158,7 +157,7 @@ async fn an_expired_snapshot_is_never_used_and_refreshes_with_if_none_match() {
     // The cache is expired, so `list` must refresh in the foreground instead of trusting it.
     api.with(|s| s.snapshot_ttl = 600);
     let before = api.requests();
-    let list = speq::init::list(&device.env).await.unwrap();
+    let list = speq::clone::list(&device.env).await.unwrap();
     assert!(api.requests() > before);
     // The ETag still matched, so the new window came from a 304 and the content is unchanged.
     let after = snapshot::load(&device.env.snapshot_path())
@@ -180,7 +179,7 @@ async fn a_304_without_valid_window_headers_triggers_a_full_fetch() {
         s.send_304_headers = false;
     });
     let before = api.count("GET /v1/projects");
-    speq::init::list(&device.env).await.unwrap();
+    speq::clone::list(&device.env).await.unwrap();
     assert_eq!(
         api.count("GET /v1/projects") - before,
         2,
@@ -204,29 +203,6 @@ async fn a_new_window_longer_than_fifteen_minutes_is_clamped() {
         .unwrap()
         .unwrap();
     assert!(snapshot.expires_at - snapshot::now() <= snapshot::MAX_WINDOW);
-}
-
-#[tokio::test]
-async fn role_change_refreshes_the_snapshot_after_a_403() {
-    let f = support::Fixture::new().await;
-    f.api.with(|s| s.forbid_writes = true);
-    f.write(
-        "epics/epic-payment/stories/st-001-create-payment/DESIGN.md",
-        "# CLI\n",
-    );
-    f.pull().await.unwrap();
-    f.write(
-        "epics/epic-payment/stories/st-001-create-payment/DESIGN.md",
-        "# CLI\n",
-    );
-    let before = f.api.count("GET /v1/projects");
-    let err = speq::sync::push::push(&f.device.env, &f.ws())
-        .await
-        .unwrap_err();
-    assert_eq!(err.exit_code(), speq::error::exit::DENIED);
-    // The snapshot was dropped and refreshed once; the push itself was sent exactly once.
-    assert_eq!(f.api.count("GET /v1/projects") - before, 1);
-    assert_eq!(f.api.count("POST /v1/projects/proj_payment/changes"), 1);
 }
 
 #[tokio::test]
@@ -318,53 +294,4 @@ async fn switching_accounts_replaces_the_credential_and_drops_the_old_snapshot()
             .as_deref(),
         Some("user_b")
     );
-}
-
-#[tokio::test]
-async fn init_lists_only_repositories_from_the_api_and_requires_unique_short_names() {
-    let f = support::Fixture::new().await;
-    let dir = tempfile::tempdir().unwrap();
-    let root = std::fs::canonicalize(dir.path()).unwrap();
-    let init = |repo: &'static str, reconfigure: bool| {
-        let root = root.clone();
-        let env = &f.device.env;
-        async move {
-            speq::init::init(
-                env,
-                &root,
-                speq::init::InitOptions {
-                    repo,
-                    local_dir: "specs",
-                    reconfigure,
-                },
-            )
-            .await
-        }
-    };
-    assert!(
-        init("payment-specs", false)
-            .await
-            .unwrap_err()
-            .to_string()
-            .contains("ambiguous")
-    );
-    assert!(init("nope/none", false).await.is_err());
-    let report = init("cart-specs", false).await.unwrap();
-    assert_eq!(report.repository, "acme/cart-specs");
-
-    let gitignore = std::fs::read_to_string(root.join(".gitignore")).unwrap();
-    assert_eq!(gitignore.trim_end(), "# Speq\nspecs/\n.speq/");
-    assert!(root.join(".speq/config.toml").is_file());
-    assert!(root.join("specs").is_dir());
-
-    // Re-init needs an explicit reconfigure.
-    assert!(
-        init(REPO, false)
-            .await
-            .unwrap_err()
-            .to_string()
-            .contains("--reconfigure")
-    );
-    let again = init(REPO, true).await.unwrap();
-    assert!(again.reconfigured && again.sync_state_reset);
 }

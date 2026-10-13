@@ -1,13 +1,22 @@
 # Speq CLI
 
-`speq` brings your product's specs repository into the `specs/` folder of your implementation
-repository, shows what changed on either side, and sends your edits back through the Speq API.
-It never talks to GitHub directly and never needs GitHub credentials.
+`speq` lets you work on your product's specs with the Git commands you already know. `speq clone` makes an ordinary
+Git repository of the specs (in `specs/` of your implementation repository); after that `speq status`, `speq add`,
+`speq commit`, `speq pull`, `speq push`, `speq log`, ... are Git itself, run in that repository. Fetches and pushes go
+through the Speq API with your Speq login: you need no GitHub account and no GitHub credentials, and every push is
+checked against your role. A pushed commit keeps its SHA, so your history and GitHub's are the same commits.
 
 ## Install
 
 No Rust toolchain is needed. The installers put `speq` in a per-user folder (no `sudo`/admin), verify the
-download against `SHA256SUMS`, and are safe to re-run.
+download against `SHA256SUMS`, and are safe to re-run. Next to `speq` they place `git-remote-speq` and
+`git-credential-speq` (links on macOS/Linux, copies on Windows): the same binary, which Git runs under those names.
+
+speq runs Git for you, so it needs **Git 2.28 or newer**. When Git is missing the installer offers to install it, and
+always asks first. On macOS it uses `brew install git`, or `xcode-select --install`, which opens Apple's dialog. On Linux
+it uses the distribution's package manager with `sudo`. On Windows it puts a private MinGit (Git for Windows'
+portable build) in `%LOCALAPPDATA%\Speq\git` without admin rights, verified against the SHA-256 GitHub publishes for it.
+Pass `--yes` (`-Yes`) to install Git without asking, or `--no-git` (`-NoGit`) to skip the check.
 
 ```bash
 # macOS (Apple Silicon or Intel) and Linux (x86_64)
@@ -32,11 +41,11 @@ irm https://github.com/dayatech-labs/speq-cli/releases/latest/download/install.p
 
 Reload your shell (or open a new terminal) if `speq` is not found right after installing.
 
-**Package managers.** Each release also ships a Homebrew formula (`speq.rb`), a Scoop manifest
-(`speq.scoop.json`), and a WinGet manifest (`Dayatech.Speq.yaml`) pointing at the same fixed-version
-URLs and checksums. **Manual install:** download `speq-<version>-<target>.tar.gz` (or `.zip`) from the
+**Package managers.** Each release also ships a Homebrew formula (`speq.rb`, uses Git from macOS or Homebrew), a
+Scoop manifest (`speq.scoop.json`), and a WinGet manifest (`Dayatech.Speq.yaml`, depends on `Git.Git`) pointing at
+the same fixed-version URLs and checksums. All of them install the two Git helpers too. **Manual install:** download `speq-<version>-<target>.tar.gz` (or `.zip`) from the
 [releases page](https://github.com/dayatech-labs/speq-cli/releases), verify it with `SHA256SUMS`, and put
-the `speq` binary on your `PATH`.
+`speq` and the two helpers from the archive on your `PATH` (speq recreates missing helpers next to itself when it can).
 
 Targets: `aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-unknown-linux-musl`, `x86_64-pc-windows-msvc`.
 Other systems are refused with a link to the archives; the installer never guesses.
@@ -63,10 +72,9 @@ speq uninstall       # asks for confirmation on a terminal
 speq uninstall --yes # for automation
 ```
 
-`uninstall` removes the stored credential and the cache, then the binary itself if the
-official installer put it there. If `speq` is managed by Homebrew, Scoop, WinGet, or Nix, the binary is left alone
-and the package manager's own command is printed (`brew uninstall speq`, `scoop uninstall speq`, ...). It never
-touches your workspaces (`specs/` and `.speq/`; see `deinit` below), does not end the server-side session (use `logout --all` first), and
+`uninstall` removes the stored credential and the cache, then the binary, its Git helpers, and (Windows) the private
+Git if the official installer put them there. If `speq` is managed by Homebrew, Scoop, WinGet, or Nix, the binary is left alone
+and the package manager's own command is printed (`brew uninstall speq`, `scoop uninstall speq`, ...). It never touches your specs repositories (`speq deinit` removes one), does not end the server-side session (use `logout --all` first), and
 only removes the credential of the API origin in use (`--api-url` / `SPEQ_API_URL`). The installer's PATH line in your
 shell profile (Unix) or the user PATH entry (Windows) is left for you to remove; the command points it out.
 
@@ -76,39 +84,58 @@ shell profile (Unix) or the user PATH entry (Windows) is left for you to remove;
 speq login                              # approve this device in your browser
 speq list                               # repositories you may use
 cd my-frontend-repo
-speq init payment-specs # repo or project name works when it is unique; otherwise owner/repo
-speq pull                               # downloads every specs document into ./specs
+speq clone payment-specs                # ./specs, ignored by this repository's .gitignore
 # ... edit files under specs/ ...
-speq status                             # unchanged / local-only / remote-only / conflict / deleted
-speq diff epics/epic-payment/prd.md           # against the latest remote (add --base to compare offline)
-speq push                               # one batch through the API
-speq context epic-payment/st-001-create-payment   # files a coding agent should read for one story, one per line
+speq status                             # Git's own commands, run in ./specs
+speq diff
+speq commit -am "docs: add the refund rule"
+speq push                               # checked by the API, lands on main with the same SHA
+speq pull                               # rebases your unpushed commits on top of the remote
+speq context epic-payment/st-001-create-payment   # files a coding agent should read for one story
 ```
 
-`speq help` lists every command; `speq <command> --help` shows usage, arguments, flags, examples, and exit codes.
-Add `--json` to any command for machine-readable output (errors are JSON on stderr).
+A step-by-step guide with every supported command, the everyday flow, and what to do on a conflict is in
+[docs/usage.md](docs/usage.md).
 
-Text output follows one template (`src/template.rs`): a title with an icon (`✔` done, `!` needs attention, `ℹ` info, `✖` error), aligned facts, grouped lists, and a `→` next step. Colors appear only on a terminal and never when `NO_COLOR` is set. `speq context` is the exception: it prints bare paths, one per line, for scripts and coding agents.
+`speq help` lists speq's own commands; `speq <command> --help` shows usage, arguments, flags, examples, and exit codes.
+`speq help <git command>` opens Git's manual. Add `--json` to speq's own commands for machine-readable output.
 
 | Command | What it does |
 | --- | --- |
 | `login` / `logout [--all]` | PKCE device login; logout deletes the local token and cache. A token cannot be revoked on its own: `--all` ends every session of your account (all devices and the Web app) |
 | `list` | repositories you can use, from the local capability cache while it is valid |
-| `init <repo>` | writes `.speq/config.toml`, creates `specs/`, adds `specs/` and `.speq/` to `.gitignore`; re-init needs `--reconfigure` |
-| `deinit [--yes]` | delete this workspace's `.speq/` and specs folder, including unpushed edits; asks first on a terminal. Leaves `.gitignore` and your login alone |
-| `pull` | full-project sync; never overwrites local work |
-| `status` | local vs. last sync vs. latest remote, per path |
-| `diff <path> [--base]` | unified diff; `--base` needs no network |
-| `update <path>` | apply the latest remote version of one file, only when it has no local changes |
-| `resolve <path>... \| --all [--ours \| --theirs]` | finish conflicts after a pull, offline: keep the file you edited, restore your version (`--ours`) or take the remote's (`--theirs`, discards your edits; asks first). See [Resolving conflicts](#resolving-conflicts) |
-| `push` | send local changes as one batch; refused while the workspace has conflicts |
-| `context <epic>/<story>` | deterministic list of context files for one story (`st-NNN-name` folder), from the local copy: `llms.txt`, root `README.md` and `architecture.md`, the epic's briefs, `prd.md`, `architecture.md`, then the story's `README.md`, `acceptance-criteria.md`, `DESIGN.md`, `layout.html`, and tasks. Only files that exist |
-| `upgrade` | check for / install a newer `speq` binary |
-| `uninstall` | remove local data and, for an official install, the binary |
+| `clone <repo> [dir]` | a Git repository of the specs, wired to the Speq API. `dir` defaults to `specs` inside a Git repository (and is added to its `.gitignore`), else to the repository name |
+| `deinit [--yes]` | delete the specs repository (or a workspace of the older speq) to start over. Asks first on a terminal and names what would be lost: uncommitted changes, unpushed commits, stashes. The login and the `.gitignore` entry stay |
+| `context <epic>/<story>` | deterministic list of context files for one story (`st-NNN-name` folder), from the working tree: `llms.txt`, root `README.md` and `architecture.md`, the epic's briefs, `prd.md`, `architecture.md`, then the story's `README.md`, `acceptance-criteria.md`, `DESIGN.md`, `layout.html`, and tasks. Only files that exist; paths relative to where you are |
+| `push --squash [args]` | fold the commits not yet on the remote into one, then `git push [args]` (opt-in; see below) |
+| `upgrade` / `uninstall` | check for / install a newer `speq`; remove local data and an official install |
+| **anything else** | Git: `speq <command> <args>` runs `git <command> <args>` in the specs repository you are in, or in `./specs` (from the implementation repository), with Git's exit code |
+
+Text output of speq's own commands follows one template (`src/template.rs`): a title with an icon (`✔` done, `!` needs
+attention, `ℹ` info, `✖` error), aligned facts, and a `→` next step. Colors appear only on a terminal and never when
+`NO_COLOR` is set. Git's output is Git's own, untouched: pager, colors, and interactive commands work as in Git,
+and every Git command exits with Git's code.
+
+### What `speq clone` sets up
+
+```text
+remote.origin.url        <api>/v1/projects/<id>/git          fetch: the API's read-only Git endpoint
+remote.origin.pushurl    speq::<api>/v1/projects/<id>        push: git-remote-speq → POST /git/push
+credential.<api>.helper  speq                                git-credential-speq hands Git your Speq token
+user.name / user.email   your Speq account                   pushes must be authored and committed as you
+core.autocrlf=false                                          documents keep their bytes (and blob SHAs)
+pull.rebase=true, rebase.autoStash=true                      pulls rebase, so pushes rarely carry merges
+merge.conflictStyle=diff3                                    conflicts show the base version too
+```
+
+Only `main` is fetched. Because it is plain Git, editors and other Git tools work too, such as VS Code's Source Control
+and Sync. They run `git` directly, so they need `git-remote-speq` and `git-credential-speq` on your `PATH`, which the
+installers take care of.
 
 ### Specs layout
 
-Only these paths are documents `speq` syncs (the API enforces the same rules; anything else under `specs/` is ignored and listed by `status`):
+Only these paths are documents you can push (the API enforces the same rules; anything else in the repository is
+read-only through Speq and is refused before anything is sent):
 
 ```text
 llms.txt, README.md, architecture.md
@@ -120,142 +147,101 @@ epics/<epic>/stories/st-NNN-<name>/README.md, acceptance-criteria.md, DESIGN.md,
 epics/<epic>/stories/st-NNN-<name>/tasks/<type>-NNN-<name>.md      (type: 2-8 lowercase letters, e.g. fe, be)
 ```
 
-HTML documents sync, diff, merge, and resolve line by line exactly like Markdown. The older layout
-(`product-brief.md`, `features/<feature>/...`) is no longer recognised.
+Documents must be UTF-8 text in regular files (no symlinks or executable bits).
 
-### How sync stays safe
+## How pushing works
 
-* `pull` compares three versions of each file (remote, last synced baseline, your copy). Remote-only changes are
-  applied; local-only edits are kept; a file changed on both sides, a remote delete over a local edit, or a remote
-  add over an untracked file is a **conflict**. The lock (`.speq/lock.json`) only advances when the whole manifest
-  reconciled without conflicts, and `push` is refused until then. Nothing of yours is dropped: a file changed on both
-  sides is merged line by line like Git (see below); a delete conflict is left exactly as it is.
-* Every file is fetched at the same commit as the manifest and checked against its Git blob SHA. If the
-  repository moves mid-pull, the attempt is discarded and repeated (3 tries), with nothing changed locally.
-* Files are written through a temporary file and an atomic rename. Symbolic links and paths outside the specs
-  folder are never followed.
-* The only way to discard local edits is `resolve --theirs` (asks first) or `deinit`. `push` never merges and never retries a write automatically; after a
-  rejection use `status`, `diff`, `pull`. Whether you may write a path is always decided by the API.
+`speq push` is `git push`. Git asks `git-remote-speq` for the remote head and hands it the commits to send; the helper
+sends each one as its raw object plus its changes. The API checks the whole push before writing anything, then
+re-creates every commit on GitHub field for field, which gives it the same SHA, and moves `main` once:
 
-### Workspace files
+* every commit must hash to its SHA, and be **authored and committed with your Speq account email** (`speq clone`
+  sets it; fix the last commit with `speq commit --amend --no-edit --reset-author`);
+* every change must be **allowed by your role**. A merge is judged by what it brings onto the parent already on the
+  remote, never by other people's work it merges in. One denied path rejects the whole push (`403`), and nothing is
+  written. The helper warns from the cached capabilities first; the API decides;
+* the push must be a **fast-forward** of `main`. If someone pushed first you get Git's own `fetch first` /
+  `non-fast-forward` rejection: `speq pull`, then `speq push` again;
+* only `main` exists on the remote. Push a local branch with `speq push origin <branch>:main`. Force pushes, deletes,
+  and tags are refused;
+* at most **20 commits** per push. More than that is refused with a hint to run `speq push --squash`.
 
+`speq push --squash` is opt-in. It refuses while anything is staged, and when your branch does not contain the latest
+`origin/main` (so it can never undo someone else's work). Otherwise it replaces the commits not yet on the remote
+with one commit (`Squash N commits` plus every subject) and pushes. It rewrites your local history like GitHub's
+"Squash and merge"; the branch is left unchanged if the commit cannot be made.
+
+A push whose response was lost can simply be run again: the API recognises commits it already has.
+
+## Conflicts
+
+They are Git's. `speq pull` rebases your unpushed commits onto the remote. Where both sides changed the same lines Git
+stops with `CONFLICT` and writes markers (with the base version, `diff3`):
+
+```text
+<<<<<<< HEAD
+the remote version
+||||||| parent of 1a2b3c4 (docs: your commit)
+the version both started from
+=======
+your version
+>>>>>>> 1a2b3c4 (docs: your commit)
 ```
-.speq/config.toml      project mapping                                     ┐
-.speq/lock.json        last fully synced commit, unresolved conflicts      │
-.speq/manifest.json    per-path baseline hashes                            │ the whole .speq/ is
-.speq/base/            exact copies of the last applied remote content     │ ignored by Git
-.speq/conflict/        both versions of each unresolved conflict           │
-specs/                   the working copy                                  ┘
-```
+
+During a rebase `HEAD` is the remote side and the bottom block is your commit.
+
+Resolve each block (VS Code's merge editor works), then `speq add <file>` and `speq rebase --continue`, or
+`speq rebase --abort` to go back. `speq checkout --ours/--theirs <file>`, `speq restore`, `speq stash`, and the rest
+work as in any Git repository. Prefer merges? `speq config pull.rebase false`; merge commits are pushed like any other.
 
 ## Security
 
-* The Speq access token lives only in the OS credential store (Keychain, Credential Manager, Secret
-  Service). It is signed, valid for 30 days, and there is no refresh: when it expires (or the API answers `401`) the
-  CLI removes its local state, commands exit with code 3, and you run `speq login` again. Google and GitHub tokens
-  never reach the CLI.
+* The Speq access token lives only in the OS credential store (Keychain, Credential Manager, Secret Service). It is
+  signed, valid for 30 days, and there is no refresh: when it expires (or the API answers `401`) the CLI removes its
+  local state, commands exit with code 3, and you run `speq login` again. Google and GitHub tokens never reach the CLI.
+* The token never enters Git's configuration. `git-credential-speq` gives it to Git only for the API origin that
+  issued it (the store is keyed by origin), and tells Git not to prompt when you are logged out. `speq clone`
+  resets the helper list for that origin, so a system helper such as osxkeychain never stores the token.
+* speq runs Git with the variables that redirect it elsewhere removed (`GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`,
+  ...), so a command always acts on the specs repository speq found.
 * The capability cache (projects, roles, expiry) is stored in the per-user application-data folder with owner-only
   permissions. It is never used after it expires and never authorizes anything: the API checks every request.
-* The CLI runs no background process. When the cache has expired, the next command refreshes it in the foreground.
 * Logs never contain tokens or document content. Set `SPEQ_LOG=debug` to see request method, path, status, and
   request ID.
 
 ## Exit codes
 
+speq's own commands:
+
 | Code | Meaning |
 | --- | --- |
 | 0 | success |
-| 1 | unexpected failure (I/O, internal) |
+| 1 | unexpected failure (I/O, internal), or Git is missing |
 | 2 | invalid usage |
 | 3 | not logged in, or session expired/revoked |
 | 4 | network or server unavailable, including rate limits |
-| 5 | conflict: unresolved conflicts, rejected push, workspace not clean |
+| 5 | conflict (for example `push --squash` with staged changes) |
 | 6 | permission denied by the API |
-| 7 | invalid input or workspace state (unknown path, not initialized, ambiguous repository) |
+| 7 | invalid input or state (unknown repository, not a specs repository) |
 
-## Resolving conflicts
-
-When a file changed on both sides, `speq pull` merges it line by line, the way `git merge` does:
-
-* **Different lines** (yours and the remote's do not touch): both changes are combined. The file is reported as
-  *merged* and is now your edit on top of the remote, so `speq status` shows `local-only`. Review it with
-  `speq diff <path>` and `speq push`. There is nothing to resolve.
-* **The same lines** (or lines that touch): only that region is wrapped in markers; the rest of the file is merged.
-
-```text
-unchanged and merged lines...
-<<<<<<< local
-your version of this region
-||||||| base
-the version you last synced
-=======
-the remote version of this region
->>>>>>> remote
-more merged lines...
-```
-
-VS Code (and most editors) open this layout in a merge editor: for each block pick **Accept Current** (yours),
-**Accept Incoming** (remote) or **Both**, or edit it by hand, then save. Remove every marker line; a file that still
-has one stays a conflict, and pulling again never touches it.
-
-1. `speq pull` — the merge is written; push is blocked while any conflict is open.
-2. Resolve each block in the editor and save.
-3. `speq resolve <path>` (or `speq resolve --all`) — your saved file is kept as a local change on top of the remote
-   version it was merged against. It works offline, skips any file that still has markers, and when the last
-   conflict is done it moves the lock so `speq push` is open. Without a side, `--all` only takes files that had
-   markers; a delete on one side is listed as *needs a decision* and must be named (see below). `speq pull` recognises the same saved file, so running
-   it again also works.
-4. `speq push` when no conflicts remain.
-
-Prefer not to merge by hand? Take a whole side, per file or for everything:
-
-```bash
-speq resolve prd.md --ours       # your version from before the merge
-speq resolve prd.md --theirs     # the remote version; your edits to the file are discarded (asks first)
-speq resolve --all --theirs --yes
-```
-
-`pull` keeps both versions of every conflict in `.speq/conflict/` until it is resolved, so `--ours` and `--theirs`
-work offline and survive the merge rewriting your file. After `--theirs` there is no copy of your edits left.
-
-If the remote moved on after the markers were written, `speq pull` does not accept the stale resolution: the file is
-merged again against the new remote. `speq pull` also notes that the saved remote copy is out of date, so
-`speq resolve` still finishes the file but does not move the lock; run `speq pull` once more to bring the file and
-the lock up to date (`speq status` shows the file as `remote-only` until then). A remote change you have not seen is
-never overwritten, and the API rejects a stale `push` (`document_changed`, nothing is committed). Apart from
-`--theirs`, local content is never discarded.
-
-Details worth knowing:
-
-* Lines are compared exactly, including line endings. A missing final newline is kept as it is outside a marker
-  block, and added inside one so each marker stays on its own line.
-* A file that is not valid UTF-8 text cannot be split into lines; it gets one block around the whole file.
-* A remote add over an untracked local file has no baseline, so the whole file is one block.
-* A delete on one side against an edit on the other has nothing to mark: the file is left as it is. Decide with
-  `speq diff <path>`, then `speq resolve <path>` to keep your side (your file, or your delete) or `--theirs` to take
-  the remote's. `speq resolve --all` never decides these for you unless you give it `--ours` or `--theirs`.
-* A `=======` line left behind in a file `pull` marked counts as an unfinished marker, unless the original document
-  already had that many of them (a Markdown heading underline). If your resolution really adds a new `=======`
-  underline, write the heading another way (`# Title` or `-------`).
-* Deleting a file that `pull` marked does not lose your version: the copy from before the merge stays in
-  `.speq/conflict/`, and `speq resolve <path> --ours` brings the file back.
-* A marker is only recognised by its specific label lines (`<<<<<<< local`, `||||||| base`, `>>>>>>> remote`); a
-  document that legitimately contains one of those lines cannot be resolved this way.
+Any other command is Git's and exits with Git's code.
 
 ## Troubleshooting
 
 | Symptom | Cause and fix |
 | --- | --- |
 | `speq: command not found` after install | open a new terminal, or `export PATH="$HOME/.local/bin:$PATH"` (Windows: new terminal) |
+| `Git is required` (exit 1) | install Git 2.28+ (the hint names the command), or re-run the installer |
+| `Not a Speq specs repository` (exit 7) | run the command inside the folder `speq clone` made, or from the repository that contains it as `specs/`; else `speq clone <repo>` |
+| `... is a workspace of an older speq` | this folder was set up by the pre-Git speq: push what you still need with that version, run `speq deinit` (removes `.speq/` and the specs folder), then `speq clone <repo>` |
 | `credential store: ... Secret Service` on Linux | start a Secret Service provider (GNOME Keyring/KWallet) in your session; headless servers have none |
-| `error: not logged in` (exit 3) | run `speq login`. A revoked or expired session also lands here after local state is cleared |
-| `pull` reports conflicts | files marked "conflict markers in the file": resolve each block in your editor, save, then `speq resolve <path>` or `speq resolve --all` (see [Resolving conflicts](#resolving-conflicts)). Other conflicts (a delete on one side): `speq diff <path>`, then `speq resolve <path>` (keep yours) or `--theirs` |
-| `push` is refused: "workspace is not clean" | a previous pull left conflicts or never completed: `speq status`, `speq resolve`, or `speq pull` when it never completed |
-| `push` rejected with `head_changed` / `document_changed` (exit 5) | someone changed the specs first; nothing was committed: `speq pull`, re-check, push again |
-| `push` rejected with `policy_denied` (exit 6) | your role may not write that path; ask a platform admin. `list` refreshes after the denial |
-| "the remote kept changing while pulling" | the repository moved during all 3 attempts; nothing changed locally, retry |
-| `429`/rate-limited (exit 4) | reads are retried automatically a few times; wait a minute and retry |
-| `another speq command is already running in this workspace` | wait for it to finish; it is a per-workspace lock |
+| `not logged in to <api>; run speq login` from Git | the session expired or you logged out: `speq login`, then retry |
+| push rejected `(fetch first)` / `(non-fast-forward)` | someone pushed first: `speq pull`, resolve any conflict, `speq push` |
+| push rejected `your role may not change every document in this push` | the lines starting `speq: not allowed:` name the paths; undo those changes (`speq restore --source origin/main <path>`, then amend) or ask a platform admin |
+| push rejected `commits must be authored as ...` | `speq config user.email <your Speq email>` and `speq commit --amend --no-edit --reset-author`; for every unpushed commit `speq rebase origin/main --exec "git commit --amend --no-edit --reset-author"` |
+| push rejected `too many commits` | `speq push --squash`, or push in steps with `speq push origin <commit>:main` |
+| `git: 'remote-speq' is not a git command` when pushing from an editor | `git-remote-speq` is not on that program's `PATH`: re-run the installer, or push with `speq push` |
+| `429`/rate-limited (exit 4), or `github_write_budget` | wait a minute and retry |
 | `upgrade` says it was "not installed by the official installer" | reinstall with the installer, or use your package manager |
 | `uninstall` reports the credential "could not be fully removed" | the OS credential store was unreachable; delete the `speq` entry there by hand (the token expires on its own) |
 
@@ -265,10 +251,12 @@ Untuk menjalankan CLI melawan API dan Web lokal, lihat [local-development.md](..
 
 ```bash
 cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings
-cargo test --locked          # unit tests + integration tests against an in-process fake API
+cargo test --locked          # unit tests + integration tests: real Git against an in-process fake API
 cargo deny check             # advisories, licenses, bans, sources
 ```
 
-Rust 1.89+ (edition 2024). Tests never touch the real credential store, scheduler, or network: they run the
-library against a stateful fake of the API contract in `speq-api/contract/` (`tests/support/`). See
-[docs/releasing.md](docs/releasing.md) for the release process.
+Rust 1.89+ (edition 2024), Git 2.28+. Tests never touch the real credential store, scheduler, or network: they run the
+library and the real binary (as `speq`, `git-remote-speq`, and `git-credential-speq`) against a stateful fake of the
+API contract in `speq-api/contract/` whose projects are bare Git repositories (`tests/support/`). Debug builds read
+the token from `SPEQ_DEV_CREDENTIAL_FILE` when it is set, so the binary can run as Git's helpers in tests; release
+builds do not contain that code. See [docs/releasing.md](docs/releasing.md) for the release process.

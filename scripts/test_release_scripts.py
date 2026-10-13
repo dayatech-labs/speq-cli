@@ -105,44 +105,84 @@ class Installer(unittest.TestCase):
             text = (HERE / name).read_text()
             self.assertIn("\n".join(rows), text, f"{name} banner differs from src/cli.rs")
 
+    def run_installer(self, tmp, *args, fake_git=None):
+        """Runs install.sh against a local mirror, detached from any terminal (as in CI)."""
+        target = installer_target()
+        release = tmp / "mirror" / "download" / "v0.1.0"
+        release.mkdir(parents=True)
+        name = f"speq-0.1.0-{target}"
+        binary = release / name
+        binary.write_text("#!/bin/sh\necho speq 0.1.0\n")
+        digest = hashlib.sha256(binary.read_bytes()).hexdigest()
+        (release / "SHA256SUMS").write_text(f"{digest}  {name}\n")
+
+        class Quiet(http.server.SimpleHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+        handler = functools.partial(Quiet, directory=str(tmp / "mirror"))
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            home = tmp / "home"
+            home.mkdir()
+            env = {**os.environ, "HOME": str(home), "SPEQ_RELEASE_URL": f"http://127.0.0.1:{server.server_port}"}
+            env.pop("NO_COLOR", None)
+            if fake_git is not None:
+                fake = tmp / "fakebin"
+                fake.mkdir()
+                (fake / "git").write_text(f"#!/bin/sh\n{fake_git}\n")
+                (fake / "git").chmod(0o755)
+                env["PATH"] = f"{fake}:{env['PATH']}"
+            done = subprocess.run(
+                ["sh", str(HERE / "install.sh"), "--version", "0.1.0", *args],
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True,
+                stdin=subprocess.DEVNULL,
+                start_new_session=True,
+                timeout=60,
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+        return home, done.stdout
+
     @unittest.skipUnless(installer_target(), "install.sh supports macOS and x86_64 Linux only")
     def test_success_shows_the_banner_after_the_install_line(self):
-        target = installer_target()
         with tempfile.TemporaryDirectory() as tmp:
-            tmp = pathlib.Path(tmp)
-            release = tmp / "mirror" / "download" / "v0.1.0"
-            release.mkdir(parents=True)
-            name = f"speq-0.1.0-{target}"
-            binary = release / name
-            binary.write_text("#!/bin/sh\necho speq 0.1.0\n")
-            digest = hashlib.sha256(binary.read_bytes()).hexdigest()
-            (release / "SHA256SUMS").write_text(f"{digest}  {name}\n")
-
-            class Quiet(http.server.SimpleHTTPRequestHandler):
-                def log_message(self, *args):
-                    pass
-
-            handler = functools.partial(Quiet, directory=str(tmp / "mirror"))
-            server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
-            threading.Thread(target=server.serve_forever, daemon=True).start()
-            try:
-                home = tmp / "home"
-                home.mkdir()
-                env = {**os.environ, "HOME": str(home), "SPEQ_RELEASE_URL": f"http://127.0.0.1:{server.server_port}"}
-                env.pop("NO_COLOR", None)
-                done = subprocess.run(
-                    ["sh", str(HERE / "install.sh"), "--version", "0.1.0"], env=env, capture_output=True, text=True, check=True
-                )
-            finally:
-                server.shutdown()
-                server.server_close()
-
-            out = done.stdout
-            self.assertTrue((home / ".local" / "bin" / "speq").exists())
+            home, out = self.run_installer(pathlib.Path(tmp), fake_git="echo 'git version 2.54.0'")
+            bin_dir = home / ".local" / "bin"
+            self.assertTrue((bin_dir / "speq").exists())
             self.assertIn("\n".join(rust_banner()), out)
             self.assertLess(out.index("Installed speq 0.1.0"), out.index(rust_banner()[0]))
             self.assertNotIn("\x1b", out, "no colors when stdout is not a terminal")
+            self.assertNotIn("Git 2.28 or newer was not found", out)
 
+    @unittest.skipUnless(installer_target(), "install.sh supports macOS and x86_64 Linux only")
+    def test_git_helpers_are_links_to_the_binary(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home, _ = self.run_installer(pathlib.Path(tmp), fake_git="echo 'git version 2.54.0'")
+            bin_dir = home / ".local" / "bin"
+            for helper in ("git-remote-speq", "git-credential-speq"):
+                self.assertTrue((bin_dir / helper).is_symlink(), helper)
+                self.assertEqual(os.readlink(bin_dir / helper), "speq")
+
+    @unittest.skipUnless(installer_target(), "install.sh supports macOS and x86_64 Linux only")
+    def test_a_missing_git_is_offered_but_never_blocks_without_a_terminal(self):
+        for fake in ("echo 'git version 2.20.1'", "echo 'xcrun: error' >&2; exit 1"):
+            with tempfile.TemporaryDirectory() as tmp:
+                home, out = self.run_installer(pathlib.Path(tmp), fake_git=fake)
+                self.assertTrue((home / ".local" / "bin" / "speq").exists())
+                self.assertIn("Git 2.28 or newer was not found", out)
+                self.assertTrue("Skipped. Install it later with:" in out or "Install Git with your package manager" in out, out)
+
+    @unittest.skipUnless(installer_target(), "install.sh supports macOS and x86_64 Linux only")
+    def test_no_git_skips_the_check(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _, out = self.run_installer(pathlib.Path(tmp), "--no-git", fake_git="exit 1")
+            self.assertNotIn("Git 2.28", out)
 
 if __name__ == "__main__":
     unittest.main()

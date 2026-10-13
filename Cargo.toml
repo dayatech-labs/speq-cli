@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 # 1.89: std file locking (`File::lock`) and the minimum of the keyring/time/uuid crates.
 rust-version = "1.89"
-description = "Speq CLI: sync product specs into implementation repositories"
+description = "Speq CLI: work on product specs with Git commands, through the Speq API"
 license = "UNLICENSED"
 publish = false
 build = "build.rs"
