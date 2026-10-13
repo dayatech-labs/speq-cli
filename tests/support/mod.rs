@@ -984,11 +984,16 @@ impl Machine {
         }
     }
 
-    /// An empty folder inside the machine's home (canonical, so macOS `/private` paths compare equal).
+    /// An empty folder inside the machine's home (canonical, so macOS `/private` paths compare equal). Windows
+    /// canonical paths are verbatim (`\\?\C:\…`) while Git prints `C:/…`, so the prefix is dropped.
     pub fn dir(&self, name: &str) -> PathBuf {
         let dir = self.home.path().join(name);
         std::fs::create_dir_all(&dir).expect("mkdir");
-        std::fs::canonicalize(dir).expect("canonical")
+        let dir = std::fs::canonicalize(dir).expect("canonical");
+        match dir.to_str().and_then(|s| s.strip_prefix(r"\\?\")) {
+            Some(plain) => PathBuf::from(plain),
+            None => dir,
+        }
     }
 
     pub fn command(&self, cwd: &Path, args: &[&str]) -> Command {

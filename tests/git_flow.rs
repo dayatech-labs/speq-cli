@@ -626,10 +626,11 @@ async fn deinit_deletes_the_specs_repository_and_clone_starts_again() {
 
     let out = m.run(&app, &["deinit", "--yes"]).ok().stdout;
     assert!(out.starts_with("✔ Specs repository removed\n"), "{out}");
-    assert!(
-        out.contains(&format!("removed  {}", specs.display())),
-        "{out}"
-    );
+    let removed = out
+        .lines()
+        .find_map(|line| line.trim_start().strip_prefix("removed  "))
+        .unwrap_or_else(|| panic!("{out}"));
+    assert_eq!(Path::new(removed), specs, "{out}");
     assert!(
         out.contains("lost     nothing (everything was pushed)"),
         "{out}"
