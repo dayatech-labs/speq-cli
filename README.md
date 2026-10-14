@@ -72,11 +72,25 @@ speq uninstall       # asks for confirmation on a terminal
 speq uninstall --yes # for automation
 ```
 
-`uninstall` removes the stored credential and the cache, then the binary, its Git helpers, and (Windows) the private
+`uninstall` removes the stored credential, the cache, and the Claude Code skills, then the binary, its Git helpers, and (Windows) the private
 Git if the official installer put them there. If `speq` is managed by Homebrew, Scoop, WinGet, or Nix, the binary is left alone
 and the package manager's own command is printed (`brew uninstall speq`, `scoop uninstall speq`, ...). It never touches your specs repositories (`speq deinit` removes one), does not end the server-side session (use `logout --all` first), and
 only removes the credential of the API origin in use (`--api-url` / `SPEQ_API_URL`). The installer's PATH line in your
 shell profile (Unix) or the user PATH entry (Windows) is left for you to remove; the command points it out.
+
+### Claude Code skills
+
+The binary ships two [Claude Code](https://claude.com/claude-code) skills that know the specs layout, the IDs, and the
+team's writing rules:
+
+| Skill | Use it to |
+| --- | --- |
+| `/speq-write` | draft the next document from the ones before it: brief, PRD, stories, acceptance criteria, tasks, epic architecture (tech discovery), decision records |
+| `/speq-review` | check a document before handoff or push: completeness, traceability (FR → AC → task), brief versions recorded in the PRD, and whether it reads like a professional team document rather than generic AI text |
+
+The installers run `speq skills install`, which writes them to `~/.claude/skills/` (or `$CLAUDE_CONFIG_DIR/skills/`),
+and `speq upgrade` refreshes them, so the skills always match the CLI version. After installing with Homebrew, Scoop,
+WinGet, or by hand, run `speq skills install` yourself. Other skills in that folder are never touched.
 
 ## Quick start
 
@@ -108,7 +122,8 @@ A step-by-step guide with every supported command, the everyday flow, and what t
 | `deinit [--yes]` | delete the specs repository (or a workspace of the older speq) to start over. Asks first on a terminal and names what would be lost: uncommitted changes, unpushed commits, stashes. The login and the `.gitignore` entry stay |
 | `context <epic>/<story>` | deterministic list of context files for one story (`st-NNN-name` folder), from the working tree: `llms.txt`, root `README.md` and `architecture.md`, the epic's briefs, `prd.md`, `architecture.md`, then the story's `README.md`, `acceptance-criteria.md`, `DESIGN.md`, `layout.html`, and tasks. Only files that exist; paths relative to where you are |
 | `push --squash [args]` | fold the commits not yet on the remote into one, then `git push [args]` (opt-in; see below) |
-| `upgrade` / `uninstall` | check for / install a newer `speq`; remove local data and an official install |
+| `skills install` | write the `speq-write` and `speq-review` skills for Claude Code |
+| `upgrade` / `uninstall` | check for / install a newer `speq` (and refresh the skills); remove local data, the skills, and an official install |
 | **anything else** | Git: `speq <command> <args>` runs `git <command> <args>` in the specs repository you are in, or in `./specs` (from the implementation repository), with Git's exit code |
 
 Text output of speq's own commands follows one template (`src/template.rs`): a title with an icon (`✔` done, `!` needs

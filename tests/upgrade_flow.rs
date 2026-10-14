@@ -161,6 +161,34 @@ async fn install_verifies_then_replaces_atomically_and_keeps_the_old_binary_on_f
 }
 
 #[test]
+fn a_new_binary_that_cannot_install_skills_only_produces_a_warning() {
+    let dir = tempfile::tempdir().unwrap();
+    let warning = upgrade::refresh_skills(&dir.path().join("missing-speq"));
+    assert!(warning.unwrap().contains("speq skills install"));
+}
+
+#[cfg(unix)]
+#[test]
+fn the_new_binary_is_asked_to_install_its_own_skills() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let args = dir.path().join("args");
+    let exe = dir.path().join("speq");
+    std::fs::write(
+        &exe,
+        format!("#!/bin/sh\necho \"$@\" > '{}'\n", args.display()),
+    )
+    .unwrap();
+    std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    assert_eq!(upgrade::refresh_skills(&exe), None);
+    assert_eq!(
+        std::fs::read_to_string(&args).unwrap().trim(),
+        "skills install"
+    );
+}
+
+#[test]
 fn package_manager_binaries_are_never_replaced() {
     let official = std::path::Path::new("/home/a/.local/bin");
     for path in [

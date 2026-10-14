@@ -120,6 +120,12 @@ pub enum Command {
     )]
     Context(ContextArgs),
 
+    /// Install the Speq skills for Claude Code: drafting and reviewing spec documents
+    #[command(
+        after_help = "Examples:\n  speq skills install\n  speq skills install --json\n\nWrites the speq-write and speq-review skills to ~/.claude/skills (or $CLAUDE_CONFIG_DIR/skills), replacing\nolder copies; other skills there are never touched. The installers and `speq upgrade` run this for you; run it\nyourself after installing speq with a package manager. `speq uninstall` removes the skills. Needs no login.\n\n"
+    )]
+    Skills(SkillsArgs),
+
     /// Check for or install a newer speq binary
     #[command(
         after_help = "Examples:\n  speq upgrade --check\n  speq upgrade\n  speq upgrade --yes\n  speq upgrade --version 1.4.0 --yes\n\n--check needs no login and changes nothing. Binaries managed by Homebrew, Scoop, WinGet, or another\npackage manager are never replaced; the matching package-manager command is shown instead.\n\n"
@@ -142,6 +148,7 @@ impl Command {
             Command::Clone(_) => "clone",
             Command::Deinit(_) => "deinit",
             Command::Context(_) => "context",
+            Command::Skills(_) => "skills",
             Command::Upgrade(_) => "upgrade",
             Command::Uninstall(_) => "uninstall",
         }
@@ -181,6 +188,18 @@ pub struct DeinitArgs {
 pub struct ContextArgs {
     /// `<epic>/<story>`, for example `epic-payment/st-001-create-payment`
     pub target: String,
+}
+
+#[derive(Args, Debug)]
+pub struct SkillsArgs {
+    #[command(subcommand)]
+    pub action: SkillsAction,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum SkillsAction {
+    /// Write the skills into Claude Code's skills folder, replacing older copies
+    Install,
 }
 
 #[derive(Args, Debug)]

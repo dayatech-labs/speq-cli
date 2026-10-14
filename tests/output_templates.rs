@@ -6,6 +6,7 @@ use speq::context::ContextReport;
 use speq::deinit::{AtRisk, DeinitReport};
 use speq::output::{Human, login_prompt};
 use speq::session::{LoginReport, LogoutReport};
+use speq::skills::SkillsReport;
 use speq::template::Theme;
 use speq::uninstall::UninstallReport;
 use speq::upgrade::{CheckReport, UpgradeReport};
@@ -150,14 +151,19 @@ fn uninstall_is_clean_only_when_nothing_is_left_to_do() {
         credential_removed: true,
         data_dir: "/home/ana/.local/share/speq".into(),
         removed_binary: Some("/home/ana/.local/bin/speq".into()),
+        removed_skills: strings(&[
+            "/home/ana/.claude/skills/speq-review",
+            "/home/ana/.claude/skills/speq-write",
+        ]),
         manual_steps: vec![],
     };
     assert_eq!(
         plain(&report),
-        "✔ Removed speq's local data\n\n  credentials  removed\n  cached data  removed (/home/ana/.local/share/speq)\n  binary       removed (/home/ana/.local/bin/speq)\n\n  Specs repositories were left untouched; `speq deinit` removes one."
+        "✔ Removed speq's local data\n\n  credentials  removed\n  cached data  removed (/home/ana/.local/share/speq)\n  binary       removed (/home/ana/.local/bin/speq)\n  skills       removed (speq-review, speq-write)\n\n  Specs repositories were left untouched; `speq deinit` removes one."
     );
 
     report.removed_binary = None;
+    report.removed_skills.clear();
     report.manual_steps = strings(&["Run `brew uninstall speq`"]);
     let out = plain(&report);
     assert!(
@@ -165,6 +171,7 @@ fn uninstall_is_clean_only_when_nothing_is_left_to_do() {
         "{out}"
     );
     assert!(!out.contains("binary"), "{out}");
+    assert!(!out.contains("skills"), "{out}");
     assert!(
         out.ends_with("  To do by hand (1)\n    → Run `brew uninstall speq`"),
         "{out}"
@@ -215,6 +222,7 @@ fn upgrade_shows_the_version_change_or_that_nothing_was_installed() {
         to: "0.2.0".into(),
         installed: true,
         path: Some("/home/ana/.local/bin/speq".into()),
+        skills_warning: None,
     };
     assert_eq!(
         plain(&done),
@@ -225,8 +233,36 @@ fn upgrade_shows_the_version_change_or_that_nothing_was_installed() {
         to: "0.1.0".into(),
         installed: false,
         path: None,
+        skills_warning: None,
     };
     assert_eq!(plain(&same), "ℹ Nothing to install\n\n  installed  0.1.0");
+}
+
+#[test]
+fn an_upgrade_that_could_not_refresh_the_skills_says_how_to_do_it() {
+    let report = UpgradeReport {
+        from: "0.1.0".into(),
+        to: "0.2.0".into(),
+        installed: true,
+        path: None,
+        skills_warning: Some("run `speq skills install`".into()),
+    };
+    assert_eq!(
+        plain(&report),
+        "✔ speq was upgraded\n\n  version  0.1.0 → 0.2.0\n\n  ! run `speq skills install`"
+    );
+}
+
+#[test]
+fn skills_install_names_the_skills_the_folder_and_how_to_use_them() {
+    let report = SkillsReport {
+        dir: "/home/ana/.claude/skills".into(),
+        skills: strings(&["speq-review", "speq-write"]),
+    };
+    assert_eq!(
+        plain(&report),
+        "✔ Installed the Speq skills for Claude Code\n\n  skills  speq-review, speq-write\n  folder  /home/ana/.claude/skills\n\n  → Start a new Claude Code session, then use /speq-write to draft a spec document and /speq-review to review one."
+    );
 }
 
 #[test]

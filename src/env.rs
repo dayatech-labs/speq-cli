@@ -20,6 +20,8 @@ pub struct Env {
     pub api_url: Url,
     pub client: Client,
     pub dirs: AppDirs,
+    /// Claude Code's personal skills folder, which `speq skills install` writes to.
+    pub skills_dir: PathBuf,
     pub creds: Arc<dyn CredentialStore>,
     pub open_browser: bool,
 }
@@ -30,6 +32,7 @@ impl Env {
         Ok(Env {
             client: Client::new(api_url.clone())?,
             dirs: AppDirs::discover()?,
+            skills_dir: crate::skills::default_dir()?,
             creds: store(),
             api_url,
             open_browser,

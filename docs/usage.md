@@ -36,8 +36,9 @@ next step), and `--json` gives machine-readable output.
 | `speq clone <repo> [dir]` | Clone a specs repository as a Git repository wired to Speq. `<repo>` can be `owner/repo`, the repo name, or the project name when it is unique in `speq list`. Default `dir`: `specs` when run inside a Git repository (it is then added to that repository's `.gitignore`), else the repo name |
 | `speq deinit [--yes]` | Delete the specs repository (or a workspace of the older speq) to start over. Before deleting, speq names what would be lost: uncommitted changes, unpushed commits, and stashes |
 | `speq context <epic>/<story>` | The files a coding agent should read for one story, one path per line, relative to where you are. Example: `speq context epic-payment/st-001-create-payment` |
-| `speq upgrade [--check] [--yes] [--version X.Y.Z]` | Check for or install a newer `speq` |
-| `speq uninstall [--yes]` | Remove speq's local data, and the binary when the official installer put it there. Specs repositories are not touched |
+| `speq skills install` | Write the `speq-write` and `speq-review` skills for Claude Code to `~/.claude/skills` (or `$CLAUDE_CONFIG_DIR/skills`). The installers and `speq upgrade` do this for you |
+| `speq upgrade [--check] [--yes] [--version X.Y.Z]` | Check for or install a newer `speq`, and refresh the skills |
+| `speq uninstall [--yes]` | Remove speq's local data and the skills, and the binary when the official installer put it there. Specs repositories are not touched |
 | `speq help [command]`, `speq --version` | Help and version |
 
 Global options for the commands above:
@@ -171,6 +172,13 @@ speq context epic-payment/st-001-create-payment
 # specs/epics/epic-payment/prd.md
 # ...
 ```
+
+### Drafting and reviewing documents with Claude Code
+
+In Claude Code, `/speq-write` drafts the next document from the ones before it (brief → PRD → stories → acceptance
+criteria → tasks, plus epic architecture and decision records), and `/speq-review` checks a document before you push
+it: completeness, traceability, the brief versions recorded in the PRD, and wording that reads as generic AI text.
+Drafts are left uncommitted for the owning role to read; commit and push them as usual.
 
 ### Working on a local branch (optional)
 

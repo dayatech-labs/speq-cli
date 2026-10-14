@@ -50,6 +50,8 @@ pub struct UpgradeReport {
     pub to: String,
     pub installed: bool,
     pub path: Option<String>,
+    /// Set when the new binary could not refresh the Claude Code skills.
+    pub skills_warning: Option<String>,
 }
 
 fn allowed_url(url: &Url) -> bool {
@@ -269,6 +271,21 @@ pub async fn install_binary(
     let staged = tmp.into_temp_path();
     smoke_test(&staged, expected)?;
     replace(staged, exe)
+}
+
+/// The new binary embeds the matching Claude Code skills; let it install them. Returns a warning on failure,
+/// because the upgrade itself already succeeded.
+pub fn refresh_skills(exe: &Path) -> Option<String> {
+    match std::process::Command::new(exe)
+        .args(["skills", "install"])
+        .output()
+    {
+        Ok(out) if out.status.success() => None,
+        _ => Some(
+            "the Claude Code skills were not refreshed; run `speq skills install` to update them"
+                .into(),
+        ),
+    }
 }
 
 #[cfg(unix)]

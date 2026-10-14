@@ -896,6 +896,8 @@ pub struct Device {
     pub env: Env,
     pub creds: Arc<dyn speq::credentials::CredentialStore>,
     pub data: tempfile::TempDir,
+    /// Stands in for `~/.claude`.
+    pub claude: tempfile::TempDir,
 }
 
 impl Device {
@@ -905,15 +907,22 @@ impl Device {
 
     pub fn with_store(api: &FakeApi, creds: Arc<dyn speq::credentials::CredentialStore>) -> Device {
         let data = tempfile::tempdir().expect("tempdir");
+        let claude = tempfile::tempdir().expect("tempdir");
         let api_url = speq::api::parse_api_url(&api.url).expect("api url");
         let env = Env {
             client: speq::api::Client::new(api_url.clone()).expect("client"),
             dirs: AppDirs::at(data.path()),
+            skills_dir: claude.path().join("skills"),
             creds: creds.clone(),
             api_url,
             open_browser: false,
         };
-        Device { env, creds, data }
+        Device {
+            env,
+            creds,
+            data,
+            claude,
+        }
     }
 
     /// A second "process" on the same device: same data directory and credential store, own HTTP client.
@@ -921,6 +930,7 @@ impl Device {
         Env {
             client: speq::api::Client::new(self.env.api_url.clone()).expect("client"),
             dirs: AppDirs::at(self.data.path()),
+            skills_dir: self.env.skills_dir.clone(),
             creds: self.creds.clone(),
             api_url: self.env.api_url.clone(),
             open_browser: false,

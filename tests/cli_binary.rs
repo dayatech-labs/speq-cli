@@ -16,16 +16,49 @@ fn speq(args: &[&str]) -> (i32, String, String) {
     )
 }
 
-const COMMANDS: [&str; 8] = [
+const COMMANDS: [&str; 9] = [
     "login",
     "logout",
     "list",
     "clone",
     "deinit",
     "context",
+    "skills",
     "upgrade",
     "uninstall",
 ];
+
+#[test]
+fn skills_install_writes_the_claude_code_skills_without_login() {
+    let claude = tempfile::tempdir().expect("tempdir");
+    let out = Command::new(env!("CARGO_BIN_EXE_speq"))
+        .args(["--json", "skills", "install"])
+        .env("CLAUDE_CONFIG_DIR", claude.path())
+        .output()
+        .expect("run");
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let body: serde_json::Value = serde_json::from_slice(&out.stdout).expect("json report");
+    assert_eq!(
+        body["skills"],
+        serde_json::json!(["speq-review", "speq-write"])
+    );
+    for skill in ["speq-write", "speq-review"] {
+        assert!(
+            claude
+                .path()
+                .join("skills")
+                .join(skill)
+                .join("SKILL.md")
+                .is_file(),
+            "{skill}"
+        );
+    }
+}
 
 #[test]
 fn version_reports_semver_commit_and_target() {

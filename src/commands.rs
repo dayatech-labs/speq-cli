@@ -1,5 +1,5 @@
 //! Dispatch from the command line: speq's own commands go to the library, everything else to Git.
-use crate::cli::{Cli, Command, banner, exit_code_help, paint_help};
+use crate::cli::{Cli, Command, SkillsAction, banner, exit_code_help, paint_help};
 use crate::clone::{self, CloneOptions};
 use crate::context;
 use crate::deinit;
@@ -10,6 +10,7 @@ use crate::links;
 use crate::output::emit;
 use crate::repo::SpecsRepo;
 use crate::session::Session;
+use crate::skills;
 use crate::squash;
 use crate::uninstall;
 use crate::upgrade::{self, Install};
@@ -19,13 +20,14 @@ use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
 
 /// Commands speq answers itself; any other command is Git's.
-pub const SPEQ_COMMANDS: [&str; 8] = [
+pub const SPEQ_COMMANDS: [&str; 9] = [
     "login",
     "logout",
     "list",
     "clone",
     "deinit",
     "context",
+    "skills",
     "upgrade",
     "uninstall",
 ];
@@ -242,6 +244,9 @@ pub async fn run(cli: Cli, env: &Env) -> Result<u8> {
                 &context::context(&git, &repo, &cwd, &args.target)?,
             ))
         }
+        Command::Skills(args) => match args.action {
+            SkillsAction::Install => Ok(emit(json, &skills::install(&env.skills_dir)?)),
+        },
         Command::Upgrade(args) => upgrade_command(json, args).await,
         Command::Uninstall(args) => uninstall_command(json, env, args),
     }
@@ -295,6 +300,7 @@ async fn upgrade_command(json: bool, args: crate::cli::UpgradeArgs) -> Result<u8
                 to: current.to_string(),
                 installed: false,
                 path: None,
+                skills_warning: None,
             },
         ));
     }
@@ -306,6 +312,7 @@ async fn upgrade_command(json: bool, args: crate::cli::UpgradeArgs) -> Result<u8
                 to: current.to_string(),
                 installed: false,
                 path: None,
+                skills_warning: None,
             },
         ));
     }
@@ -323,6 +330,7 @@ async fn upgrade_command(json: bool, args: crate::cli::UpgradeArgs) -> Result<u8
             to: target.to_string(),
             installed: true,
             path: Some(exe.display().to_string()),
+            skills_warning: upgrade::refresh_skills(&exe),
         },
     ))
 }
@@ -334,8 +342,9 @@ fn uninstall_command(json: bool, env: &Env, args: crate::cli::UninstallArgs) -> 
             Install::Official => format!(" and {}", exe.display()),
             _ => String::new(),
         };
-        let prompt =
-            format!("Uninstall speq? This removes your local credentials, and cached data{binary}");
+        let prompt = format!(
+            "Uninstall speq? This removes your local credentials, cached data, and Claude Code skills{binary}"
+        );
         if !confirm(&prompt)? {
             return Err(Error::invalid("cancelled; nothing was changed"));
         }

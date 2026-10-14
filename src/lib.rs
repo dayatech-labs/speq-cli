@@ -21,6 +21,7 @@ pub mod paths;
 pub mod remote_helper;
 pub mod repo;
 pub mod session;
+pub mod skills;
 pub mod snapshot;
 pub mod squash;
 pub mod template;

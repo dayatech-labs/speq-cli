@@ -5,6 +5,7 @@ use crate::context::ContextReport;
 use crate::deinit::DeinitReport;
 use crate::error::{Error, exit};
 use crate::session::{LoginReport, LogoutReport};
+use crate::skills::SkillsReport;
 use crate::template::{Item, Screen, Theme, Tone};
 use crate::uninstall::UninstallReport;
 use crate::upgrade::{CheckReport, UpgradeReport};
@@ -144,6 +145,18 @@ impl Human for UninstallReport {
         if let Some(binary) = &self.removed_binary {
             facts.push(("binary", format!("removed ({binary})")));
         }
+        if !self.removed_skills.is_empty() {
+            let names: Vec<String> = self
+                .removed_skills
+                .iter()
+                .map(|p| {
+                    std::path::Path::new(p)
+                        .file_name()
+                        .map_or_else(|| p.clone(), |n| n.to_string_lossy().into_owned())
+                })
+                .collect();
+            facts.push(("skills", format!("removed ({})", names.join(", "))));
+        }
         s.facts(&facts)
             .text("Specs repositories were left untouched; `speq deinit` removes one.");
         s.section(
@@ -258,6 +271,19 @@ impl Human for CheckReport {
     }
 }
 
+impl Human for SkillsReport {
+    fn human(&self, theme: &Theme) -> String {
+        let mut s = Screen::new(theme);
+        s.title(Tone::Ok, "Installed the Speq skills for Claude Code")
+            .facts(&[
+                ("skills", self.skills.join(", ")),
+                ("folder", self.dir.clone()),
+            ])
+            .hint("Start a new Claude Code session, then use /speq-write to draft a spec document and /speq-review to review one.");
+        s.finish()
+    }
+}
+
 impl Human for UpgradeReport {
     fn human(&self, theme: &Theme) -> String {
         let mut s = Screen::new(theme);
@@ -267,6 +293,9 @@ impl Human for UpgradeReport {
                 facts.push(("path", path.clone()));
             }
             s.title(Tone::Ok, "speq was upgraded").facts(&facts);
+            if let Some(warning) = &self.skills_warning {
+                s.note(Tone::Warn, warning);
+            }
         } else {
             s.title(Tone::Info, "Nothing to install")
                 .facts(&[("installed", self.from.clone())]);

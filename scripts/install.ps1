@@ -140,6 +140,14 @@ try {
 '@ -ForegroundColor Cyan
   Write-Host ""
 
+  # Claude Code skills shipped inside the binary; a failure here never undoes the install.
+  try { & $dest skills install *> $null; $skillsOk = ($LASTEXITCODE -eq 0) } catch { $skillsOk = $false }
+  if ($skillsOk) {
+    Write-Host "Installed the Speq skills for Claude Code (speq-write, speq-review)."
+  } else {
+    Write-Host "note: the Claude Code skills were not installed; run ``speq skills install`` later."
+  }
+
   Install-GitIfMissing
 
   # User PATH: add once, never duplicate.
