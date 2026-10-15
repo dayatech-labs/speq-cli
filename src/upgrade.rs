@@ -222,8 +222,11 @@ pub fn detect_install(exe: &Path, official: Option<&Path>) -> Install {
             uninstall,
         };
     }
+    // Compare canonical forms: the executable usually arrives canonicalized (`\\?\C:\...` on Windows), the official
+    // folder as the OS reports it. A path that does not exist is compared as written.
+    let canonical = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
     match (exe.parent(), official) {
-        (Some(parent), Some(dir)) if parent == dir => Install::Official,
+        (Some(parent), Some(dir)) if canonical(parent) == canonical(dir) => Install::Official,
         _ => Install::Unmanaged,
     }
 }
@@ -352,6 +355,19 @@ fn replace(staged: tempfile::TempPath, exe: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `current_install` hands over the running executable canonicalized (`\\?\C:\...` on Windows, `/private/var/...`
+    /// on macOS) and the official folder as the OS reports it: both forms must still match.
+    #[test]
+    fn an_official_install_is_recognised_when_only_the_executable_is_canonical() {
+        let root = tempfile::tempdir().unwrap();
+        let bin = root.path().join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::write(bin.join("speq"), "").unwrap();
+        let exe = std::fs::canonicalize(bin.join("speq")).unwrap();
+
+        assert_eq!(detect_install(&exe, Some(&bin)), Install::Official);
+    }
 
     #[test]
     fn detects_package_managers_and_official_installs() {
