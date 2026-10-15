@@ -142,11 +142,11 @@ done
 printf 'Installed speq %s to %s/speq\n' "$version" "$bin_dir"
 print_banner
 
-# ---- Claude Code skills shipped inside the binary; a failure here never undoes the install
+# ---- Agent skills shipped inside the binary; a failure here never undoes the install
 if "$bin_dir/speq" skills install >/dev/null 2>&1; then
-  printf 'Installed the Speq skills for Claude Code (speq-write, speq-review).\n'
+  printf 'Installed the Speq skill for AI coding agents (speq-write).\n'
 else
-  printf 'note: the Claude Code skills were not installed; run `speq skills install` later.\n'
+  printf 'note: the agent skills were not installed; run `speq skills install` later.\n'
 fi
 
 # ---- Git: every command except login/list/clone/context is Git's own, run by speq

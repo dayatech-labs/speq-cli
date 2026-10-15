@@ -1,11 +1,12 @@
-//! Claude Code skills embedded in the binary, so the installed skills always match this CLI version.
-//! `speq skills install` writes them to `~/.claude/skills/` (or `$CLAUDE_CONFIG_DIR/skills/`).
+//! Agent Skills (`SKILL.md`, agentskills.io) embedded in the binary, so the installed skills always match this CLI
+//! version. `speq skills install` writes them to `~/.agents/skills/` (Codex, Cursor, Copilot, Gemini CLI, OpenCode)
+//! and `~/.claude/skills/` (Claude Code; `$CLAUDE_CONFIG_DIR/skills/` when set).
 use crate::error::{Error, IoContext, Result};
 use crate::fsx::{self, Visibility};
 use crate::paths::join_canonical;
 use serde::Serialize;
 use std::collections::BTreeSet;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 macro_rules! skill_files {
     ($($path:literal),* $(,)?) => {
@@ -15,7 +16,6 @@ macro_rules! skill_files {
 
 /// `(path under the skills directory, content)`. The test below fails when a file in `skills/` is missing here.
 pub const SKILLS: &[(&str, &str)] = skill_files![
-    "speq-review/SKILL.md",
     "speq-write/SKILL.md",
     "speq-write/references/acceptance-criteria.md",
     "speq-write/references/architecture.md",
@@ -25,13 +25,20 @@ pub const SKILLS: &[(&str, &str)] = skill_files![
     "speq-write/references/import.md",
     "speq-write/references/new-product.md",
     "speq-write/references/prd.md",
+    "speq-write/references/review.md",
     "speq-write/references/story.md",
     "speq-write/references/task.md",
 ];
 
+/// Skills older releases installed and this one no longer ships: removed on install and uninstall.
+const RETIRED: [&str; 1] = ["speq-review"];
+
+/// Replaced with the CLI version in `metadata.version` of each `SKILL.md`.
+const VERSION_PLACEHOLDER: &str = "__SPEQ_VERSION__";
+
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct SkillsReport {
-    pub dir: String,
+    pub dirs: Vec<String>,
     pub skills: Vec<String>,
 }
 
@@ -43,43 +50,54 @@ fn names() -> BTreeSet<&'static str> {
         .collect()
 }
 
-/// `$CLAUDE_CONFIG_DIR/skills`, or `~/.claude/skills`: where Claude Code looks for personal skills.
-pub fn default_dir() -> Result<PathBuf> {
-    let config = match std::env::var_os("CLAUDE_CONFIG_DIR").filter(|v| !v.is_empty()) {
-        Some(dir) => PathBuf::from(dir),
-        None => directories::BaseDirs::new()
-            .ok_or_else(|| Error::Other("cannot determine the home directory".into()))?
-            .home_dir()
-            .join(".claude"),
-    };
-    Ok(config.join("skills"))
+fn render(content: &str) -> String {
+    content.replace(VERSION_PLACEHOLDER, env!("CARGO_PKG_VERSION"))
 }
 
-/// Replace the speq skill folders with the embedded copy, so files dropped in a newer version do not linger.
-pub fn install(dir: &Path) -> Result<SkillsReport> {
-    remove(dir)?;
-    for (path, content) in SKILLS {
-        fsx::atomic_write(
-            &join_canonical(dir, path),
-            content.as_bytes(),
-            Visibility::Shared,
-        )?;
+/// `~/.agents/skills` (the cross-agent folder), then `$CLAUDE_CONFIG_DIR/skills` or `~/.claude/skills`.
+/// The home folder is the one the agents use: `USERPROFILE` on Windows, `HOME` elsewhere (`std::env::home_dir`).
+pub fn default_dirs() -> Result<Vec<PathBuf>> {
+    let home = std::env::home_dir()
+        .ok_or_else(|| Error::Other("cannot determine the home directory".into()))?;
+    let claude = std::env::var_os("CLAUDE_CONFIG_DIR")
+        .filter(|v| !v.is_empty())
+        .map_or_else(|| home.join(".claude"), PathBuf::from);
+    let mut dirs = vec![home.join(".agents").join("skills"), claude.join("skills")];
+    dirs.dedup();
+    Ok(dirs)
+}
+
+/// Replace the speq skill folders in every `dirs` entry with the embedded copy, so files dropped in a newer version
+/// (and retired skills) do not linger.
+pub fn install(dirs: &[PathBuf]) -> Result<SkillsReport> {
+    remove(dirs)?;
+    for dir in dirs {
+        for (path, content) in SKILLS {
+            fsx::atomic_write(
+                &join_canonical(dir, path),
+                render(content).as_bytes(),
+                Visibility::Shared,
+            )?;
+        }
     }
     Ok(SkillsReport {
-        dir: dir.display().to_string(),
+        dirs: dirs.iter().map(|d| d.display().to_string()).collect(),
         skills: names().into_iter().map(String::from).collect(),
     })
 }
 
-/// Delete the speq skill folders; other skills in `dir` are never touched. Returns the folders removed.
-pub fn remove(dir: &Path) -> Result<Vec<String>> {
+/// Delete the speq skill folders, current and retired, from every `dirs` entry; other skills are never touched.
+/// Returns the folders removed.
+pub fn remove(dirs: &[PathBuf]) -> Result<Vec<String>> {
     let mut removed = Vec::new();
-    for name in names() {
-        let path = dir.join(name);
-        match std::fs::remove_dir_all(&path) {
-            Ok(()) => removed.push(path.display().to_string()),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => return Err(e).ctx(format!("remove {}", path.display())),
+    for dir in dirs {
+        for name in names().into_iter().chain(RETIRED) {
+            let path = dir.join(name);
+            match std::fs::remove_dir_all(&path) {
+                Ok(()) => removed.push(path.display().to_string()),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => return Err(e).ctx(format!("remove {}", path.display())),
+            }
         }
     }
     Ok(removed)
@@ -88,6 +106,7 @@ pub fn remove(dir: &Path) -> Result<Vec<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
 
     /// Every file under `skills/` must be listed in `SKILLS`, or it would silently never be installed.
     #[test]
@@ -115,43 +134,73 @@ mod tests {
         assert_eq!(embedded, on_disk);
     }
 
+    fn two_dirs() -> (tempfile::TempDir, Vec<PathBuf>) {
+        let root = tempfile::tempdir().unwrap();
+        let dirs = vec![
+            root.path().join(".agents/skills"),
+            root.path().join(".claude/skills"),
+        ];
+        (root, dirs)
+    }
+
     #[test]
-    fn install_writes_every_skill_and_drops_files_from_older_versions() {
-        let dir = tempfile::tempdir().unwrap();
-        let stale = dir.path().join("speq-write/references/old.md");
-        std::fs::create_dir_all(stale.parent().unwrap()).unwrap();
-        std::fs::write(&stale, "old").unwrap();
+    fn install_writes_every_skill_into_each_folder_and_drops_stale_and_retired_files() {
+        let (_root, dirs) = two_dirs();
+        let stale = dirs[0].join("speq-write/references/old.md");
+        let retired = dirs[1].join("speq-review/SKILL.md");
+        for file in [&stale, &retired] {
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(file, "old").unwrap();
+        }
 
-        let report = install(dir.path()).unwrap();
+        let report = install(&dirs).unwrap();
 
-        assert_eq!(report.skills, vec!["speq-review", "speq-write"]);
-        for (path, content) in SKILLS {
-            let written = std::fs::read_to_string(dir.path().join(path)).unwrap();
-            assert_eq!(&written, content, "{path}");
+        assert_eq!(report.skills, vec!["speq-write"]);
+        assert_eq!(report.dirs.len(), 2);
+        for dir in &dirs {
+            for (path, content) in SKILLS {
+                let written = std::fs::read_to_string(dir.join(path)).unwrap();
+                assert_eq!(written, render(content), "{path}");
+            }
         }
         assert!(
             !stale.exists(),
             "files left by an older version are removed"
         );
+        assert!(!retired.exists(), "retired skills are removed");
     }
 
     #[test]
-    fn remove_deletes_only_speq_skills() {
-        let dir = tempfile::tempdir().unwrap();
-        install(dir.path()).unwrap();
-        let mine = dir.path().join("my-skill/SKILL.md");
+    fn the_installed_skill_names_the_cli_version_that_wrote_it() {
+        let (_root, dirs) = two_dirs();
+        install(&dirs).unwrap();
+        let skill = std::fs::read_to_string(dirs[0].join("speq-write/SKILL.md")).unwrap();
+        assert!(
+            skill.contains(&format!("version: \"{}\"", env!("CARGO_PKG_VERSION"))),
+            "{skill}"
+        );
+        assert!(!skill.contains(VERSION_PLACEHOLDER));
+    }
+
+    #[test]
+    fn remove_deletes_only_speq_skills_in_every_folder() {
+        let (_root, dirs) = two_dirs();
+        install(&dirs).unwrap();
+        let retired = dirs[0].join("speq-review/SKILL.md");
+        std::fs::create_dir_all(retired.parent().unwrap()).unwrap();
+        std::fs::write(&retired, "old").unwrap();
+        let mine = dirs[1].join("my-skill/SKILL.md");
         std::fs::create_dir_all(mine.parent().unwrap()).unwrap();
         std::fs::write(&mine, "mine").unwrap();
 
-        let removed = remove(dir.path()).unwrap();
+        let removed = remove(&dirs).unwrap();
 
-        assert_eq!(removed.len(), 2);
-        assert!(!dir.path().join("speq-write").exists());
-        assert!(!dir.path().join("speq-review").exists());
+        assert_eq!(removed.len(), 3, "{removed:?}");
+        for dir in &dirs {
+            assert!(!dir.join("speq-write").exists());
+            assert!(!dir.join("speq-review").exists());
+        }
         assert!(mine.exists(), "other skills are never touched");
-        assert!(
-            remove(dir.path()).unwrap().is_empty(),
-            "removing twice is fine"
-        );
+        assert!(remove(&dirs).unwrap().is_empty(), "removing twice is fine");
     }
 }

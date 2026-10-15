@@ -50,7 +50,7 @@ pub struct UpgradeReport {
     pub to: String,
     pub installed: bool,
     pub path: Option<String>,
-    /// Set when the new binary could not refresh the Claude Code skills.
+    /// Set when the new binary could not refresh the agent skills.
     pub skills_warning: Option<String>,
 }
 
@@ -273,7 +273,7 @@ pub async fn install_binary(
     replace(staged, exe)
 }
 
-/// The new binary embeds the matching Claude Code skills; let it install them. Returns a warning on failure,
+/// The new binary embeds the matching agent skills; let it install them. Returns a warning on failure,
 /// because the upgrade itself already succeeded.
 pub fn refresh_skills(exe: &Path) -> Option<String> {
     match std::process::Command::new(exe)
@@ -282,8 +282,7 @@ pub fn refresh_skills(exe: &Path) -> Option<String> {
     {
         Ok(out) if out.status.success() => None,
         _ => Some(
-            "the Claude Code skills were not refreshed; run `speq skills install` to update them"
-                .into(),
+            "the agent skills were not refreshed; run `speq skills install` to update them".into(),
         ),
     }
 }

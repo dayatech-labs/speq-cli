@@ -140,12 +140,12 @@ try {
 '@ -ForegroundColor Cyan
   Write-Host ""
 
-  # Claude Code skills shipped inside the binary; a failure here never undoes the install.
+  # Agent skills shipped inside the binary; a failure here never undoes the install.
   try { & $dest skills install *> $null; $skillsOk = ($LASTEXITCODE -eq 0) } catch { $skillsOk = $false }
   if ($skillsOk) {
-    Write-Host "Installed the Speq skills for Claude Code (speq-write, speq-review)."
+    Write-Host "Installed the Speq skill for AI coding agents (speq-write)."
   } else {
-    Write-Host "note: the Claude Code skills were not installed; run ``speq skills install`` later."
+    Write-Host "note: the agent skills were not installed; run ``speq skills install`` later."
   }
 
   Install-GitIfMissing

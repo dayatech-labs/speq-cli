@@ -1,36 +1,25 @@
-# Story (Analyst)
+# Story (analyst)
 
-Path: `epics/<epic>/stories/st-NNN-<nama>/README.md`. Buat satu folder per story yang tercantum di PRD §5. Nomor FR melanjutkan FR tertinggi di epic.
+Path: `epics/<epic>/stories/st-NNN-<nama>/README.md`. Buat satu folder per story yang tercantum di PRD §5. Story tidak memakai frontmatter.
 
 ## Aturan isi
 
-- **FR** menjelaskan satu perilaku yang dapat diamati, dengan sumbernya: `*(Must|Should|Could · brief: <section>, DoD <n>)*`. FR yang berisi dua perilaku dipecah menjadi dua.
+- **Perilaku** adalah daftar bernomor (1, 2, 3, ...) tentang apa yang dilakukan sistem untuk pengguna. Satu butir berisi satu perilaku yang dapat diamati, dengan sumbernya: `*(brief: <section>, DoD <n>)*`. Butir yang berisi dua perilaku dipecah menjadi dua. Jangan memberi ID seperti FR-01.
 - **Aturan** khusus story ditulis di section 4. Aturan lintas story cukup dirujuk ke PRD (`BR-NN`).
-- Perilaku yang belum diputuskan ditulis sebagai FR dengan rujukan `menunggu OQ-NN`, bukan diisi tebakan.
-- `needs_design: false` bila story tidak mengubah UI. Section 7 tetap diisi alasannya.
+- Perilaku yang belum diputuskan ditulis apa adanya dengan `menunggu: <ringkasan pertanyaan> (PRD §10)`, bukan diisi tebakan.
+- Data yang menentukan perilaku (daftar nama, band skor, tabel aturan) disalin sebagai tabel di section 3 atau 4. Lihat `conventions.md` §Sumber di luar repository.
+- Section 7 menyebut apakah story butuh desain, dan layar atau state mana yang perlu didesain.
 
 ## Kerangka
 
 ```markdown
----
-id: <epic>-st-NNN
-type: story
-epic: <epic>
-owner: Analyst
-status: draft
-requirements: [FR-NN, NFR-NN]
-needs_design: true
-drafted_by: AI
-updated: YYYY-MM-DD
----
-
 # st-NNN — <Nama story>
 
-**Sebagai** <role>, **saya ingin** <kemampuan>, **agar** <manfaat>.
+**Sebagai** <role pengguna>, **saya ingin** <kemampuan>, **agar** <manfaat>.
 
 | | |
 | --- | --- |
-| **Pengguna** | <role> |
+| **Pengguna** | <role pengguna> |
 | **Goal** | G<n> |
 | **Prasyarat** | <story lain atau dependensi, atau —> |
 | **Dokumen** | [acceptance criteria](acceptance-criteria.md) · [tasks](tasks/) · desain: <tautan atau "belum ada"> · [PRD](../../prd.md) |
@@ -43,9 +32,9 @@ updated: YYYY-MM-DD
 
 1. <Langkah yang dilakukan pengguna dan respons sistem.>
 
-## 3. Functional requirements
+## 3. Perilaku
 
-- **FR-NN** <perilaku>. *(Must · brief: <section>, DoD <n>)*
+1. <Perilaku yang dapat diamati>. *(brief: <section>, DoD <n>)*
 
 ## 4. Aturan
 
@@ -55,12 +44,13 @@ updated: YYYY-MM-DD
 
 - <Hal yang sengaja tidak dikerjakan, dengan rujukan story lain bila ada.>
 
-## 6. Open questions dan dependensi
+## 6. Pertanyaan terbuka dan dependensi
 
-- OQ-NN — <ringkasan> (**blocking**).
+- [ ] <Pertanyaan yang hanya menyangkut story ini> (ditanyakan ke: <role>)
+- Pertanyaan lintas story: lihat PRD §10.
 - Dependensi: <data, layanan, atau story lain>.
 
 ## 7. Desain
 
-UIUX: <layar dan state yang perlu didesain, atau "Tidak ada perubahan UI" beserta alasannya>.
+<"Perlu desain: <layar dan state>." atau "Tidak ada perubahan UI: <alasan>.">
 ```

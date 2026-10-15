@@ -146,7 +146,8 @@ impl Human for UninstallReport {
             facts.push(("binary", format!("removed ({binary})")));
         }
         if !self.removed_skills.is_empty() {
-            let names: Vec<String> = self
+            // The same skill sits in several agents' folders: name each once.
+            let names: std::collections::BTreeSet<String> = self
                 .removed_skills
                 .iter()
                 .map(|p| {
@@ -155,6 +156,7 @@ impl Human for UninstallReport {
                         .map_or_else(|| p.clone(), |n| n.to_string_lossy().into_owned())
                 })
                 .collect();
+            let names: Vec<String> = names.into_iter().collect();
             facts.push(("skills", format!("removed ({})", names.join(", "))));
         }
         s.facts(&facts)
@@ -273,13 +275,15 @@ impl Human for CheckReport {
 
 impl Human for SkillsReport {
     fn human(&self, theme: &Theme) -> String {
+        let mut facts = vec![("skills", self.skills.join(", "))];
+        facts.extend(self.dirs.iter().map(|d| ("folder", d.clone())));
         let mut s = Screen::new(theme);
-        s.title(Tone::Ok, "Installed the Speq skills for Claude Code")
-            .facts(&[
-                ("skills", self.skills.join(", ")),
-                ("folder", self.dir.clone()),
-            ])
-            .hint("Start a new Claude Code session, then use /speq-write to draft a spec document and /speq-review to review one.");
+        s.title(Tone::Ok, "Installed the Speq skill for AI coding agents")
+            .facts(&facts)
+            .hint(&format!(
+                "Start a new session of your coding agent (Claude Code, Codex, Cursor, Copilot, Gemini CLI, OpenCode), then ask it to use {}.",
+                self.skills.join(", ")
+            ));
         s.finish()
     }
 }

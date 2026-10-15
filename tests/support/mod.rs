@@ -896,7 +896,7 @@ pub struct Device {
     pub env: Env,
     pub creds: Arc<dyn speq::credentials::CredentialStore>,
     pub data: tempfile::TempDir,
-    /// Stands in for `~/.claude`.
+    /// Stands in for the home folder that holds `.agents/skills` and `.claude/skills`.
     pub claude: tempfile::TempDir,
 }
 
@@ -912,7 +912,10 @@ impl Device {
         let env = Env {
             client: speq::api::Client::new(api_url.clone()).expect("client"),
             dirs: AppDirs::at(data.path()),
-            skills_dir: claude.path().join("skills"),
+            skills_dirs: vec![
+                claude.path().join(".agents/skills"),
+                claude.path().join(".claude/skills"),
+            ],
             creds: creds.clone(),
             api_url,
             open_browser: false,
@@ -930,7 +933,7 @@ impl Device {
         Env {
             client: speq::api::Client::new(self.env.api_url.clone()).expect("client"),
             dirs: AppDirs::at(self.data.path()),
-            skills_dir: self.env.skills_dir.clone(),
+            skills_dirs: self.env.skills_dirs.clone(),
             creds: self.creds.clone(),
             api_url: self.env.api_url.clone(),
             open_browser: false,

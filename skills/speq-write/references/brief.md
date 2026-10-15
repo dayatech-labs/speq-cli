@@ -1,37 +1,29 @@
-# Brief (PO)
+# Brief (po)
 
 Path: `epics/<epic>/briefs/br-NNN-<judul>.md`. Brief adalah permintaan bisnis dari sudut pandang PO. Brief menjadi masukan bagi Analyst, bukan instruksi implementasi.
 
-Saat merapikan catatan mentah PO (notulen, chat, dokumen docx), pertahankan fakta dan istilah aslinya. Isi yang tidak ada di catatan ditulis sebagai pertanyaan di section *Open questions*, bukan dikarang. Kalau section wajib kosong, tulis `Belum ada informasi; ditanyakan ke <pihak>` dan tambahkan pertanyaannya.
+Saat merapikan catatan mentah PO (notulen, chat, `.docx`), pertahankan fakta dan istilah aslinya. Isi yang tidak ada di catatan ditulis sebagai butir di *Open questions*, bukan dikarang. Section wajib yang kosong diisi `Belum ada informasi.` dan pertanyaannya ditambahkan.
+
+Frontmatter hanya berisi `version` (lihat `conventions.md` §Frontmatter): `version: 1` untuk brief baru, angka lama + 1 untuk brief yang diubah.
 
 ## Kerangka
 
 ```markdown
 ---
 version: 1
-id: <epic>-br-NNN
-type: brief
-epic: <epic>
-owner: PO
-status: draft
-requester: <nama>
-urgency: <tingkat atau tenggat, sesuai catatan>
-needed_by: YYYY-MM-DD
-date: YYYY-MM-DD
-source: <nama file atau tautan sumber, bila ada>
-drafted_by: AI
-updated: YYYY-MM-DD
 ---
 
 # Product Brief — <judul>
 
 **<Satu kalimat: masalah utama yang harus diselesaikan.>**
 
-## Submission
-
-- **Requester:** <nama dan tim>
-- **Client:** <klien, atau "tidak khusus satu klien" beserta alasannya>
-- **Urgency:** <tingkat urgensi>
+| | |
+| --- | --- |
+| **Requester** | <nama dan tim> |
+| **Client** | <klien, atau "tidak khusus satu klien" beserta alasannya> |
+| **Urgency** | <tingkat urgensi> |
+| **Needed by** | <tanggal dan arti tanggal itu> |
+| **Date** | <tanggal brief diajukan> |
 
 ## Background
 
@@ -43,21 +35,17 @@ updated: YYYY-MM-DD
 
 ## Affected roles
 
-| Role | Yang mereka alami |
+| Role pengguna | Yang mereka alami |
 | --- | --- |
 | | |
 
 ## User journey
 
-<Alur per role, bernomor. Tulis yang terjadi hari ini dan yang diharapkan.>
+<Alur per role pengguna, bernomor: yang terjadi hari ini dan yang diharapkan.>
 
 ## Impact if not solved
 
 <Dampak bisnis atau operasional bila tidak dikerjakan.>
-
-## Needed by
-
-<Tanggal dan arti tanggal itu, misalnya acara klien atau rilis.>
 
 ## Definition of done
 
@@ -75,11 +63,9 @@ updated: YYYY-MM-DD
 
 ## Open questions
 
-| # | Pertanyaan | Ditanyakan ke |
-| --- | --- | --- |
-| 1 | | |
+- [ ] <Pertanyaan> (ditanyakan ke: <pihak>)
 
 ## Specification
 
-<Opsional: logic spec, tabel, istilah, atau tautan ke sumber eksternal.>
+<Opsional: logic spec, tabel, atau istilah. Data yang menentukan logika disalin sebagai tabel di sini atau di story, bukan dilampirkan; lihat `conventions.md` §Sumber di luar repository.>
 ```

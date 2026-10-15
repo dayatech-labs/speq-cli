@@ -127,19 +127,26 @@ async fn an_official_uninstall_also_removes_the_git_helpers() {
 }
 
 #[tokio::test]
-async fn the_claude_code_skills_are_removed_and_other_skills_are_kept() {
+async fn the_agent_skills_are_removed_from_every_folder_and_other_skills_are_kept() {
     let api = FakeApi::start();
     let device = Device::new(&api);
-    speq::skills::install(&device.env.skills_dir).unwrap();
-    let other = device.env.skills_dir.join("my-skill/SKILL.md");
+    speq::skills::install(&device.env.skills_dirs).unwrap();
+    let other = device.env.skills_dirs[1].join("my-skill/SKILL.md");
     std::fs::create_dir_all(other.parent().unwrap()).unwrap();
     std::fs::write(&other, "mine").unwrap();
     let (_dir, exe) = fake_binary();
 
     let report = uninstall(&device.env, &exe, &BREW).unwrap();
 
-    assert_eq!(report.removed_skills.len(), 2);
-    assert!(!device.env.skills_dir.join("speq-write").exists());
+    assert_eq!(
+        report.removed_skills.len(),
+        2,
+        "{:?}",
+        report.removed_skills
+    );
+    for dir in &device.env.skills_dirs {
+        assert!(!dir.join("speq-write").exists());
+    }
     assert!(other.exists());
 }
 

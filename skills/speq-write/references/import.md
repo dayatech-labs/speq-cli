@@ -20,7 +20,7 @@ Pemetaan default:
 | --- | --- |
 | Gambaran produk, tujuan, pengguna | `README.md` dan `llms.txt` |
 | Permintaan bisnis, latar belakang, masalah | `epics/<epic>/briefs/br-NNN-*.md` |
-| Requirement, spesifikasi fitur, user story | `prd.md`, `stories/st-NNN-*/README.md` |
+| Requirement, spesifikasi fitur, user story | `prd.md` (aturan lintas story menjadi BR, syarat umum menjadi kebutuhan kualitas), `stories/st-NNN-*/README.md` (perilaku) |
 | Kriteria penerimaan, skenario uji | `stories/st-NNN-*/acceptance-criteria.md` |
 | ADR, catatan keputusan | `epics/<epic>/decisions/dr-NNN-*.md` |
 | Arsitektur, diagram sistem, kontrak API, model data | `architecture.md` (produk) atau `epics/<epic>/architecture.md` |
@@ -30,17 +30,20 @@ Pemetaan default:
 
 Kelompokkan isi ke epic, yaitu area produk jangka panjang. Usulkan nama epic di tabel dan biarkan user memutuskan. Kalau user memberi aturan khusus untuk repository ini (misalnya "folder `docs/rfc/` adalah decision record"), aturan user menang.
 
+Tandai di kolom Catatan tujuan yang tidak boleh ditulis user menurut izinnya (`conventions.md` §Membaca izin yang berlaku), beserta role yang harus menulisnya.
+
 ## Langkah 2: konversi per epic
 
-- Susun ulang isi ke kerangka di `references/`, dengan ID dan traceability sesuai `conventions.md`. Jangan menempel teks lama apa adanya bila tidak sesuai bentuk dokumen tujuan.
-- Catat asal setiap dokumen di frontmatter: `source: docs/payment.md` (beberapa sumber dipisah koma).
-- Informasi yang usang, saling bertentangan, atau tidak jelas ditulis sebagai `OQ-NN` dan tidak boleh dipilih sendiri. Sebutkan kedua versi di pertanyaannya.
+- Susun ulang isi ke kerangka di `references/`, dengan ID dan traceability sesuai `conventions.md`. Jangan menempel teks lama apa adanya bila tidak sesuai bentuk dokumen tujuan. ID lama dari sumber (misalnya `REQ-12` atau `FR-3`) tidak dibawa.
+- Catat asal isi di section References PRD (satu baris per dokumen sumber), atau satu baris `Sumber: docs/payment.md` di bawah judul dokumen lain. Jangan memakai frontmatter untuk ini.
+- Data dan tautan dari luar repository diperlakukan sesuai `conventions.md` §Sumber di luar repository.
+- Informasi yang usang, saling bertentangan, atau tidak jelas menjadi pertanyaan terbuka dan tidak boleh dipilih sendiri. Sebutkan kedua versi di pertanyaannya.
 - Gambar tidak dapat dipindah karena Speq hanya menerima dokumen teks. Tulis tautan ke lokasi gambar di repository asal, lalu catat di balasan.
 - Klaim tentang perilaku sistem dicocokkan dengan kode bila kode tersedia. Klaim yang berbeda dengan kode ditandai `belum diverifikasi`.
-- Kerjakan satu epic sampai selesai, jalankan checklist **speq-review**, baru lanjut ke epic berikutnya.
+- Kerjakan satu epic sampai selesai, jalankan `references/review.md` §Daftar periksa per dokumen, baru lanjut ke epic berikutnya.
 
 ## Langkah 3: push dan sumber lama
 
-- Dari `./specs`: `speq add`, `speq commit -m "docs: import <epic> from <repo>"`, `speq push`. Satu push paling banyak 20 commit. Bila user bukan `project_admin`, kelompokkan commit per role.
+- Hanya bila user meminta: dari `./specs`, `speq add`, `speq commit -m "docs: import <epic> from <repo>"`, `speq push`. Satu push paling banyak 20 commit. Bila user bukan `project_admin`, kelompokkan commit per role.
 - **Jangan menghapus atau mengubah dokumen sumber.** Setelah push berhasil, tawarkan dua pilihan kepada user: menghapus dokumen yang sudah dipindah, atau menggantinya dengan satu baris tautan ke dokumen Speq. Perubahan di repository asal di-commit dengan `git`, bukan `speq`.
-- Balas dengan tabel akhir sumber → dokumen Speq, OQ yang ditambahkan, dan isi yang tidak dipindah beserta alasannya.
+- Balas dengan tabel akhir sumber → dokumen Speq, pertanyaan terbuka yang ditambahkan, isi yang tidak dipindah beserta alasannya, dan file yang harus ditulis role lain.

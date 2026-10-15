@@ -1,5 +1,5 @@
-//! `speq uninstall`: remove this machine's Speq state, the Claude Code skills, and, when the official installer placed
-//! it, the binary and its Git helpers. Specs repositories are never touched, and the server-side session is not ended
+//! `speq uninstall`: remove this machine's Speq state, the agent skills, and, when the official installer placed it,
+//! the binary and its Git helpers. Specs repositories are never touched, and the server-side session is not ended
 //! (`speq logout --all`).
 use crate::env::Env;
 use crate::error::{IoContext, Result};
@@ -17,7 +17,7 @@ pub struct UninstallReport {
     pub data_dir: String,
     /// The binary that was deleted; only an official install is ours to delete.
     pub removed_binary: Option<String>,
-    /// The Claude Code skill folders that `speq skills install` had written.
+    /// The agent skill folders that `speq skills install` had written.
     pub removed_skills: Vec<String>,
     /// What is left for the user to do by hand.
     pub manual_steps: Vec<String>,
@@ -44,10 +44,15 @@ pub fn uninstall(env: &Env, exe: &Path, install: &Install) -> Result<UninstallRe
         }
         _ => {}
     }
-    let removed_skills = crate::skills::remove(&env.skills_dir).unwrap_or_else(|e| {
+    let removed_skills = crate::skills::remove(&env.skills_dirs).unwrap_or_else(|e| {
+        let dirs: Vec<String> = env
+            .skills_dirs
+            .iter()
+            .map(|d| d.display().to_string())
+            .collect();
         manual_steps.push(format!(
-            "the Claude Code skills could not be removed ({e}); delete the speq-* folders in {} by hand",
-            env.skills_dir.display()
+            "the agent skills could not be removed ({e}); delete the speq-* folders in {} by hand",
+            dirs.join(" and ")
         ));
         Vec::new()
     });

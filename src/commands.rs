@@ -245,7 +245,7 @@ pub async fn run(cli: Cli, env: &Env) -> Result<u8> {
             ))
         }
         Command::Skills(args) => match args.action {
-            SkillsAction::Install => Ok(emit(json, &skills::install(&env.skills_dir)?)),
+            SkillsAction::Install => Ok(emit(json, &skills::install(&env.skills_dirs)?)),
         },
         Command::Upgrade(args) => upgrade_command(json, args).await,
         Command::Uninstall(args) => uninstall_command(json, env, args),
@@ -343,7 +343,7 @@ fn uninstall_command(json: bool, env: &Env, args: crate::cli::UninstallArgs) -> 
             _ => String::new(),
         };
         let prompt = format!(
-            "Uninstall speq? This removes your local credentials, cached data, and Claude Code skills{binary}"
+            "Uninstall speq? This removes your local credentials, cached data, and agent skills{binary}"
         );
         if !confirm(&prompt)? {
             return Err(Error::invalid("cancelled; nothing was changed"));

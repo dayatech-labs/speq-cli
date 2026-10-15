@@ -16,7 +16,7 @@ Speq tidak membuat repository GitHub. API hanya memeriksa dan mengikat (bind) re
 3. Di Web app Speq, halaman `/platform`:
    1. Buat project dengan nama produk.
    2. Bind project ke `<org>/<produk>-specs`. Lakukan ini **sebelum** ada commit lewat Speq, karena binding terkunci setelah project memiliki commit.
-   3. Tambahkan member beserta role-nya (PO, Analyst, QA, UIUX, Engineer).
+   3. Tambahkan member beserta role-nya: `po`, `analyst`, `qa`, `ui_ux`, `engineer`, atau `project_admin`.
 4. Di repository implementasi atau folder kerja: `speq list`, lalu `speq clone <produk>-specs`.
 
 Arti error saat bind:
@@ -34,17 +34,17 @@ Arti error saat bind:
 
 Mulai setelah `speq clone` berhasil. Minta deskripsi produk ke user bila belum ada: nama, masalah yang diselesaikan, pengguna, platform, dan epic yang sudah diketahui. Jangan mengarang informasi itu.
 
-| File | Isi | Status |
-| --- | --- | --- |
-| `README.md` | Gambaran produk dalam satu paragraf, tabel epic (Epic, Cakupan, Brief aktif, Status PRD), struktur folder, ringkasan konvensi ID dan status, tabel siapa mengubah apa. Rujuk `conventions.md` | `draft` |
-| `llms.txt` | Judul produk, ringkasan satu kalimat dalam blockquote, lalu section per role sesuai `conventions.md`. Isi hanya dengan dokumen yang sudah ada | — |
-| `architecture.md` | Kerangka `references/architecture.md` untuk tingkat produk: Konteks, Komponen, Data, Keputusan, Risiko | `template` |
-| `design/DESIGN.md` | Kerangka aturan desain: prinsip, warna, tipografi, komponen bersama, aksesibilitas | `template` |
-| `epics/<epic>/briefs/br-001-<judul>.md` | Hanya bila user memberi catatan brief; ikuti `references/brief.md` | `draft` |
+| File | Isi |
+| --- | --- |
+| `README.md` | Gambaran produk dalam satu paragraf, tabel epic (Epic, Cakupan, Brief aktif), struktur folder, ringkasan ID, dan tabel izin per role. Salin dari `conventions.md`, jangan mengarang aturan baru |
+| `llms.txt` | Judul produk, ringkasan satu kalimat dalam blockquote, lalu section sesuai `conventions.md` §`llms.txt`. Isi hanya dengan dokumen yang sudah ada |
+| `architecture.md` | Kerangka `references/architecture.md` untuk tingkat produk: Konteks, Komponen, Data, Keputusan, Risiko. Section yang belum diketahui diisi `Belum diisi engineer.` |
+| `design/DESIGN.md` | Kerangka aturan desain: prinsip, warna, tipografi, komponen bersama, aksesibilitas. Section yang belum diketahui diisi `Belum diisi ui_ux.` |
+| `epics/<epic>/briefs/br-001-<judul>.md` | Hanya bila user memberi catatan brief; ikuti `references/brief.md` dengan `version: 1` |
 
-`README.md` dari `gh repo create --add-readme` diganti seluruhnya.
+Tidak ada frontmatter selain `version` di brief. `README.md` dari `gh repo create --add-readme` diganti seluruhnya.
 
 Push:
 
-- Buat satu commit `docs: set up <produk> specs`.
-- `project_admin` dapat push semua file sekaligus. Bila user bukan admin, kelompokkan commit per role sesuai izin di `conventions.md`, dan beri tahu user file mana yang harus di-push role lain.
+- Platform admin dan `project_admin` dapat push semua file sekaligus dalam satu commit `docs: set up <produk> specs`.
+- Bila user bukan admin, tulis hanya file yang diizinkan untuk role-nya (`conventions.md` §Membaca izin yang berlaku), dan beri tahu user file mana yang harus ditulis role lain.

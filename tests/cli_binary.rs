@@ -29,35 +29,44 @@ const COMMANDS: [&str; 9] = [
 ];
 
 #[test]
-fn skills_install_writes_the_claude_code_skills_without_login() {
-    let claude = tempfile::tempdir().expect("tempdir");
-    let out = Command::new(env!("CARGO_BIN_EXE_speq"))
-        .args(["--json", "skills", "install"])
-        .env("CLAUDE_CONFIG_DIR", claude.path())
-        .output()
-        .expect("run");
-    assert_eq!(
-        out.status.code(),
-        Some(0),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    let body: serde_json::Value = serde_json::from_slice(&out.stdout).expect("json report");
-    assert_eq!(
-        body["skills"],
-        serde_json::json!(["speq-review", "speq-write"])
-    );
-    for skill in ["speq-write", "speq-review"] {
+fn skills_install_writes_the_skills_for_every_agent_without_login() {
+    let home = tempfile::tempdir().expect("tempdir");
+    // Windows resolves the app-data folders under `%USERPROFILE%\AppData` and needs both to exist.
+    for dir in ["Local", "Roaming"] {
+        std::fs::create_dir_all(home.path().join("AppData").join(dir)).expect("app data");
+    }
+    let install = |claude_config: Option<&std::path::Path>| {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_speq"));
+        command
+            .args(["--json", "skills", "install"])
+            .env("HOME", home.path())
+            .env("USERPROFILE", home.path())
+            .env_remove("CLAUDE_CONFIG_DIR");
+        if let Some(dir) = claude_config {
+            command.env("CLAUDE_CONFIG_DIR", dir);
+        }
+        let out = command.output().expect("run");
+        assert_eq!(
+            out.status.code(),
+            Some(0),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        serde_json::from_slice::<serde_json::Value>(&out.stdout).expect("json report")
+    };
+
+    let body = install(None);
+    assert_eq!(body["skills"], serde_json::json!(["speq-write"]));
+    for dir in [".agents/skills", ".claude/skills"] {
         assert!(
-            claude
-                .path()
-                .join("skills")
-                .join(skill)
-                .join("SKILL.md")
-                .is_file(),
-            "{skill}"
+            home.path().join(dir).join("speq-write/SKILL.md").is_file(),
+            "{dir}"
         );
     }
+
+    let custom = home.path().join("claude-config");
+    install(Some(&custom));
+    assert!(custom.join("skills/speq-write/SKILL.md").is_file());
 }
 
 #[test]

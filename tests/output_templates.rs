@@ -152,6 +152,7 @@ fn uninstall_is_clean_only_when_nothing_is_left_to_do() {
         data_dir: "/home/ana/.local/share/speq".into(),
         removed_binary: Some("/home/ana/.local/bin/speq".into()),
         removed_skills: strings(&[
+            "/home/ana/.agents/skills/speq-write",
             "/home/ana/.claude/skills/speq-review",
             "/home/ana/.claude/skills/speq-write",
         ]),
@@ -254,14 +255,14 @@ fn an_upgrade_that_could_not_refresh_the_skills_says_how_to_do_it() {
 }
 
 #[test]
-fn skills_install_names_the_skills_the_folder_and_how_to_use_them() {
+fn skills_install_names_the_skills_every_folder_and_how_to_use_them() {
     let report = SkillsReport {
-        dir: "/home/ana/.claude/skills".into(),
-        skills: strings(&["speq-review", "speq-write"]),
+        dirs: strings(&["/home/ana/.agents/skills", "/home/ana/.claude/skills"]),
+        skills: strings(&["speq-write"]),
     };
     assert_eq!(
         plain(&report),
-        "✔ Installed the Speq skills for Claude Code\n\n  skills  speq-review, speq-write\n  folder  /home/ana/.claude/skills\n\n  → Start a new Claude Code session, then use /speq-write to draft a spec document and /speq-review to review one."
+        "✔ Installed the Speq skill for AI coding agents\n\n  skills  speq-write\n  folder  /home/ana/.agents/skills\n  folder  /home/ana/.claude/skills\n\n  → Start a new session of your coding agent (Claude Code, Codex, Cursor, Copilot, Gemini CLI, OpenCode), then ask it to use speq-write."
     );
 }
 

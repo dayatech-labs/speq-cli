@@ -1,29 +1,21 @@
 # Decision Record
 
-Path: `epics/<epic>/decisions/dr-NNN-<judul>.md`. Decision Record (DR) dibuat untuk keputusan bisnis, arsitektur, atau cakupan yang signifikan. DR tidak diperlukan untuk setiap revisi teks.
+Path: `epics/<epic>/decisions/dr-NNN-<judul>.md`. Decision Record (DR) dibuat untuk keputusan bisnis, arsitektur, atau cakupan yang signifikan, bukan untuk setiap revisi teks. Tidak memakai frontmatter.
 
-AI hanya menulis DR berstatus `proposed`. Status `accepted` diisi oleh pemilik keputusan. Opsi yang belum benar-benar dibahas tim tidak boleh ditulis seolah sudah dipertimbangkan.
+Role `analyst`, `qa`, `ui_ux`, dan `engineer` dapat menulis DR. Keputusan milik PO ditulis oleh `analyst`.
+
+Tulis hanya keputusan yang benar-benar sudah diambil, dengan nama pengambilnya. Opsi yang belum dibahas tim tidak boleh ditulis seolah sudah dipertimbangkan. Bila keputusan belum diambil, tulis pertanyaannya di PRD §10, bukan DR.
 
 ## Kerangka
 
 ```markdown
----
-id: <epic>-dr-NNN
-type: decision
-epic: <epic>
-owner: <role pemilik keputusan>
-status: proposed
-decided_at:
-drafted_by: AI
-updated: YYYY-MM-DD
----
-
 # dr-NNN — <Keputusan dalam satu kalimat>
 
 | | |
 | --- | --- |
-| **Pemilik keputusan** | <nama atau role> |
-| **Terkait** | <OQ-NN, FR-NN, st-NNN> |
+| **Diputuskan oleh** | <nama dan role> |
+| **Tanggal** | <YYYY-MM-DD> |
+| **Terkait** | <st-NNN, BR-NN, atau pertanyaan yang dijawab> |
 | **Menggantikan** | <dr-NNN, atau —> |
 
 ## Konteks
