@@ -5,6 +5,6 @@
 *.log
 .DS_Store
 
-# Speq
+
+# Speq specs repository (managed with `speq`)
 specs/
-.speq/
