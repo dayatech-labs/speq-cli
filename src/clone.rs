@@ -113,7 +113,7 @@ fn already_ignored(gitignore: &str, folder: &str) -> bool {
     })
 }
 
-/// Adds `/<folder>/` to the `.gitignore` of the repository around the new one, unless it is listed already.
+/// Adds `<folder>/` to the `.gitignore` of the repository around the new one, unless it is listed already.
 fn ignore_in(outer: &Path, target: &Path) -> Result<Option<PathBuf>> {
     let (Ok(outer), Ok(target)) = (std::fs::canonicalize(outer), std::fs::canonicalize(target))
     else {
@@ -127,7 +127,7 @@ fn ignore_in(outer: &Path, target: &Path) -> Result<Option<PathBuf>> {
         .map(|c| c.as_os_str().to_string_lossy())
         .collect::<Vec<_>>()
         .join("/");
-    let entry = format!("/{folder}/");
+    let entry = format!("{folder}/");
     let path = outer.join(".gitignore");
     let existing = fsx::read_optional(&path)?
         .map(|b| String::from_utf8_lossy(&b).into_owned())
@@ -385,6 +385,38 @@ mod tests {
             !already_ignored("/specs/", "docs/specs"),
             "anchored at the root only"
         );
+    }
+
+    #[test]
+    fn the_entry_is_the_folder_relative_to_the_gitignore() {
+        let ignored = |existing: Option<&str>, folder: &str| {
+            let outer = tempfile::tempdir().unwrap();
+            let gitignore = outer.path().join(".gitignore");
+            if let Some(existing) = existing {
+                std::fs::write(&gitignore, existing).unwrap();
+            }
+            std::fs::create_dir_all(outer.path().join(folder)).unwrap();
+            let written = ignore_in(outer.path(), &outer.path().join(folder))
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                std::fs::canonicalize(written).unwrap(),
+                std::fs::canonicalize(&gitignore).unwrap()
+            );
+            std::fs::read_to_string(gitignore).unwrap()
+        };
+        let block =
+            |entry: &str| format!("# Speq specs repository (managed with `speq`)\n{entry}\n");
+
+        assert_eq!(ignored(None, "specs"), block("specs/"));
+        assert_eq!(
+            ignored(Some("/target"), "specs"),
+            format!("/target\n\n{}", block("specs/"))
+        );
+        assert_eq!(ignored(None, "docs/specs"), block("docs/specs/"));
+        // Listed already: the file is left as it is.
+        assert_eq!(ignored(Some("/specs/\n"), "specs"), "/specs/\n");
+        assert_eq!(ignored(Some("specs/\n"), "docs/specs"), "specs/\n");
     }
 
     #[test]

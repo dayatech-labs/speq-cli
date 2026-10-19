@@ -69,8 +69,16 @@ async fn clone_makes_a_git_repository_wired_to_speq_and_ignored_by_the_app() {
     assert!(!raw_config.contains("at_"), "{raw_config}");
 
     let ignore = std::fs::read_to_string(app.join(".gitignore")).unwrap();
-    assert!(ignore.lines().any(|l| l == "/specs/"), "{ignore}");
+    assert!(ignore.lines().any(|l| l == "specs/"), "{ignore}");
     assert!(m.run(&app, &["status", "--short"]).ok().stdout.is_empty());
+    // The implementation repository's own Git sees the new .gitignore and nothing of the specs folder.
+    let outer = std::process::Command::new("git")
+        .args(["status", "--porcelain", "--untracked-files=all"])
+        .current_dir(&app)
+        .output()
+        .unwrap();
+    assert!(outer.status.success());
+    assert_eq!(String::from_utf8_lossy(&outer.stdout), "?? .gitignore\n");
 }
 
 #[tokio::test]
@@ -645,7 +653,8 @@ async fn deinit_deletes_the_specs_repository_and_clone_starts_again() {
     assert!(
         std::fs::read_to_string(app.join(".gitignore"))
             .unwrap()
-            .contains("/specs/")
+            .lines()
+            .any(|l| l == "specs/")
     );
     m.run(&app, &["list"]).ok();
 
