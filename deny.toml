@@ -1,6 +1,13 @@
 [advisories]
 version = 2
 yanked = "deny"
+# zbus 6 absorbed these crates; keyring 4.2.0 (latest) still pulls zbus 5 for the Linux Secret
+# Service store. "Unmaintained" only, no vulnerability. Drop once keyring moves to zbus 6.
+ignore = [
+    { id = "RUSTSEC-2026-0370", reason = "zvariant: merged into zbus 6, awaiting keyring upgrade" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names: merged into zbus 6, awaiting keyring upgrade" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive: merged into zbus 6, awaiting keyring upgrade" },
+]
 
 [licenses]
 version = 2
