@@ -114,9 +114,9 @@ pub enum Command {
     )]
     Deinit(DeinitArgs),
 
-    /// Print the files a coding agent should read for one story
+    /// Print the files a coding agent should read for one epic, story, or task
     #[command(
-        after_help = "Arguments:\n  <TARGET>  `<epic>/<story>` where <story> is the story folder name, for example epic-payment/st-001-create-payment\n\nExamples:\n  speq context epic-payment/st-001-create-payment\n  speq context epic-payment/st-001-create-payment --json\n\nPrints one path per line (relative to this directory) in a fixed order, from the working tree (no network): llms.txt, README.md, architecture.md, the epic's briefs, prd.md and architecture.md, then the story's README.md, acceptance-criteria.md, DESIGN.md, layout.html and tasks. Only files that exist are listed.\n\n"
+        after_help = "Arguments:\n  <TARGET>  `<epic>`, `<epic>/<story>` or `<epic>/<story>/<task>`: the epic folder, the story folder, and the\n            task file name (`.md` optional), for example epic-payment/st-001-create-payment/be-001-api\n\nExamples:\n  speq context epic-payment\n  speq context epic-payment/st-001-create-payment\n  speq context epic-payment/st-001-create-payment/be-001-api\n  speq context epic-payment/st-001-create-payment --json\n\nPrints one path per line (relative to this directory) in a fixed order, from the working tree (no network): llms.txt,\nREADME.md, architecture.md, the epic's briefs, prd.md and architecture.md, then\n  <epic>                  every story of the epic, by folder name, each with its tasks\n  <epic>/<story>          the story's README.md, acceptance-criteria.md, DESIGN.md, layout.html and tasks\n  <epic>/<story>/<task>   the story's README.md, acceptance-criteria.md, DESIGN.md, layout.html and that task only\nOnly files that exist are listed.\n\n"
     )]
     Context(ContextArgs),
 
@@ -186,7 +186,7 @@ pub struct DeinitArgs {
 
 #[derive(Args, Debug)]
 pub struct ContextArgs {
-    /// `<epic>/<story>`, for example `epic-payment/st-001-create-payment`
+    /// `<epic>`, `<epic>/<story>` or `<epic>/<story>/<task>`, for example `epic-payment/st-001-create-payment`
     pub target: String,
 }
 

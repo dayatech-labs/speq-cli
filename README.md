@@ -84,7 +84,7 @@ The binary ships two [Agent Skills](https://agentskills.io) skills.
 
 `speq-cli` knows how to run speq on a specs repository: always `speq`, never `git`, from the implementation
 repository; one short-lived local branch per piece of work, created from `origin/main`; the push rules; resolving a
-`speq pull` conflict; fixing each rejected-push reason; and `speq context` before implementing a story. It asks before
+`speq pull` conflict; fixing each rejected-push reason; and `speq context` before implementing an epic, story, or task. It asks before
 anything that reaches other people or loses work (commit, push, `deinit`, discarding changes) and never force-pushes.
 
 `speq-write` knows the specs layout, the IDs, the `version` / `briefs` front matter the Web app reads, and each role's
@@ -115,6 +115,7 @@ speq commit -am "docs: add the refund rule"
 speq push                               # checked by the API, lands on main with the same SHA
 speq pull                               # rebases your unpushed commits on top of the remote
 speq context epic-payment/st-001-create-payment   # files a coding agent should read for one story
+speq context epic-payment/st-001-create-payment/be-001-api   # ... for one task (or `speq context epic-payment` for an epic)
 ```
 
 A step-by-step guide with every supported command, the everyday flow, and what to do on a conflict is in
@@ -129,7 +130,7 @@ A step-by-step guide with every supported command, the everyday flow, and what t
 | `list` | repositories you can use, from the local capability cache while it is valid |
 | `clone <repo> [dir]` | a Git repository of the specs, wired to the Speq API. `dir` defaults to `specs` inside a Git repository (and is added to its `.gitignore`), else to the repository name |
 | `deinit [--yes]` | delete the specs repository (or a workspace of the older speq) to start over. Asks first on a terminal and names what would be lost: uncommitted changes, unpushed commits, stashes. The login and the `.gitignore` entry stay |
-| `context <epic>/<story>` | deterministic list of context files for one story (`st-NNN-name` folder), from the working tree: `llms.txt`, root `README.md` and `architecture.md`, the epic's briefs, `prd.md`, `architecture.md`, then the story's `README.md`, `acceptance-criteria.md`, `DESIGN.md`, `layout.html`, and tasks. Only files that exist; paths relative to where you are |
+| `context <epic>[/<story>[/<task>]]` | deterministic list of context files, from the working tree: `llms.txt`, root `README.md` and `architecture.md`, the epic's briefs, `prd.md`, `architecture.md`, then for `<epic>` every story (by folder name) with its tasks; for `<epic>/<story>` (`st-NNN-name` folder) the story's `README.md`, `acceptance-criteria.md`, `DESIGN.md`, `layout.html`, and tasks; for `<epic>/<story>/<task>` (task file name, `.md` optional) the same story files and only that task. Only files that exist; paths relative to where you are |
 | `push --squash [args]` | fold the commits not yet on the remote into one, then `git push [args]` (opt-in; see below) |
 | `skills install` | write the `speq-cli` and `speq-write` skills for AI coding agents |
 | `upgrade` / `uninstall` | check for / install a newer `speq` (and refresh the skills); remove local data, the skills, and an official install |

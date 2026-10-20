@@ -76,7 +76,7 @@ pub fn is_story_folder(s: &str) -> bool {
 }
 
 /// `^[a-z]{2,8}-[0-9]{3,}-[a-z0-9][a-z0-9-]{0,80}\.md$`
-fn is_task_file(s: &str) -> bool {
+pub fn is_task_file(s: &str) -> bool {
     let Some(rest) = s.strip_suffix(".md") else {
         return false;
     };
@@ -188,17 +188,6 @@ pub fn matches_rule(pattern: &str, path: &str) -> bool {
         }
     }
     patterns.len() == segments.len()
-}
-
-/// The epic and story folder names `speq context <epic>/<story>` accepts.
-pub fn ensure_valid_epic_story(epic: &str, story: &str) -> crate::error::Result<()> {
-    if is_folder_name(epic) && is_story_folder(story) {
-        Ok(())
-    } else {
-        Err(crate::error::Error::invalid(
-            "the epic must be a lowercase folder name and the story a folder named `st-<number>-<name>`, such as `epic-payment/st-001-create-payment`",
-        ))
-    }
 }
 
 /// Join a canonical `a/b/c.md` path onto a directory using the platform separator.

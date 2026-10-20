@@ -1,6 +1,6 @@
 ---
 name: speq-cli
-description: Use when running the speq CLI or Git on a Speq specs repository (cloned with `speq clone`, often `./specs` with `llms.txt` and `epics/`) - signing in, listing or cloning specs repositories, pulling the latest documents, working on a local branch, committing and pushing documents, resolving a conflict from `speq pull`, fixing a rejected `speq push`, listing a story's context files with `speq context` before implementing it, or upgrading, resetting, or uninstalling speq.
+description: Use when running the speq CLI or Git on a Speq specs repository (cloned with `speq clone`, often `./specs` with `llms.txt` and `epics/`) - signing in, listing or cloning specs repositories, pulling the latest documents, working on a local branch, committing and pushing documents, resolving a conflict from `speq pull`, fixing a rejected `speq push`, listing the context files of an epic, story, or task with `speq context` before implementing it, or upgrading, resetting, or uninstalling speq.
 compatibility: Requires the speq CLI and Git 2.28 or newer.
 metadata:
   version: "__SPEQ_VERSION__"
@@ -75,13 +75,21 @@ speq branch -d docs/refund-rule             #    delete the finished branch
 
 Rules every push must meet: only to `main`, fast-forward only, no force push, no branch delete, no tag, at most 20 commits (more: `speq push --squash`, only with the user's consent because it rewrites local history), author and committer equal to the user's Speq email, only document paths (`llms.txt`, `README.md`, `architecture.md`, `design/**`, and `prd.md`, `architecture.md`, `briefs/`, `decisions/`, `stories/` under `epics/`) as plain UTF-8 files, and only paths the user's role may write (`speq list --json` shows the roles and capabilities).
 
-## 5. Context for implementing a story
+## 5. Context for implementing an epic, story, or task
 
 ```bash
-speq context epic-payment/st-001-create-payment
+speq context epic-payment                                   # a whole epic
+speq context epic-payment/st-001-create-payment             # one story
+speq context epic-payment/st-001-create-payment/be-001-api  # one task of a story
 ```
 
-It prints, one path per line and relative to where you are, the files to read before implementing that story: `llms.txt`, root `README.md` and `architecture.md`, the epic's briefs, `prd.md`, and `architecture.md`, then the story's `README.md`, `acceptance-criteria.md`, design files, and tasks. Read all of them before writing code. The argument is `<epic folder>/<story folder>`; list the stories with `ls specs/epics/<epic>/stories`. Run `speq pull` first so the files are current.
+It prints, one path per line and relative to where you are, the files to read before implementing the target: `llms.txt`, root `README.md` and `architecture.md`, the epic's briefs, `prd.md`, and `architecture.md`, then:
+
+- `<epic>`: every story of the epic, each with its `README.md`, `acceptance-criteria.md`, design files, and tasks.
+- `<epic>/<story>`: the story's `README.md`, `acceptance-criteria.md`, design files, and tasks.
+- `<epic>/<story>/<task>`: the story's `README.md`, `acceptance-criteria.md`, and design files, and only that task.
+
+Read all of them before writing code. Use the narrowest target that covers the work: the task when the user names one task, the epic only when asked to implement the whole epic. The arguments are folder names and the task file name (`.md` optional); list them with `ls specs/epics`, `ls specs/epics/<epic>/stories`, and `ls specs/epics/<epic>/stories/<story>/tasks`. Run `speq pull` first so the files are current.
 
 ## 6. Other commands
 

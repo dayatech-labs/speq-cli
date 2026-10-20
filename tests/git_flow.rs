@@ -530,7 +530,7 @@ async fn workspaces_of_the_older_speq_are_explained() {
 }
 
 #[tokio::test]
-async fn context_lists_documents_relative_to_where_you_are() {
+async fn context_of_a_story_lists_documents_relative_to_where_you_are() {
     let m = Machine::new().await;
     let (app, specs) = m.clone_into_app();
     m.write(
@@ -564,12 +564,121 @@ async fn context_lists_documents_relative_to_where_you_are() {
     assert_eq!(json["head_sha"], head(&m, &specs).as_str());
 
     for bad in [
-        "epic-payment",
         "epic-payment/nope",
         "epic-payment/st-009-missing",
+        "epic-payment/st-001-create-payment/tasks/be-001-api",
     ] {
         assert_eq!(m.run(&app, &["context", bad]).code, 7, "{bad}");
     }
+}
+
+#[tokio::test]
+async fn context_of_an_epic_lists_every_story_with_its_tasks() {
+    let m = Machine::new().await;
+    let (app, specs) = m.clone_into_app();
+    let epic = specs.join("epics/epic-payment");
+    m.write(
+        &epic.join("stories/st-002-refund/acceptance-criteria.md"),
+        "# AC\n",
+    );
+    m.write(&epic.join("stories/st-002-refund/README.md"), "# Refund\n");
+    m.write(
+        &epic.join("stories/st-002-refund/tasks/fe-001-form.md"),
+        "# Form\n",
+    );
+    // Decisions and documents of other epics are not part of an epic's context.
+    m.write(&epic.join("decisions/dr-01-currency.md"), "# Currency\n");
+    m.write(
+        &specs.join("epics/epic-payment-v2/stories/st-001-other/README.md"),
+        "# Other\n",
+    );
+
+    let out = m.run(&app, &["context", "epic-payment"]).ok().stdout;
+    assert_eq!(
+        out.lines().collect::<Vec<_>>(),
+        [
+            "specs/llms.txt",
+            "specs/epics/epic-payment/briefs/br-001-overview.md",
+            "specs/epics/epic-payment/prd.md",
+            "specs/epics/epic-payment/architecture.md",
+            "specs/epics/epic-payment/stories/st-001-create-payment/README.md",
+            "specs/epics/epic-payment/stories/st-001-create-payment/tasks/be-001-api.md",
+            "specs/epics/epic-payment/stories/st-002-refund/README.md",
+            "specs/epics/epic-payment/stories/st-002-refund/acceptance-criteria.md",
+            "specs/epics/epic-payment/stories/st-002-refund/tasks/fe-001-form.md",
+        ]
+    );
+
+    // An epic without stories still gets its epic-level documents.
+    m.write(&specs.join("epics/epic-billing/prd.md"), "# Billing\n");
+    let billing = m.run(&specs, &["context", "epic-billing"]).ok().stdout;
+    assert_eq!(billing, "llms.txt\nepics/epic-billing/prd.md\n");
+
+    for bad in ["epic-missing", "Epic-Payment", "epics"] {
+        let out = m.run(&app, &["context", bad]);
+        assert_eq!(out.code, 7, "{bad}");
+    }
+    let missing = m.run(&app, &["context", "epic-missing"]);
+    assert!(
+        missing.stderr.contains("speq ls-files epics"),
+        "{}",
+        missing.stderr
+    );
+}
+
+#[tokio::test]
+async fn context_of_a_task_lists_its_story_and_only_that_task() {
+    let m = Machine::new().await;
+    let (app, specs) = m.clone_into_app();
+    let story = specs.join("epics/epic-payment/stories/st-001-create-payment");
+    m.write(&story.join("DESIGN.md"), "# Design\n");
+    m.write(&story.join("tasks/fe-002-form.md"), "# Form\n");
+
+    let expected = [
+        "specs/llms.txt",
+        "specs/epics/epic-payment/briefs/br-001-overview.md",
+        "specs/epics/epic-payment/prd.md",
+        "specs/epics/epic-payment/architecture.md",
+        "specs/epics/epic-payment/stories/st-001-create-payment/README.md",
+        "specs/epics/epic-payment/stories/st-001-create-payment/DESIGN.md",
+        "specs/epics/epic-payment/stories/st-001-create-payment/tasks/fe-002-form.md",
+    ];
+    for task in ["fe-002-form", "fe-002-form.md"] {
+        let target = format!("{STORY}/{task}");
+        let out = m.run(&app, &["context", &target]).ok().stdout;
+        assert_eq!(out.lines().collect::<Vec<_>>(), expected, "{task}");
+    }
+
+    let json: serde_json::Value = serde_json::from_str(
+        &m.run(&app, &["--json", "context", &format!("{STORY}/be-001-api")])
+            .ok()
+            .stdout,
+    )
+    .unwrap();
+    assert_eq!(json["project_id"], PROJECT);
+    assert_eq!(
+        json["paths"].as_array().unwrap().last().unwrap(),
+        "specs/epics/epic-payment/stories/st-001-create-payment/tasks/be-001-api.md"
+    );
+
+    // A task file that is not a canonical document (or does not exist) is not a target.
+    m.write(&story.join("tasks/notes.md"), "# Notes\n");
+    for bad in [
+        format!("{STORY}/be-009-missing"),
+        format!("{STORY}/notes"),
+        "epic-payment/st-009-missing/be-001-api".to_string(),
+    ] {
+        let out = m.run(&app, &["context", &bad]);
+        assert_eq!(out.code, 7, "{bad}");
+    }
+    let missing = m.run(&app, &["context", &format!("{STORY}/be-009-missing")]);
+    assert!(
+        missing
+            .stderr
+            .contains("speq ls-files epics/epic-payment/stories/st-001-create-payment/tasks"),
+        "{}",
+        missing.stderr
+    );
 }
 
 #[tokio::test]

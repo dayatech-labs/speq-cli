@@ -35,7 +35,7 @@ next step), and `--json` gives machine-readable output.
 | `speq list` | The specs repositories you may use, with your roles |
 | `speq clone <repo> [dir]` | Clone a specs repository as a Git repository wired to Speq. `<repo>` can be `owner/repo`, the repo name, or the project name when it is unique in `speq list`. Default `dir`: `specs` when run inside a Git repository (it is then added to that repository's `.gitignore`), else the repo name |
 | `speq deinit [--yes]` | Delete the specs repository (or a workspace of the older speq) to start over. Before deleting, speq names what would be lost: uncommitted changes, unpushed commits, and stashes |
-| `speq context <epic>/<story>` | The files a coding agent should read for one story, one path per line, relative to where you are. Example: `speq context epic-payment/st-001-create-payment` |
+| `speq context <epic>[/<story>[/<task>]]` | The files a coding agent should read for one epic, story, or task, one path per line, relative to where you are. Examples: `speq context epic-payment`, `speq context epic-payment/st-001-create-payment`, `speq context epic-payment/st-001-create-payment/be-001-api` |
 | `speq skills install` | Write the `speq-cli` and `speq-write` skills for AI coding agents to `~/.agents/skills` and `~/.claude/skills` (or `$CLAUDE_CONFIG_DIR/skills`). The installers and `speq upgrade` do this for you |
 | `speq upgrade [--check] [--yes] [--version X.Y.Z]` | Check for or install a newer `speq`, and refresh the skills |
 | `speq uninstall [--yes]` | Remove speq's local data and the skills, and the binary when the official installer put it there. Specs repositories are not touched |
@@ -173,10 +173,19 @@ speq context epic-payment/st-001-create-payment
 # ...
 ```
 
+Every target starts with `llms.txt`, the root `README.md` and `architecture.md`, and the epic's briefs, `prd.md`, and
+`architecture.md`. What follows depends on the target:
+
+| Target | Then lists |
+| --- | --- |
+| `epic-payment` | every story of the epic, by folder name, each with its `README.md`, `acceptance-criteria.md`, `DESIGN.md`, `layout.html`, and tasks |
+| `epic-payment/st-001-create-payment` | that story's `README.md`, `acceptance-criteria.md`, `DESIGN.md`, `layout.html`, and tasks |
+| `epic-payment/st-001-create-payment/be-001-api` | that story's `README.md`, `acceptance-criteria.md`, `DESIGN.md`, `layout.html`, and only `tasks/be-001-api.md` (`.md` in the target is optional) |
+
 ### Running speq through an AI coding agent
 
 Ask your agent to use `speq-cli` (in Claude Code: `/speq-cli`) to pull, branch, commit, and push the specs, resolve a
-`speq pull` conflict, fix a rejected push, or read a story's context files before implementing it. It runs `speq`
+`speq pull` conflict, fix a rejected push, or read the context files of an epic, story, or task before implementing it. It runs `speq`
 rather than `git`, works on a branch created from `origin/main`, and asks before it commits, pushes, or discards
 anything. Where both sides of a conflict disagree on meaning, it shows you both versions instead of picking one.
 
