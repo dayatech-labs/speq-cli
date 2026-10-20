@@ -1,6 +1,6 @@
 //! `speq uninstall`: remove this machine's Speq state, the agent skills, and, when the official installer placed it,
 //! the binary and its Git helpers. Specs repositories are never touched, and the server-side session is not ended
-//! (`speq logout --all`).
+//! (`speq logout --all`). The command revokes the Dayaboard API key before this runs.
 use crate::env::Env;
 use crate::error::{IoContext, Result};
 use crate::fsx::FileLock;

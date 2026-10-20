@@ -2,6 +2,7 @@
 use crate::cli::{Cli, Command, SkillsAction, banner, exit_code_help, paint_help};
 use crate::clone::{self, CloneOptions};
 use crate::context;
+use crate::dayaboard::Revocation;
 use crate::deinit;
 use crate::env::Env;
 use crate::error::{Error, Result};
@@ -270,7 +271,7 @@ pub async fn run(cli: Cli, env: &Env) -> Result<u8> {
             SkillsAction::Install => Ok(emit(json, &skills::install(&env.skills_dirs)?)),
         },
         Command::Upgrade(args) => upgrade_command(json, args).await,
-        Command::Uninstall(args) => uninstall_command(json, env, args),
+        Command::Uninstall(args) => uninstall_command(json, env, args).await,
     }
 }
 
@@ -361,7 +362,7 @@ async fn upgrade_command(json: bool, args: crate::cli::UpgradeArgs) -> Result<u8
     ))
 }
 
-fn uninstall_command(json: bool, env: &Env, args: crate::cli::UninstallArgs) -> Result<u8> {
+async fn uninstall_command(json: bool, env: &Env, args: crate::cli::UninstallArgs) -> Result<u8> {
     let (exe, install) = upgrade::current_install()?;
     if !args.yes {
         let binary = match install {
@@ -375,7 +376,20 @@ fn uninstall_command(json: bool, env: &Env, args: crate::cli::UninstallArgs) -> 
             return Err(Error::invalid("cancelled; nothing was changed"));
         }
     }
-    Ok(emit(json, &uninstall::uninstall(env, &exe, &install)?))
+    // Revoked while the credential still holds the key; the Speq session itself is not ended (`speq logout --all`).
+    let dayaboard = Session::new(env).disconnect_dayaboard().await;
+    let mut report = uninstall::uninstall(env, &exe, &install)?;
+    if let Some(Revocation {
+        revoked: false,
+        expires_at,
+    }) = dayaboard
+    {
+        report.manual_steps.push(format!(
+            "the Dayaboard API key could not be revoked; remove the \"SPEQ CLI\" key in Dayaboard, or let it expire on {}",
+            expires_at.date()
+        ));
+    }
+    Ok(emit(json, &report))
 }
 
 #[cfg(test)]

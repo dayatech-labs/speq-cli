@@ -1,7 +1,8 @@
 //! Device session: login (PKCE), a stored access token that simply expires (there is no refresh),
-//! capability snapshot refresh, and logout.
+//! capability snapshot refresh, and logout. The Dayaboard API key issued at login follows the same lifecycle.
 use crate::api::{ProjectsResponse, Tokens};
 use crate::credentials::StoredCredential;
+use crate::dayaboard::{self, Connection, Revocation};
 use crate::env::Env;
 use crate::error::{Error, Result};
 use crate::fsx::FileLock;
@@ -35,6 +36,9 @@ pub struct LoginReport {
     pub email: Option<String>,
     pub name: Option<String>,
     pub projects: usize,
+    /// Absent while the Dayaboard integration is off.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dayaboard: Option<Connection>,
 }
 
 #[derive(Debug, Serialize)]
@@ -42,6 +46,9 @@ pub struct LogoutReport {
     pub was_logged_in: bool,
     /// Every other session of the account was ended too (`logout --all`).
     pub all_devices: bool,
+    /// Set when this device held a Dayaboard API key.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dayaboard: Option<Revocation>,
 }
 
 pub struct Session<'a> {
@@ -207,9 +214,24 @@ impl<'a> Session<'a> {
     async fn finish_login(&self, tokens: Tokens) -> Result<LoginReport> {
         let env = self.env;
         let _lock = FileLock::exclusive(&env.auth_lock_path())?;
+        let Tokens {
+            access_token,
+            access_token_expires_at,
+            dayaboard,
+        } = tokens;
 
-        let expires_at = snapshot::parse_time(&tokens.access_token_expires_at)
+        let expires_at = snapshot::parse_time(&access_token_expires_at)
             .ok_or_else(|| Error::Other("the API returned an invalid token expiry".into()))?;
+        let (dayaboard_key, dayaboard) = match dayaboard.map(|grant| grant.accept(now())) {
+            Some((key, connection)) => (key, Some(connection)),
+            None => (None, None),
+        };
+        let previous_key = env
+            .creds
+            .load(&env.account())
+            .ok()
+            .flatten()
+            .and_then(|c| c.dayaboard);
 
         // Replace any earlier session on this device and drop its cache, so an account switch cannot
         // leave the previous user's snapshot behind. The old token cannot be revoked individually; it
@@ -220,11 +242,16 @@ impl<'a> Session<'a> {
             &env.account(),
             &StoredCredential {
                 user_id: None,
-                access_token: tokens.access_token.clone(),
+                access_token: access_token.clone(),
                 expires_at,
+                dayaboard: dayaboard_key,
             },
         )?;
-        let token = SecretString::from(tokens.access_token);
+        let token = SecretString::from(access_token);
+        // The replaced key would otherwise stay valid until it expires; Dayaboard keeps one per login.
+        if let Some(previous) = previous_key {
+            dayaboard::revoke(&previous).await;
+        }
 
         let snapshot = self
             .refresh_snapshot(&token, true, TimeDuration::ZERO)
@@ -237,6 +264,7 @@ impl<'a> Session<'a> {
             email: me.as_ref().map(|m| m.email.clone()),
             name: me.and_then(|m| m.name),
             projects: snapshot.projects.len(),
+            dayaboard,
         })
     }
 
@@ -251,11 +279,13 @@ impl<'a> Session<'a> {
 
     // --------------------------------------------------------------- logout
 
-    /// Clears local state. With `everywhere` it first asks the server to end every token of the account:
-    /// tokens are stateless, so a plain logout cannot revoke this one.
+    /// Clears local state and revokes this device's Dayaboard key. With `everywhere` it first asks the server to end
+    /// every token of the account: tokens are stateless, so a plain logout cannot revoke this one. Dayaboard keys of
+    /// other devices are theirs to revoke; they expire with those devices' tokens.
     pub async fn logout(&self, everywhere: bool) -> Result<LogoutReport> {
         let _lock = FileLock::exclusive(&self.env.auth_lock_path())?;
         let credential = self.env.creds.load(&self.env.account()).ok().flatten();
+        let dayaboard = self.revoke_dayaboard(credential.as_ref()).await;
         let revoke = match (&credential, everywhere) {
             (Some(c), true) => {
                 self.env
@@ -269,6 +299,7 @@ impl<'a> Session<'a> {
         let report = LogoutReport {
             was_logged_in: credential.is_some(),
             all_devices: everywhere && credential.is_some(),
+            dayaboard,
         };
         match revoke {
             Ok(()) => Ok(report),
@@ -278,6 +309,21 @@ impl<'a> Session<'a> {
                 "signed out on this machine, but the other sessions could not be ended ({e}); log in and run `speq logout --all` to retry"
             ))),
         }
+    }
+
+    /// Revokes the stored Dayaboard key, if any and not yet expired; for `speq uninstall`, which removes the credential.
+    pub async fn disconnect_dayaboard(&self) -> Option<Revocation> {
+        let credential = self.env.creds.load(&self.env.account()).ok().flatten();
+        self.revoke_dayaboard(credential.as_ref()).await
+    }
+
+    async fn revoke_dayaboard(&self, credential: Option<&StoredCredential>) -> Option<Revocation> {
+        let key = credential?.dayaboard.as_ref()?;
+        // An expired key is already dead; Dayaboard need not be asked.
+        if key.is_expired(now()) {
+            return None;
+        }
+        Some(dayaboard::revoke(key).await)
     }
 
     // ----------------------------------------------------------- credentials

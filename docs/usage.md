@@ -30,8 +30,8 @@ next step), and `--json` gives machine-readable output.
 
 | Command | What it does |
 | --- | --- |
-| `speq login [--no-browser]` | Sign in to Speq in your browser. The token is kept in the OS credential store and is valid for 30 days |
-| `speq logout [--all]` | Delete the token and cache on this machine. `--all` also ends every session of your account (all devices and the Web app) |
+| `speq login [--no-browser]` | Sign in to Speq in your browser. The token is kept in the OS credential store and is valid for 30 days; a Dayaboard API key, when available, is stored with it and expires with it |
+| `speq logout [--all]` | Delete the token and cache on this machine and revoke its Dayaboard API key. `--all` also ends every session of your account (all devices and the Web app) |
 | `speq list` | The specs repositories you may use, with your roles |
 | `speq clone <repo> [dir]` | Clone a specs repository as a Git repository wired to Speq. `<repo>` can be `owner/repo`, the repo name, or the project name when it is unique in `speq list`. Default `dir`: `specs` when run inside a Git repository (it is then added to that repository's `.gitignore`), else the repo name |
 | `speq deinit [--yes]` | Delete the specs repository (or a workspace of the older speq) to start over. Before deleting, speq names what would be lost: uncommitted changes, unpushed commits, and stashes |

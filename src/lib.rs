@@ -5,6 +5,7 @@ pub mod clone;
 pub mod commands;
 pub mod context;
 pub mod credentials;
+pub mod dayaboard;
 pub mod deinit;
 #[cfg(debug_assertions)]
 pub mod dev_store;

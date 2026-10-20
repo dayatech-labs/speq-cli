@@ -2,6 +2,7 @@
 //! Every text layout is built with the one template in [`crate::template`].
 use crate::clone::{CloneReport, ListReport};
 use crate::context::ContextReport;
+use crate::dayaboard::{Connection, Revocation};
 use crate::deinit::DeinitReport;
 use crate::error::{Error, exit};
 use crate::session::{LoginReport, LogoutReport};
@@ -52,14 +53,27 @@ impl Human for LoginReport {
             (None, Some(e)) => e.clone(),
             _ => self.user_id.clone(),
         };
-        let mut s = Screen::new(theme);
-        s.title(Tone::Ok, "Logged in").facts(&[
+        let mut facts = vec![
             ("account", who),
             (
                 "access",
                 plural(self.projects, "repository", "repositories"),
             ),
-        ]);
+        ];
+        if let Some(Connection::Connected { expires_at, .. }) = &self.dayaboard {
+            facts.push((
+                "dayaboard",
+                format!("connected until {}", expires_at.date()),
+            ));
+        }
+        let mut s = Screen::new(theme);
+        s.title(Tone::Ok, "Logged in").facts(&facts);
+        if let Some(Connection::NotConnected { message, .. }) = &self.dayaboard {
+            s.note(
+                Tone::Warn,
+                &format!("Dayaboard is not connected: {message}. Creating tickets needs `speq login` again."),
+            );
+        }
         if self.projects == 0 {
             s.hint("Ask a platform admin to add you to a repository.");
         } else {
@@ -83,6 +97,19 @@ impl Human for LogoutReport {
         } else {
             s.title(Tone::Info, "You were not logged in")
                 .text("Local state was cleaned.");
+        }
+        if let Some(Revocation {
+            revoked: false,
+            expires_at,
+        }) = &self.dayaboard
+        {
+            s.note(
+                Tone::Warn,
+                &format!(
+                    "The Dayaboard API key could not be revoked; it stops working on {}.",
+                    expires_at.date()
+                ),
+            );
         }
         s.finish()
     }

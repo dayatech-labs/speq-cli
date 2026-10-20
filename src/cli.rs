@@ -95,13 +95,13 @@ pub struct Cli {
 pub enum Command {
     /// Log in to Speq in your browser
     #[command(
-        after_help = "Examples:\n  speq login\n  speq login --no-browser\n\nThe access token is kept in the OS credential store and expires after 30 days. There is no refresh: when it\nexpires, commands fail with exit code 3 and you run `speq login` again.\n\n"
+        after_help = "Examples:\n  speq login\n  speq login --no-browser\n\nThe access token is kept in the OS credential store and expires after 30 days. There is no refresh: when it\nexpires, commands fail with exit code 3 and you run `speq login` again.\n\nWhen Dayaboard is available, login also stores a personal Dayaboard API key for creating tickets. It expires with\nthe token; if Dayaboard cannot be connected, login still succeeds with a warning.\n\n"
     )]
     Login(LoginArgs),
 
     /// Delete the local credential and cache (--all also ends every other device)
     #[command(
-        after_help = "Examples:\n  speq logout\n  speq logout --all\n\nA token cannot be revoked on its own. Plain `logout` forgets it on this machine only; --all ends every token\nyour account holds, on every device and in the Web app. Specs repositories are left untouched.\n\n"
+        after_help = "Examples:\n  speq logout\n  speq logout --all\n\nA token cannot be revoked on its own. Plain `logout` forgets it on this machine only; --all ends every token\nyour account holds, on every device and in the Web app. This device's Dayaboard API key is revoked either way; keys\nof other devices expire with their tokens. Specs repositories are left untouched.\n\n"
     )]
     Logout(LogoutArgs),
 
@@ -144,7 +144,7 @@ pub enum Command {
 
     /// Remove speq's local data and, when the installer put it there, the binary
     #[command(
-        after_help = "Examples:\n  speq uninstall\n  speq uninstall --yes\n\nRemoves the stored credential and the cache, then the binary if it was placed by the\nofficial installer. Binaries managed by Homebrew, Scoop, WinGet, or another package manager are left in place and\nthe matching package-manager command is shown. Specs repositories are never touched (see `speq deinit`), and the\nserver-side session is not ended: run `speq logout --all` first for that. Only the credential of the current API\norigin is removed.\n\n"
+        after_help = "Examples:\n  speq uninstall\n  speq uninstall --yes\n\nRemoves the stored credential and the cache, then the binary if it was placed by the\nofficial installer. Binaries managed by Homebrew, Scoop, WinGet, or another package manager are left in place and\nthe matching package-manager command is shown. Specs repositories are never touched (see `speq deinit`), and the\nserver-side session is not ended: run `speq logout --all` first for that. The Dayaboard API key is revoked. Only the credential of the current API\norigin is removed.\n\n"
     )]
     Uninstall(UninstallArgs),
 }

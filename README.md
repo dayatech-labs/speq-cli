@@ -230,6 +230,11 @@ work as in any Git repository. Prefer merges? `speq config pull.rebase false`; m
 * The Speq access token lives only in the OS credential store (Keychain, Credential Manager, Secret Service). It is
   signed, valid for 30 days, and there is no refresh: when it expires (or the API answers `401`) the CLI removes its
   local state, commands exit with code 3, and you run `speq login` again. Google and GitHub tokens never reach the CLI.
+* When Dayaboard is available, `speq login` also stores a personal Dayaboard API key (for creating tickets) next to the
+  token, in the same credential entry. The Speq API obtains it with the browser's fresh Google sign-in and passes it
+  on once without keeping it. It expires with the token, is sent only to the Dayaboard origin that issued it, and is
+  revoked when this device logs out, signs in again, or uninstalls. If Dayaboard cannot be connected, login still
+  succeeds with a warning.
 * The token never enters Git's configuration, and Git never gets it. `git-credential-speq` trades it for a Git fetch
   token (`POST git/token`) and gives Git only that: valid for 10 minutes, only for fetching the one project Git
   names, and ended by `logout --all` too. Any program you run could ask the helper, so it never hands out the

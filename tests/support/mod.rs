@@ -9,7 +9,7 @@ use speq::credentials::MemoryStore;
 use speq::dirs::AppDirs;
 use speq::env::Env;
 use speq::hashing::{sha256_bytes, sha256_hex};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
@@ -18,6 +18,19 @@ pub mod http;
 pub const PROJECT: &str = "proj_payment";
 pub const REPO: &str = "acme/payment-specs";
 pub const STORY: &str = "epic-payment/st-001-create-payment";
+
+/// What the fake does for a login that asks for Dayaboard. The same server also plays Dayaboard itself.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum FakeDayaboard {
+    /// The integration is off: `complete` has no `dayaboard` field (the default, as for an older API).
+    Off,
+    /// Issue a key from this server's origin, expiring with the access token.
+    Connect,
+    /// Issue a key, but name this Dayaboard URL instead of the fake's own origin.
+    ConnectAt(String),
+    /// `connected: false` with this code and message.
+    Refuse(String, String),
+}
 
 #[derive(Default)]
 pub struct Session {
@@ -35,7 +48,14 @@ pub struct State {
     pub projects: BTreeMap<String, Project>,
     pub members: HashMap<String, Vec<String>>, // user -> project ids
     pub auth_version: HashMap<String, i64>,
-    cli_requests: HashMap<String, (String, bool)>, // id -> (challenge, consumed)
+    cli_requests: HashMap<String, (String, bool, bool)>, // id -> (challenge, consumed, asked for Dayaboard)
+    pub dayaboard: FakeDayaboard,
+    /// Dayaboard API keys issued and not revoked.
+    pub dayaboard_keys: BTreeSet<String>,
+    /// Every `Authorization` header `app-disconnect` received.
+    pub dayaboard_disconnects: Vec<String>,
+    /// `app-disconnect` answers `503`.
+    pub dayaboard_down: bool,
     pub next_login_user: String,
     sessions: HashMap<String, Session>,
     access_index: HashMap<String, String>,
@@ -278,6 +298,10 @@ impl State {
             members,
             auth_version: HashMap::new(),
             cli_requests: HashMap::new(),
+            dayaboard: FakeDayaboard::Off,
+            dayaboard_keys: BTreeSet::new(),
+            dayaboard_disconnects: vec![],
+            dayaboard_down: false,
             next_login_user: "user_a".into(),
             sessions: HashMap::new(),
             access_index: HashMap::new(),
@@ -721,7 +745,9 @@ fn handle(
                 .as_str()
                 .unwrap_or_default()
                 .to_string();
-            st.cli_requests.insert(id.clone(), (challenge, false));
+            let dayaboard = body["dayaboard"].as_bool() == Some(true);
+            st.cli_requests
+                .insert(id.clone(), (challenge, false, dayaboard));
             return (
                 201,
                 json!({ "request_id": id, "verification_url": format!("{base}/v1/auth/cli/verify?request_id={id}"), "expires_at": iso(600), "poll_after_seconds": 0 }),
@@ -733,7 +759,7 @@ fn handle(
                 .trim_start_matches("/v1/auth/cli/requests/")
                 .trim_end_matches("/complete")
                 .to_string();
-            let Some((challenge, consumed)) = st.cli_requests.get(&id).cloned() else {
+            let Some((challenge, consumed, dayaboard)) = st.cli_requests.get(&id).cloned() else {
                 return error(404, "not_found", "Not found", None);
             };
             let verifier = body["code_verifier"].as_str().unwrap_or_default();
@@ -743,7 +769,7 @@ fn handle(
             if consumed {
                 return error(410, "request_consumed", "Request was already used", None);
             }
-            st.cli_requests.insert(id, (challenge, true));
+            st.cli_requests.insert(id, (challenge, true, dayaboard));
             let user = st.next_login_user.clone();
             let session_id = st.next("sess");
             let access = st.next("at");
@@ -756,9 +782,39 @@ fn handle(
                     revoked: false,
                 },
             );
+            let mut tokens =
+                json!({ "access_token": access, "access_token_expires_at": iso(st.token_ttl) });
+            let issue_at = match st.dayaboard.clone() {
+                _ if !dayaboard => None,
+                FakeDayaboard::Off => None,
+                FakeDayaboard::Connect => Some(base.to_string()),
+                FakeDayaboard::ConnectAt(url) => Some(url),
+                FakeDayaboard::Refuse(code, message) => {
+                    tokens["dayaboard"] =
+                        json!({ "connected": false, "code": code, "message": message });
+                    None
+                }
+            };
+            if let Some(url) = issue_at {
+                let key = st.next("db_live");
+                st.dayaboard_keys.insert(key.clone());
+                tokens["dayaboard"] = json!({ "connected": true, "url": url, "api_key": key, "expires_at": iso(st.token_ttl) });
+            }
+            return (200, tokens, vec![]);
+        }
+        ("POST", "/api/auth/app-disconnect") => {
+            st.dayaboard_disconnects
+                .push(headers.get("authorization").cloned().unwrap_or_default());
+            if st.dayaboard_down {
+                return error(503, "unavailable", "Dayaboard is down", None);
+            }
+            let revoked = bearer.is_some_and(|key| st.dayaboard_keys.remove(&key));
+            if !revoked {
+                return (401, json!({ "ok": false, "error": "unauthorized" }), vec![]);
+            }
             return (
                 200,
-                json!({ "access_token": access, "access_token_expires_at": iso(st.token_ttl) }),
+                json!({ "ok": true, "message": "Personal API key successfully revoked" }),
                 vec![],
             );
         }

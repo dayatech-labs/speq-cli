@@ -120,6 +120,9 @@ pub struct CliRequest {
 pub struct Tokens {
     pub access_token: String,
     pub access_token_expires_at: String,
+    /// Absent while the Dayaboard integration is off.
+    #[serde(default)]
+    pub dayaboard: Option<crate::dayaboard::Grant>,
 }
 
 impl std::fmt::Debug for Tokens {
@@ -225,18 +228,25 @@ struct Call<'a> {
     timeout: Option<Duration>,
 }
 
+/// The HTTP client every Bearer-authenticated call uses.
+pub(crate) fn http_client() -> Result<reqwest::Client> {
+    install_crypto_provider();
+    reqwest::Client::builder()
+        .user_agent(format!("speq-cli/{}", env!("CARGO_PKG_VERSION")))
+        .timeout(REQUEST_TIMEOUT)
+        .connect_timeout(CONNECT_TIMEOUT)
+        // The API never redirects; following one could forward the Bearer token elsewhere.
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|e| Error::Other(format!("cannot build the HTTP client: {e}")))
+}
+
 impl Client {
     pub fn new(base: Url) -> Result<Client> {
-        install_crypto_provider();
-        let http = reqwest::Client::builder()
-            .user_agent(format!("speq-cli/{}", env!("CARGO_PKG_VERSION")))
-            .timeout(REQUEST_TIMEOUT)
-            .connect_timeout(CONNECT_TIMEOUT)
-            // The API never redirects; following one could forward the Bearer token elsewhere.
-            .redirect(reqwest::redirect::Policy::none())
-            .build()
-            .map_err(|e| Error::Other(format!("cannot build the HTTP client: {e}")))?;
-        Ok(Client { http, base })
+        Ok(Client {
+            http: http_client()?,
+            base,
+        })
     }
 
     pub fn base(&self) -> &Url {
@@ -346,7 +356,8 @@ impl Client {
     // ---- authentication
 
     pub async fn cli_request(&self, code_challenge: &str, device_name: &str) -> Result<CliRequest> {
-        let body = serde_json::json!({ "code_challenge": code_challenge, "code_challenge_method": "S256", "device_name": device_name });
+        // `dayaboard`: also receive a Dayaboard API key; the API ignores it while the integration is off.
+        let body = serde_json::json!({ "code_challenge": code_challenge, "code_challenge_method": "S256", "device_name": device_name, "dayaboard": true });
         Self::json(
             self.send(self.post_call("/v1/auth/cli/requests", None, body))
                 .await?,

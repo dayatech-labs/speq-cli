@@ -1,4 +1,5 @@
-//! The Speq access token lives only in the secure OS credential store.
+//! The Speq access token (and the Dayaboard API key issued with it) lives only in the secure OS credential store.
+use crate::dayaboard::DayaboardKey;
 use crate::error::{Error, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -17,6 +18,10 @@ pub struct StoredCredential {
     /// Signed into the token by the API. There is no refresh: this is the end of the session.
     #[serde(with = "time::serde::rfc3339")]
     pub expires_at: OffsetDateTime,
+    /// Issued at login next to the token, when Dayaboard could be connected. Credentials saved before the integration
+    /// existed have none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dayaboard: Option<DayaboardKey>,
 }
 
 impl StoredCredential {
@@ -31,6 +36,7 @@ impl fmt::Debug for StoredCredential {
             .field("user_id", &self.user_id)
             .field("access_token", &"[redacted]")
             .field("expires_at", &self.expires_at)
+            .field("dayaboard", &self.dayaboard)
             .finish()
     }
 }

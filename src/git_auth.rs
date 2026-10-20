@@ -187,6 +187,7 @@ mod tests {
             user_id: Some("u1".into()),
             access_token: "tok_secret".into(),
             expires_at: OffsetDateTime::now_utc() + expires_in,
+            dayaboard: None,
         }
     }
 

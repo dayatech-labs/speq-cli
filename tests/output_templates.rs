@@ -3,6 +3,7 @@
 use speq::api::{Capabilities, ProjectSummary, RuleSet};
 use speq::clone::{CloneReport, ListReport};
 use speq::context::ContextReport;
+use speq::dayaboard::{Connection, Revocation};
 use speq::deinit::{AtRisk, DeinitReport};
 use speq::output::{Human, login_prompt};
 use speq::session::{LoginReport, LogoutReport};
@@ -49,6 +50,7 @@ fn login_shows_the_account_and_the_next_command() {
         email: Some("ana@example.com".into()),
         name: Some("Ana".into()),
         projects: 2,
+        dayaboard: None,
     };
     assert_eq!(
         plain(&report),
@@ -63,6 +65,7 @@ fn login_without_repositories_points_at_the_admin_and_falls_back_to_the_user_id(
         email: None,
         name: None,
         projects: 0,
+        dayaboard: None,
     };
     assert_eq!(
         plain(&report),
@@ -76,6 +79,7 @@ fn logout_has_three_outcomes() {
         plain(&LogoutReport {
             was_logged_in,
             all_devices,
+            dayaboard: None,
         })
     };
     assert_eq!(
@@ -273,6 +277,7 @@ fn no_report_leaks_escape_codes_into_a_plain_theme() {
         email: None,
         name: None,
         projects: 1,
+        dayaboard: None,
     };
     assert!(!plain(&login).contains('\x1b'));
     assert!(login.human(&Theme::new(true)).contains('\x1b'));
@@ -325,4 +330,66 @@ fn deinit_says_what_was_removed_what_was_lost_and_how_to_start_again() {
         "{out}"
     );
     assert!(!out.contains("lost"), "{out}");
+}
+
+fn day(text: &str) -> time::OffsetDateTime {
+    time::OffsetDateTime::parse(text, &time::format_description::well_known::Rfc3339).unwrap()
+}
+
+#[test]
+fn login_shows_until_when_dayaboard_is_connected() {
+    let report = LoginReport {
+        user_id: "u1".into(),
+        email: Some("ana@example.com".into()),
+        name: None,
+        projects: 1,
+        dayaboard: Some(Connection::Connected {
+            url: "https://dayaboard.example".into(),
+            expires_at: day("2026-11-19T14:58:51Z"),
+        }),
+    };
+    assert_eq!(
+        plain(&report),
+        "✔ Logged in\n\n  account    ana@example.com\n  access     1 repository\n  dayaboard  connected until 2026-11-19\n\n  → Run `speq list` to see them, then `speq clone <repo>`."
+    );
+}
+
+#[test]
+fn login_warns_when_dayaboard_is_not_connected_and_says_how_to_fix_it() {
+    let report = LoginReport {
+        user_id: "u1".into(),
+        email: Some("ana@example.com".into()),
+        name: None,
+        projects: 1,
+        dayaboard: Some(Connection::NotConnected {
+            code: "dayaboard_refused".into(),
+            message: "User is not registered in Dayaboard".into(),
+        }),
+    };
+    assert_eq!(
+        plain(&report),
+        "✔ Logged in\n\n  account  ana@example.com\n  access   1 repository\n\n  ! Dayaboard is not connected: User is not registered in Dayaboard. Creating tickets needs `speq login` again.\n\n  → Run `speq list` to see them, then `speq clone <repo>`."
+    );
+}
+
+#[test]
+fn logout_mentions_dayaboard_only_when_its_key_could_not_be_revoked() {
+    let out = |revoked| {
+        plain(&LogoutReport {
+            was_logged_in: true,
+            all_devices: true,
+            dayaboard: Some(Revocation {
+                revoked,
+                expires_at: day("2026-11-19T14:58:51Z"),
+            }),
+        })
+    };
+    assert_eq!(
+        out(true),
+        "✔ Logged out everywhere\n\n  Every session of this account was ended and local credentials were removed."
+    );
+    assert_eq!(
+        out(false),
+        "✔ Logged out everywhere\n\n  Every session of this account was ended and local credentials were removed.\n\n  ! The Dayaboard API key could not be revoked; it stops working on 2026-11-19."
+    );
 }
