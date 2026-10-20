@@ -16,6 +16,59 @@ pub const CURRENT_TARGET: &str = env!("SPEQ_TARGET");
 const MAX_MANIFEST_BYTES: usize = 1024 * 1024;
 const MAX_BINARY_BYTES: u64 = 200 * 1024 * 1024;
 
+/// Ed25519 public keys (hex) whose signature on `manifest.json` `speq upgrade` accepts. The release workflow signs
+/// with the private half, the `SPEQ_RELEASE_SIGNING_KEY` secret of the `release` environment, and refuses to
+/// publish when it does not match a key here. The manifest holds every binary's SHA-256, so whoever can replace
+/// release assets still cannot get an upgrade installed. Rotation: add the new key, release, switch the secret,
+/// and drop the old key a release later (docs/releasing.md).
+pub const RELEASE_KEYS: &[&str] = &[
+    // 2026-10: first release key.
+    "09dc64d6b1ba01905999813dc4ffc6997574a153c8c90f5e4fd1facaf45a3d2d",
+];
+
+/// Debug builds only: one more trusted key (hex), so tests can sign releases of their own.
+#[cfg(debug_assertions)]
+pub const TEST_KEY_VARIABLE: &str = "SPEQ_RELEASE_TEST_KEY";
+
+fn key_from_hex(hex: &str) -> Option<[u8; 32]> {
+    let digits = hex.trim().as_bytes();
+    if digits.len() != 64 {
+        return None;
+    }
+    let mut key = [0u8; 32];
+    for (byte, pair) in key.iter_mut().zip(digits.chunks(2)) {
+        *byte = u8::from_str_radix(std::str::from_utf8(pair).ok()?, 16).ok()?;
+    }
+    Some(key)
+}
+
+/// The keys this build trusts for release manifests.
+pub fn release_keys() -> Vec<[u8; 32]> {
+    #[allow(unused_mut)]
+    let mut keys: Vec<[u8; 32]> = RELEASE_KEYS
+        .iter()
+        .filter_map(|k| key_from_hex(k))
+        .collect();
+    #[cfg(debug_assertions)]
+    keys.extend(
+        std::env::var(TEST_KEY_VARIABLE)
+            .ok()
+            .and_then(|k| key_from_hex(&k)),
+    );
+    keys
+}
+
+/// Whether `signature` (64 bytes, Ed25519) signs exactly `message` with one of `keys`.
+pub fn signed_by(message: &[u8], signature: &[u8], keys: &[[u8; 32]]) -> bool {
+    use ring::signature::{ED25519, UnparsedPublicKey};
+    signature.len() == 64
+        && keys.iter().any(|key| {
+            UnparsedPublicKey::new(&ED25519, key)
+                .verify(message, signature)
+                .is_ok()
+        })
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct Asset {
     pub url: String,
@@ -117,9 +170,27 @@ async fn get_limited(http: &reqwest::Client, url: &Url, limit: u64) -> Result<Ve
     Ok(bytes.to_vec())
 }
 
-/// A network failure or an invalid manifest is an error, never "already up to date".
-pub async fn fetch_manifest(http: &reqwest::Client, url: &Url) -> Result<ReleaseManifest> {
+/// A network failure or an invalid manifest is an error, never "already up to date". The manifest must carry a
+/// signature (`manifest.json.sig`, next to it) by one of `keys` before anything in it is believed.
+pub async fn fetch_manifest(
+    http: &reqwest::Client,
+    url: &Url,
+    keys: &[[u8; 32]],
+) -> Result<ReleaseManifest> {
     let bytes = get_limited(http, url, MAX_MANIFEST_BYTES as u64).await?;
+    let signature_url = Url::parse(&format!("{url}.sig"))
+        .map_err(|e| Error::invalid(format!("invalid release URL: {e}")))?;
+    let signature = get_limited(http, &signature_url, 64).await.map_err(|e| {
+        Error::Other(format!(
+            "the release has no signature for its manifest ({e}); nothing was changed"
+        ))
+    })?;
+    if !signed_by(&bytes, &signature, keys) {
+        return Err(Error::Other(
+            "the release manifest is not signed with speq's release key; nothing was changed"
+                .into(),
+        ));
+    }
     let manifest: ReleaseManifest = serde_json::from_slice(&bytes)
         .map_err(|e| Error::Other(format!("the release manifest is invalid: {e}")))?;
     for (target, artifact) in &manifest.artifacts {
@@ -403,6 +474,51 @@ mod tests {
             ),
             Install::Unmanaged
         );
+    }
+
+    #[test]
+    fn the_release_key_is_set() {
+        // Without one, this build could never upgrade again: every signed manifest would be refused.
+        assert!(!RELEASE_KEYS.is_empty(), "add the release public key");
+        for key in RELEASE_KEYS {
+            assert!(
+                key_from_hex(key).is_some(),
+                "{key:?} is not 32 bytes of hex"
+            );
+        }
+    }
+
+    #[test]
+    fn only_a_signature_of_these_exact_bytes_by_a_trusted_key_counts() {
+        use ring::signature::{Ed25519KeyPair, KeyPair};
+        let signer = Ed25519KeyPair::from_seed_unchecked(&[7; 32]).unwrap();
+        let other = Ed25519KeyPair::from_seed_unchecked(&[8; 32]).unwrap();
+        let key: [u8; 32] = signer.public_key().as_ref().try_into().unwrap();
+        let manifest = br#"{"version":"9.9.9"}"#;
+        let signature = signer.sign(manifest);
+
+        assert!(signed_by(manifest, signature.as_ref(), &[key]));
+        assert!(!signed_by(
+            br#"{"version":"9.9.8"}"#,
+            signature.as_ref(),
+            &[key]
+        ));
+        assert!(!signed_by(manifest, other.sign(manifest).as_ref(), &[key]));
+        assert!(!signed_by(manifest, signature.as_ref(), &[]));
+        assert!(!signed_by(manifest, &signature.as_ref()[..63], &[key]));
+    }
+
+    #[test]
+    fn keys_are_32_bytes_of_hex() {
+        let hex = "0123456789abcdef".repeat(4);
+        assert_eq!(key_from_hex(&hex).unwrap()[..2], [0x01, 0x23]);
+        assert_eq!(
+            key_from_hex(&format!(" {} \n", hex.to_uppercase())),
+            key_from_hex(&hex)
+        );
+        for bad in ["", &hex[..62], &format!("{hex}00"), &"zz".repeat(32)] {
+            assert_eq!(key_from_hex(bad), None, "{bad:?}");
+        }
     }
 
     #[test]

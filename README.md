@@ -59,8 +59,9 @@ speq upgrade --yes              # for automation
 speq upgrade --version 0.1.0 --yes   # pin or downgrade
 ```
 
-`upgrade` verifies size and SHA-256, runs `--version` on the new binary, then swaps it in atomically; any failure
-keeps the old binary. It only replaces binaries the official installer put in the folders above. If `speq`
+`upgrade` first checks the release manifest's Ed25519 signature against the release keys built into speq, then
+verifies the binary's size and SHA-256 from that manifest, runs `--version` on the new binary, and swaps it in
+atomically; any failure keeps the old binary. It only replaces binaries the official installer put in the folders above. If `speq`
 is managed by Homebrew, Scoop, WinGet, or Nix it stops and prints the package manager's own command
 (`brew upgrade speq`, `scoop update speq`, ...). It never runs on its own during `login`, `pull`, or any other command.
 

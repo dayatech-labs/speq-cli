@@ -289,6 +289,79 @@ class Workflows(unittest.TestCase):
             gated |= more
         self.assertEqual(gated, set(jobs))
 
+    def test_the_signing_key_is_only_in_the_release_environment(self):
+        text = self.WORKFLOWS["release.yml"]
+        publish = text.split("\n  publish:\n", 1)[1].split("\n  verify-install:\n", 1)[0]
+        self.assertRegex(publish, r"(?m)^    environment: release$")
+        for name, other in self.WORKFLOWS.items():
+            rest = other.replace(publish, "") if name == "release.yml" else other
+            self.assertNotIn("SPEQ_RELEASE_SIGNING_KEY", rest, f"{name} reads the signing key outside `publish`")
+        self.assertLess(publish.index("Sign the manifest"), publish.index("gh release upload"))
+
+
+def step_script(text, name):
+    """The `run: |` script of the workflow step called `name`, dedented."""
+    lines = text.splitlines()
+    start = next(i for i, line in enumerate(lines) if line.strip() == f"- name: {name}")
+    run = next(i for i in range(start, len(lines)) if lines[i].strip() == "run: |")
+    indent = len(lines[run]) - len(lines[run].lstrip()) + 2
+    body = []
+    for line in lines[run + 1 :]:
+        if line.strip() and len(line) - len(line.lstrip()) < indent:
+            break
+        body.append(line[indent:])
+    return "\n".join(body) + "\n"
+
+
+def openssl3():
+    found = shutil.which("openssl")
+    if not found:
+        return None
+    version = subprocess.run([found, "version"], capture_output=True, text=True).stdout
+    return found if version.startswith("OpenSSL 3") else None
+
+
+@unittest.skipUnless(openssl3() and shutil.which("bash"), "needs OpenSSL 3 (Ed25519 with -rawin) and bash")
+class ReleaseSigning(unittest.TestCase):
+    """Runs the workflow's own signing step, as the release job does."""
+
+    SCRIPT = step_script((HERE.parent / ".github/workflows/release.yml").read_text(), "Sign the manifest and checksums")
+
+    def sign(self, tmp, key_in_source=True, secret=True):
+        key = tmp / "key.pem"
+        subprocess.run([openssl3(), "genpkey", "-algorithm", "ed25519", "-out", str(key)], check=True)
+        der = subprocess.run([openssl3(), "pkey", "-in", str(key), "-pubout", "-outform", "DER"], capture_output=True, check=True).stdout
+        (tmp / "dist").mkdir()
+        (tmp / "dist" / "manifest.json").write_text('{"version": "9.9.9"}\n')
+        (tmp / "dist" / "SHA256SUMS").write_text(f"{'0' * 64}  speq-9.9.9-x86_64-unknown-linux-musl\n")
+        (tmp / "src").mkdir()
+        listed = der[-32:].hex() if key_in_source else "ab" * 32
+        (tmp / "src" / "upgrade.rs").write_text(f'pub const RELEASE_KEYS: &[&str] = &["{listed}"];\n')
+        env = {**os.environ, "RUNNER_TEMP": str(tmp), "SIGNING_KEY": key.read_text() if secret else ""}
+        done = subprocess.run(["bash", "-e", "-c", self.SCRIPT], cwd=tmp, env=env, capture_output=True, text=True)
+        return done, der[-32:]
+
+    def test_signs_both_files_with_a_key_the_binaries_trust(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = pathlib.Path(tmp)
+            done, _ = self.sign(tmp)
+            self.assertEqual(done.returncode, 0, done.stderr)
+            for name in ("manifest.json", "SHA256SUMS"):
+                self.assertEqual(len((tmp / "dist" / f"{name}.sig").read_bytes()), 64, name)
+            self.assertFalse((tmp / "release-key.pem").exists(), "the private key is removed")
+
+    def test_refuses_a_key_the_binaries_do_not_trust_or_a_missing_secret(self):
+        for case, kwargs, message in (
+            ("unlisted key", {"key_in_source": False}, "not in RELEASE_KEYS"),
+            ("no secret", {"secret": False}, "SPEQ_RELEASE_SIGNING_KEY is not set"),
+        ):
+            with self.subTest(case), tempfile.TemporaryDirectory() as tmp:
+                tmp = pathlib.Path(tmp)
+                done, _ = self.sign(tmp, **kwargs)
+                self.assertNotEqual(done.returncode, 0)
+                self.assertIn(message, done.stdout + done.stderr)
+                self.assertFalse((tmp / "dist" / "manifest.json.sig").exists())
+
 
 @unittest.skipUnless(shutil.which("pwsh"), "pwsh is not installed")
 class WindowsInstaller(unittest.TestCase):

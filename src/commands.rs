@@ -286,8 +286,12 @@ async fn upgrade_command(json: bool, args: crate::cli::UpgradeArgs) -> Result<u8
         })
         .transpose()?;
     let http = upgrade::http_client()?;
-    let manifest =
-        upgrade::fetch_manifest(&http, &upgrade::manifest_url(&base, pinned.as_ref())?).await?;
+    let manifest = upgrade::fetch_manifest(
+        &http,
+        &upgrade::manifest_url(&base, pinned.as_ref())?,
+        &upgrade::release_keys(),
+    )
+    .await?;
     let current = upgrade::current_version();
     let report = upgrade::check(&current, &manifest);
 

@@ -133,6 +133,8 @@ jobs:
   publish:
     needs: [plan, build]
     runs-on: ubuntu-latest
+    # Holds SPEQ_RELEASE_SIGNING_KEY; restrict it to `main` (and reviewers) in the repository settings.
+    environment: release
     permissions:
       contents: write
     steps:
@@ -153,6 +155,22 @@ jobs:
           python3 scripts/render_packaging.py dist "$version" dist
           cp scripts/install.sh scripts/install.ps1 dist/
           ls -l dist
+      # `speq upgrade` believes a manifest only with a signature by one of RELEASE_KEYS (src/upgrade.rs).
+      - name: Sign the manifest and checksums
+        env:
+          SIGNING_KEY: ${{ secrets.SPEQ_RELEASE_SIGNING_KEY }}
+        run: |
+          [ -n "$SIGNING_KEY" ] || { echo "SPEQ_RELEASE_SIGNING_KEY is not set in the release environment"; exit 1; }
+          key="$RUNNER_TEMP/release-key.pem"
+          trap 'rm -f "$key"' EXIT
+          (umask 077 && printf '%s\n' "$SIGNING_KEY" > "$key")
+          public=$(openssl pkey -in "$key" -pubout -outform DER | tail -c 32 | od -An -tx1 | tr -d ' \n')
+          # A signature by a key the released binaries do not hold would stop every future upgrade.
+          grep -q "\"$public\"" src/upgrade.rs || { echo "the signing key is not in RELEASE_KEYS (src/upgrade.rs)"; exit 1; }
+          for file in manifest.json SHA256SUMS; do
+            openssl pkeyutl -sign -rawin -inkey "$key" -in "dist/$file" -out "dist/$file.sig"
+            openssl pkeyutl -verify -rawin -inkey "$key" -in "dist/$file" -sigfile "dist/$file.sig"
+          done
       - name: Publish atomically (draft, upload, then publish)
         env:
           GH_TOKEN: ${{ github.token }}

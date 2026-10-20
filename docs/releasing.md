@@ -56,8 +56,33 @@ Release assets (per version `V`, target `T`):
 | `install.sh`, `install.ps1` | installers |
 | `speq.rb`, `speq.scoop.json`, `Dayatech.Speq.yaml` | package-manager metadata with fixed-version URLs |
 
-Signing: no release signing key exists yet, so integrity rests on HTTPS plus SHA-256. When a key exists, sign
-`manifest.json`, embed the public key in the binary, and verify in `upgrade` and both installers.
+### Signing
+
+`publish` signs `manifest.json` and `SHA256SUMS` with Ed25519 (`manifest.json.sig`, `SHA256SUMS.sig`: 64 raw bytes).
+The private key is the `SPEQ_RELEASE_SIGNING_KEY` secret of the `release` environment (deployment branch `main`), and
+the public key is in `RELEASE_KEYS` (`src/upgrade.rs`). `speq upgrade` believes a manifest, and the binary SHA-256s
+in it, only with a valid signature by one of those keys, so whoever can replace release assets cannot get an upgrade
+installed. `publish` refuses to sign with a key that is not in `RELEASE_KEYS`. The installers are downloaded from the
+same release and do not check signatures; turn on immutable releases so assets cannot be replaced after publishing.
+
+Create the key (OpenSSL 3; macOS's LibreSSL has no Ed25519), keep a copy in the team's password manager, and delete
+the file:
+
+```bash
+openssl genpkey -algorithm ed25519 -out speq-release.pem
+gh secret set SPEQ_RELEASE_SIGNING_KEY --repo dayatech-labs/speq-cli --env release < speq-release.pem
+openssl pkey -in speq-release.pem -pubout -outform DER | tail -c 32 | xxd -p -c 32   # goes into RELEASE_KEYS
+```
+
+Rotate: add the new public key to `RELEASE_KEYS` and release (still signed with the old key), then switch the secret
+to the new key; remove the old key from `RELEASE_KEYS` a release later. A lost or leaked key works the same way,
+except the leaked key leaves `RELEASE_KEYS` at once.
+
+Check a release by hand (OpenSSL 3), with the public key as PEM:
+
+```bash
+openssl pkeyutl -verify -pubin -inkey speq-release.pub.pem -rawin -in manifest.json -sigfile manifest.json.sig
+```
 
 ## After release
 

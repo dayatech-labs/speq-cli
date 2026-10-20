@@ -46,15 +46,46 @@ fn manifest(base: &str, version: &str, binary: &[u8]) -> Vec<u8> {
     .into_bytes()
 }
 
+/// The release key of these tests (a fixed seed), standing in for the one CI signs with.
+fn release_key() -> ring::signature::Ed25519KeyPair {
+    ring::signature::Ed25519KeyPair::from_seed_unchecked(&[7; 32]).unwrap()
+}
+
+fn trusted() -> Vec<[u8; 32]> {
+    use ring::signature::KeyPair;
+    vec![release_key().public_key().as_ref().try_into().unwrap()]
+}
+
+/// `routes` plus, for each `manifest.json`, its `manifest.json.sig` by `key`.
+fn signed_by(
+    key: &ring::signature::Ed25519KeyPair,
+    routes: Vec<(&str, Vec<u8>)>,
+) -> HashMap<String, Vec<u8>> {
+    let mut all = HashMap::new();
+    for (path, body) in routes {
+        if path.ends_with("manifest.json") {
+            all.insert(format!("{path}.sig"), key.sign(&body).as_ref().to_vec());
+        }
+        all.insert(path.to_string(), body);
+    }
+    all
+}
+
+fn signed(routes: Vec<(&str, Vec<u8>)>) -> HashMap<String, Vec<u8>> {
+    signed_by(&release_key(), routes)
+}
+
 #[tokio::test]
 async fn check_reports_update_available_and_up_to_date() {
-    let releases = Releases::start(HashMap::from([(
-        "/latest/download/manifest.json".to_string(),
+    let releases = Releases::start(signed(vec![(
+        "/latest/download/manifest.json",
         manifest("http://127.0.0.1:1", "99.0.0", b"x"),
     )]));
     let http = upgrade::http_client().unwrap();
     let url = upgrade::manifest_url(&releases.base, None).unwrap();
-    let found = upgrade::fetch_manifest(&http, &url).await.unwrap();
+    let found = upgrade::fetch_manifest(&http, &url, &trusted())
+        .await
+        .unwrap();
     let report = upgrade::check(&upgrade::current_version(), &found);
     assert_eq!(report.status, "update-available");
     assert_eq!(report.latest, "99.0.0");
@@ -68,25 +99,121 @@ async fn network_failure_or_invalid_manifest_is_an_error_never_up_to_date() {
     let http = upgrade::http_client().unwrap();
     let down = upgrade::manifest_url("http://127.0.0.1:1", None).unwrap();
     assert_eq!(
-        upgrade::fetch_manifest(&http, &down)
+        upgrade::fetch_manifest(&http, &down, &trusted())
             .await
             .unwrap_err()
             .exit_code(),
         speq::error::exit::UNAVAILABLE
     );
 
-    let releases = Releases::start(HashMap::from([
-        ("/latest/download/manifest.json".to_string(), b"{ not json".to_vec()),
-        ("/download/v1.0.0/manifest.json".to_string(), serde_json::json!({ "version": "1.0.0", "artifacts": { "t": { "binary": { "url": "http://evil.example/x", "sha256": "00", "size": 1 } } } }).to_string().into_bytes()),
+    // Signed, so what is refused is the content.
+    let releases = Releases::start(signed(vec![
+        ("/latest/download/manifest.json", b"{ not json".to_vec()),
+        ("/download/v1.0.0/manifest.json", serde_json::json!({ "version": "1.0.0", "artifacts": { "t": { "binary": { "url": "http://evil.example/x", "sha256": "00", "size": 1 } } } }).to_string().into_bytes()),
     ]));
     let invalid = upgrade::manifest_url(&releases.base, None).unwrap();
-    assert!(upgrade::fetch_manifest(&http, &invalid).await.is_err());
+    let error = upgrade::fetch_manifest(&http, &invalid, &trusted())
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("manifest is invalid"), "{error}");
     let pinned =
         upgrade::manifest_url(&releases.base, Some(&Version::parse("1.0.0").unwrap())).unwrap();
+    let error = upgrade::fetch_manifest(&http, &pinned, &trusted())
+        .await
+        .unwrap_err();
     assert!(
-        upgrade::fetch_manifest(&http, &pinned).await.is_err(),
-        "non-https asset URLs are rejected"
+        error.to_string().contains("entry for t is invalid"),
+        "non-https asset URLs are rejected: {error}"
     );
+}
+
+/// The release workflow signs with `openssl pkeyutl -sign -rawin` (OpenSSL 3): its signature must verify here, or
+/// the first signed release would stop every upgrade. Skipped where `openssl` is not OpenSSL 3 (it is on CI).
+#[test]
+fn a_signature_made_like_the_release_workflow_verifies() {
+    let openssl = |args: &[&str]| std::process::Command::new("openssl").args(args).output();
+    let Ok(version) = openssl(&["version"]) else {
+        return eprintln!("skipped: no openssl");
+    };
+    if !String::from_utf8_lossy(&version.stdout).starts_with("OpenSSL 3") {
+        return eprintln!("skipped: openssl is not OpenSSL 3");
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let path = |name: &str| dir.path().join(name).to_str().unwrap().to_string();
+    let manifest = manifest("https://example.test", "9.9.9", b"binary");
+    std::fs::write(path("manifest.json"), &manifest).unwrap();
+    for args in [
+        vec!["genpkey", "-algorithm", "ed25519", "-out", &path("key.pem")],
+        vec![
+            "pkeyutl",
+            "-sign",
+            "-rawin",
+            "-inkey",
+            &path("key.pem"),
+            "-in",
+            &path("manifest.json"),
+            "-out",
+            &path("manifest.json.sig"),
+        ],
+        vec![
+            "pkey",
+            "-in",
+            &path("key.pem"),
+            "-pubout",
+            "-outform",
+            "DER",
+            "-out",
+            &path("public.der"),
+        ],
+    ] {
+        assert!(openssl(&args).unwrap().status.success(), "openssl {args:?}");
+    }
+    let der = std::fs::read(path("public.der")).unwrap();
+    let key: [u8; 32] = der[der.len() - 32..].try_into().unwrap();
+    let signature = std::fs::read(path("manifest.json.sig")).unwrap();
+
+    assert!(upgrade::signed_by(&manifest, &signature, &[key]));
+    assert!(!upgrade::signed_by(b"other bytes", &signature, &[key]));
+}
+
+#[tokio::test]
+async fn a_manifest_without_the_release_key_signature_is_never_believed() {
+    let http = upgrade::http_client().unwrap();
+    let good = manifest("http://127.0.0.1:1", "99.0.0", b"x");
+    let forger = ring::signature::Ed25519KeyPair::from_seed_unchecked(&[9; 32]).unwrap();
+    let mut tampered = signed(vec![("/latest/download/manifest.json", good.clone())]);
+    // Same signature, other bytes: a manifest pointing at another binary.
+    tampered.insert(
+        "/latest/download/manifest.json".into(),
+        manifest("http://127.0.0.1:1", "99.0.0", b"evil"),
+    );
+    let mut unsigned = signed(vec![("/latest/download/manifest.json", good.clone())]);
+    unsigned.remove("/latest/download/manifest.json.sig");
+
+    for (case, routes, expected) in [
+        ("unsigned", unsigned, "no signature"),
+        ("tampered", tampered, "not signed with speq's release key"),
+        (
+            "another key",
+            signed_by(
+                &forger,
+                vec![("/latest/download/manifest.json", good.clone())],
+            ),
+            "not signed with speq's release key",
+        ),
+    ] {
+        let releases = Releases::start(routes);
+        let url = upgrade::manifest_url(&releases.base, None).unwrap();
+        let error = upgrade::fetch_manifest(&http, &url, &trusted())
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains(expected), "{case}: {error}");
+    }
+
+    // A build that trusts no key believes no manifest.
+    let releases = Releases::start(signed(vec![("/latest/download/manifest.json", good)]));
+    let url = upgrade::manifest_url(&releases.base, None).unwrap();
+    assert!(upgrade::fetch_manifest(&http, &url, &[]).await.is_err());
 }
 
 #[cfg(unix)]
