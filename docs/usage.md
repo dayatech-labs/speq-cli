@@ -97,6 +97,7 @@ Settings `speq clone` puts in the specs repository:
 | `pull.rebase=true`, `rebase.autoStash=true` | `pull` rebases your commits on top of the remote, and uncommitted changes are put aside and restored automatically |
 | `merge.conflictStyle=diff3` | Conflict markers also show the version from before either side changed it |
 | `core.autocrlf=false` | Document bytes are not changed (line endings stay), so SHAs match GitHub's |
+| `core.symlinks=false` | A symbolic link on the remote is checked out as a plain file holding its target path, so a document can never lead outside the repository |
 | Remote `origin` with `main` only | Fetch through the Speq API (read-only), push through `git-remote-speq` |
 
 ## 3. Push rules

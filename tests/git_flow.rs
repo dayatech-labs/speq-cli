@@ -107,6 +107,59 @@ async fn clone_outside_a_repository_uses_the_repo_name_and_fails_cleanly() {
 }
 
 #[tokio::test]
+async fn symbolic_links_from_the_remote_are_checked_out_as_plain_files() {
+    let m = Machine::new().await;
+    m.api
+        .with(|s| s.external_symlink(PROJECT, "llms.txt", "../../.ssh/id_ed25519"));
+    let work = m.dir("work");
+    m.run(&work, &["clone", "acme/payment-specs", "specs"]).ok();
+    let specs = work.join("specs");
+    assert_eq!(
+        m.run(&specs, &["config", "core.symlinks"])
+            .ok()
+            .stdout
+            .trim(),
+        "false"
+    );
+
+    // Arriving with a later pull is no different from arriving with the clone.
+    m.api
+        .with(|s| s.external_symlink(PROJECT, PRD, "/etc/passwd"));
+    m.run(&specs, &["pull"]).ok();
+
+    for (path, target) in [("llms.txt", "../../.ssh/id_ed25519"), (PRD, "/etc/passwd")] {
+        let file = specs.join(path);
+        let meta = std::fs::symlink_metadata(&file).unwrap();
+        assert!(meta.file_type().is_file(), "{path} is not a plain file");
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), target);
+    }
+    assert!(m.run(&specs, &["status", "--short"]).ok().stdout.is_empty());
+}
+
+#[tokio::test]
+async fn an_unsafe_repository_name_from_the_api_never_names_the_clone_folder() {
+    let m = Machine::new().await;
+    // Set before the binary's first command, which loads the snapshot fresh.
+    let name = r"acme/..\..\escape";
+    m.api.with(|s| {
+        s.projects.get_mut(PROJECT).unwrap().repo = Some(name.into());
+    });
+    let work = m.dir("work");
+    let out = m.run(&work, &["clone", name]).ok();
+    assert!(out.stdout.contains("./specs"), "{}", out.stdout);
+    assert!(work.join("specs/.git").is_dir());
+    let entries: Vec<_> = std::fs::read_dir(&work)
+        .unwrap()
+        .map(|e| e.unwrap().file_name())
+        .collect();
+    assert_eq!(
+        entries,
+        ["specs"],
+        "nothing else is created in or next to the folder"
+    );
+}
+
+#[tokio::test]
 async fn edit_commit_push_lands_on_the_remote_with_the_same_sha() {
     let m = Machine::new().await;
     let (app, specs) = m.clone_into_app();

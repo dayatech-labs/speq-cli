@@ -111,11 +111,13 @@ fn git_ok(config: &Path, dir: &Path, args: &[&str], stdin: &[u8], env: &[(&str, 
     String::from_utf8_lossy(&out).trim().to_string()
 }
 
-/// A commit on `main` of `bare` made with plumbing (no working tree), as an external push would.
+/// A commit on `main` of `bare` made with plumbing (no working tree), as an external push would. Added files get
+/// `mode` (`100644`, or `120000` for a symbolic link whose content is its target).
 fn commit_files(
     config: &Path,
     bare: &Path,
     changes: &[(&str, Option<&str>)],
+    mode: &str,
     message: &str,
 ) -> String {
     let index = bare.join("fake-index");
@@ -154,7 +156,7 @@ fn commit_files(
                         "update-index",
                         "--add",
                         "--cacheinfo",
-                        &format!("100644,{blob},{path}"),
+                        &format!("{mode},{blob},{path}"),
                     ],
                     b"",
                     &index_env,
@@ -241,7 +243,13 @@ impl State {
                 b"",
                 &[],
             );
-            commit_files(&config, &bare, &files, "docs: initialize product specs");
+            commit_files(
+                &config,
+                &bare,
+                &files,
+                "100644",
+                "docs: initialize product specs",
+            );
             projects.insert(
                 id.to_string(),
                 Project {
@@ -315,7 +323,20 @@ impl State {
             &self.config,
             &bare,
             &[(path, content)],
+            "100644",
             "docs: edit on GitHub",
+        )
+    }
+
+    /// A symbolic link committed on GitHub, as a malicious or careless writer could.
+    pub fn external_symlink(&mut self, project: &str, path: &str, target: &str) -> String {
+        let bare = self.projects[project].bare.clone();
+        commit_files(
+            &self.config,
+            &bare,
+            &[(path, Some(target))],
+            "120000",
+            "docs: link on GitHub",
         )
     }
 

@@ -84,9 +84,12 @@ pub struct CloneOptions<'a> {
 }
 
 /// Settings every specs repository gets. Line endings are kept byte for byte (a document must hash the same here
-/// and on GitHub); pulls rebase so pushes rarely carry merge commits.
-const REPOSITORY_CONFIG: [(&str, &str); 6] = [
+/// and on GitHub); pulls rebase so pushes rarely carry merge commits. Symbolic links from the remote are checked
+/// out as plain files holding the target path: a link such as `llms.txt -> ~/.ssh/id_ed25519` would otherwise let
+/// whoever writes the remote make people (and agents) read or write outside the repository.
+const REPOSITORY_CONFIG: [(&str, &str); 7] = [
     ("core.autocrlf", "false"),
+    ("core.symlinks", "false"),
     ("pull.rebase", "true"),
     ("rebase.autoStash", "true"),
     ("merge.autoStash", "true"),
@@ -250,6 +253,16 @@ fn prepare(
     ))
 }
 
+/// The folder named after `owner/repo`, or `fallback` when the name the API sent is not one plain folder name
+/// (`..`, `\`, a drive prefix, a hidden name): the clone must land in the current directory.
+fn folder_for<'a>(repository: &'a str, fallback: &'a str) -> &'a str {
+    repository
+        .rsplit('/')
+        .next()
+        .filter(|name| crate::paths::is_valid_local_dir(name))
+        .unwrap_or(fallback)
+}
+
 /// `speq clone <repo> [dir]`: a Git repository of the project's specs, wired to the Speq API for fetch and push.
 /// `dir` defaults to `specs` inside an implementation repository (ignored there), else to the repository name.
 pub async fn clone(
@@ -270,11 +283,7 @@ pub async fn clone(
     let dir = match options.dir {
         Some(dir) => dir.to_string(),
         None if outer.is_some() => options.default_dir.to_string(),
-        None => repository
-            .rsplit('/')
-            .next()
-            .unwrap_or(options.default_dir)
-            .to_string(),
+        None => folder_for(&repository, options.default_dir).to_string(),
     };
     let target = cwd.join(&dir);
     let created = !target.exists();
@@ -419,6 +428,26 @@ mod tests {
         // Listed already: the file is left as it is.
         assert_eq!(ignored(Some("/specs/\n"), "specs"), "/specs/\n");
         assert_eq!(ignored(Some("specs/\n"), "docs/specs"), "specs/\n");
+    }
+
+    #[test]
+    fn the_default_folder_is_one_plain_name_inside_the_current_directory() {
+        assert_eq!(folder_for("acme/payment-specs", "specs"), "payment-specs");
+        assert_eq!(folder_for("payment_specs.v2", "specs"), "payment_specs.v2");
+        for unsafe_name in [
+            "",
+            "acme/",
+            "acme/..",
+            "acme/.",
+            "acme/.git",
+            r"acme/..\..\escape",
+            r"acme/C:\Users\me\AppData",
+            "acme/C:escape",
+            "acme/spec specs",
+            "acme/specs\u{1b}[2J",
+        ] {
+            assert_eq!(folder_for(unsafe_name, "specs"), "specs", "{unsafe_name:?}");
+        }
     }
 
     #[test]
