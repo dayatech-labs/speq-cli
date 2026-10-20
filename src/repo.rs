@@ -34,12 +34,23 @@ pub const ADDRESS_KEY: &str = "speq.address";
 /// Where the older, pre-Git speq kept a workspace's state.
 pub const LEGACY_DIR: &str = ".speq";
 
-/// The nearest folder at or above `start` holding a workspace of the older speq.
+/// The nearest folder at or above `start` holding a workspace of the older speq. One another user made or can
+/// change (say `/tmp/.speq` on a shared machine) is ignored: its `config.toml` names what `deinit` deletes.
 pub fn legacy_workspace(start: &Path) -> Option<PathBuf> {
     start
         .ancestors()
-        .find(|dir| dir.join(LEGACY_DIR).join("config.toml").is_file())
+        .find(|dir| is_legacy_workspace(dir))
         .map(Path::to_path_buf)
+}
+
+pub fn is_legacy_workspace(dir: &Path) -> bool {
+    let speq = dir.join(LEGACY_DIR);
+    let config = speq.join("config.toml");
+    config.is_file()
+        && !speq.is_symlink()
+        && !config.is_symlink()
+        && crate::fsx::is_owned_by_me(&speq)
+        && crate::fsx::is_owned_by_me(&config)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -134,7 +145,7 @@ impl SpecsRepo {
             {
                 return Ok(repo);
             }
-            if legacy_workspace(dir).as_deref() == Some(dir) {
+            if is_legacy_workspace(dir) {
                 return Err(Error::invalid(format!(
                     "{} is a workspace of an older speq. speq now works through Git: push anything you still need \
                      with the speq version that made it, run `speq deinit` to remove it, then `speq clone <repo>`",

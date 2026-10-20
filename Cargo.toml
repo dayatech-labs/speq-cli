@@ -41,6 +41,10 @@ tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "env-filter", "ansi"] }
 url = "2.5.8"
 
+[target.'cfg(unix)'.dependencies]
+# Already in the tree through tempfile; gives the effective user ID without `unsafe`.
+rustix = { version = "1.1.5", default-features = false, features = ["std", "process"] }
+
 [profile.release]
 lto = true
 codegen-units = 1

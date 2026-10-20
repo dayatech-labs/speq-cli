@@ -67,6 +67,25 @@ fn set_file_mode(_file: &File, _visibility: Visibility) -> Result<()> {
     Ok(())
 }
 
+/// Whether `path` (not followed if it is a link) belongs to the user running speq and only they can change it:
+/// owned by them, and neither group- nor world-writable. On a shared machine, anything else may have been put
+/// there by another user. Other systems have no such ownership to check, so there it only has to exist.
+pub fn is_owned_by_me(path: &Path) -> bool {
+    let Ok(meta) = fs::symlink_metadata(path) else {
+        return false;
+    };
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        meta.uid() == rustix::process::geteuid().as_raw() && meta.mode() & 0o022 == 0
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = meta;
+        true
+    }
+}
+
 pub fn read_optional(path: &Path) -> Result<Option<Vec<u8>>> {
     match fs::read(path) {
         Ok(bytes) => Ok(Some(bytes)),
