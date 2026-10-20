@@ -20,6 +20,9 @@ pub struct StoredSnapshot {
     pub issued_at: OffsetDateTime,
     #[serde(with = "time::serde::rfc3339")]
     pub expires_at: OffsetDateTime,
+    /// The Web app origin, kept only when it is a safe origin (https, or http on localhost).
+    #[serde(default)]
+    pub web_url: Option<String>,
     pub projects: Vec<ProjectSummary>,
 }
 
@@ -48,6 +51,11 @@ impl StoredSnapshot {
             issued_at,
             // Never trust a longer window than the spec allows, whatever the server claims.
             expires_at: declared.min(now + MAX_WINDOW),
+            web_url: body
+                .web_url
+                .as_deref()
+                .and_then(|raw| crate::api::parse_api_url(raw).ok())
+                .map(|url| url.as_str().trim_end_matches('/').to_string()),
             projects: body.projects,
         })
     }

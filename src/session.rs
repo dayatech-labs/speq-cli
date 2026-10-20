@@ -2,7 +2,7 @@
 //! capability snapshot refresh, and logout. The Dayaboard API key issued at login follows the same lifecycle.
 use crate::api::{ProjectsResponse, Tokens};
 use crate::credentials::StoredCredential;
-use crate::dayaboard::{self, Connection, Revocation};
+use crate::dayaboard::{self, Connection, DayaboardKey, Revocation};
 use crate::env::Env;
 use crate::error::{Error, Result};
 use crate::fsx::FileLock;
@@ -324,6 +324,39 @@ impl<'a> Session<'a> {
             return None;
         }
         Some(dayaboard::revoke(key).await)
+    }
+
+    /// This device's Dayaboard key. Only `speq login` issues one, so a missing or expired key means signing in again.
+    pub fn dayaboard_key(&self) -> Result<DayaboardKey> {
+        match self.credential()?.dayaboard {
+            Some(key) if !key.is_expired(now()) => Ok(key),
+            _ => Err(Error::DayaboardNotConnected),
+        }
+    }
+
+    /// One Dayaboard API call with this device's key (`speq dayaboard`). A key Dayaboard no longer accepts is
+    /// forgotten, so the next call says to sign in again without asking Dayaboard.
+    pub async fn dayaboard(
+        &self,
+        method: &str,
+        path: &str,
+        body: Option<&serde_json::Value>,
+        idempotency_key: Option<&str>,
+    ) -> Result<dayaboard::Response> {
+        dayaboard::check_path(path)?;
+        let key = self.dayaboard_key()?;
+        let response = dayaboard::send(&key, method, path, body, idempotency_key).await?;
+        if response.status == 401 {
+            let _lock = FileLock::exclusive(&self.env.auth_lock_path())?;
+            if let Some(mut credential) = self.env.creds.load(&self.env.account())?
+                && credential.dayaboard.as_ref() == Some(&key)
+            {
+                credential.dayaboard = None;
+                self.env.creds.save(&self.env.account(), &credential)?;
+            }
+            return Err(Error::DayaboardNotConnected);
+        }
+        Ok(response)
     }
 
     // ----------------------------------------------------------- credentials

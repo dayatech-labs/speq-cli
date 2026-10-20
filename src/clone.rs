@@ -15,6 +15,9 @@ use url::Url;
 pub struct ListReport {
     pub user_id: String,
     pub expires_at: String,
+    /// Origin of the Speq Web app: a document opens at `<web_url>/p/<project_id>/<path>`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub web_url: Option<String>,
     pub projects: Vec<ProjectSummary>,
 }
 
@@ -27,6 +30,7 @@ pub async fn list(env: &Env) -> Result<ListReport> {
             .expires_at
             .format(&time::format_description::well_known::Rfc3339)
             .unwrap_or_default(),
+        web_url: snapshot.web_url,
         projects: snapshot.projects,
     })
 }
@@ -356,6 +360,7 @@ mod tests {
             display_name: display.into(),
             repository_full_name: repo.map(Into::into),
             branch: "main".into(),
+            dayaboard_project_key: None,
             roles: vec![],
             capabilities: Capabilities {
                 create: rules.clone(),

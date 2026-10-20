@@ -42,6 +42,8 @@ pub enum Error {
     NotLoggedIn,
     #[error("the session is no longer valid; run `speq login` again")]
     SessionExpired,
+    #[error("Dayaboard is not connected on this device; run `speq login` again")]
+    DayaboardNotConnected,
     #[error("network error: {0}")]
     Network(String),
     #[error("{0}")]
@@ -69,7 +71,7 @@ pub enum Error {
 impl Error {
     pub fn exit_code(&self) -> u8 {
         match self {
-            Error::NotLoggedIn | Error::SessionExpired => exit::AUTH,
+            Error::NotLoggedIn | Error::SessionExpired | Error::DayaboardNotConnected => exit::AUTH,
             Error::Network(_) => exit::UNAVAILABLE,
             Error::Api(e) => match e.status {
                 401 => exit::AUTH,
@@ -92,6 +94,7 @@ impl Error {
         match self {
             Error::NotLoggedIn => "not_logged_in",
             Error::SessionExpired => "session_expired",
+            Error::DayaboardNotConnected => "dayaboard_not_connected",
             Error::Network(_) => "network",
             Error::Api(e) => &e.code,
             Error::Conflict(_) => "conflict",
@@ -109,6 +112,7 @@ impl Error {
         match self {
             Error::NotLoggedIn => "Not logged in",
             Error::SessionExpired => "Session expired",
+            Error::DayaboardNotConnected => "Dayaboard not connected",
             Error::Network(_) => "Network error",
             Error::Api(e) => match e.status {
                 401 => "Session rejected",
@@ -136,6 +140,9 @@ impl Error {
             Error::SessionExpired => {
                 "Your token expired or was revoked, so the local credentials were removed.".into()
             }
+            Error::DayaboardNotConnected => {
+                "This device has no valid Dayaboard API key: it expired, was revoked, or Dayaboard could not be connected at login.".into()
+            }
             Error::NotInitialized => {
                 "Neither this directory, its repository, nor a specs/ folder above it (see --specs-dir) is a repository made by `speq clone`.".into()
             }
@@ -153,7 +160,9 @@ impl Error {
     /// The next step the user can take, when there is an obvious one.
     pub fn hint(&self) -> Option<String> {
         match self {
-            Error::NotLoggedIn | Error::SessionExpired => Some("Run `speq login`".into()),
+            Error::NotLoggedIn | Error::SessionExpired | Error::DayaboardNotConnected => {
+                Some("Run `speq login`".into())
+            }
             Error::NotInitialized => Some("Run `speq clone <repo>` (see `speq list`)".into()),
             Error::GitMissing(_) => Some(crate::git::install_hint().into()),
             Error::Network(_) => Some("Check your connection and try again".into()),

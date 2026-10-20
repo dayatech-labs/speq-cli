@@ -21,13 +21,14 @@ use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
 
 /// Commands speq answers itself; any other command is Git's.
-pub const SPEQ_COMMANDS: [&str; 9] = [
+pub const SPEQ_COMMANDS: [&str; 10] = [
     "login",
     "logout",
     "list",
     "clone",
     "deinit",
     "context",
+    "dayaboard",
     "skills",
     "upgrade",
     "uninstall",
@@ -267,12 +268,56 @@ pub async fn run(cli: Cli, env: &Env) -> Result<u8> {
                 &context::context(&git, &root, project_id, &cwd, &args.target)?,
             ))
         }
+        Command::Dayaboard(args) => dayaboard_command(env, args).await,
         Command::Skills(args) => match args.action {
             SkillsAction::Install => Ok(emit(json, &skills::install(&env.skills_dirs)?)),
         },
         Command::Upgrade(args) => upgrade_command(json, args).await,
         Command::Uninstall(args) => uninstall_command(json, env, args).await,
     }
+}
+
+/// Prints Dayaboard's JSON answer (errors included, for their details) and exits with the code matching its status.
+async fn dayaboard_command(env: &Env, args: crate::cli::DayaboardArgs) -> Result<u8> {
+    let body = args.data.as_deref().map(read_json_arg).transpose()?;
+    let response = Session::new(env)
+        .dayaboard(
+            &args.method,
+            &args.path,
+            body.as_ref(),
+            args.idempotency_key.as_deref(),
+        )
+        .await?;
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&response.body).expect("JSON value serialises")
+    );
+    match response.error() {
+        Some(error) => Err(error),
+        None => Ok(crate::error::exit::OK),
+    }
+}
+
+/// `--data`: inline JSON, `@<file>`, or `-` for stdin. Checked before anything is sent.
+fn read_json_arg(raw: &str) -> Result<serde_json::Value> {
+    let (text, source) = if raw == "-" {
+        let mut text = String::new();
+        std::io::Read::read_to_string(&mut std::io::stdin(), &mut text).map_err(|e| Error::Io {
+            context: "read --data from stdin".into(),
+            source: e,
+        })?;
+        (text, "stdin".to_string())
+    } else if let Some(path) = raw.strip_prefix('@') {
+        let text = std::fs::read_to_string(path).map_err(|e| Error::Io {
+            context: format!("read {path}"),
+            source: e,
+        })?;
+        (text, path.to_string())
+    } else {
+        (raw.to_string(), "--data".to_string())
+    };
+    serde_json::from_str(&text)
+        .map_err(|e| Error::invalid(format!("{source} is not valid JSON: {e}")))
 }
 
 async fn upgrade_command(json: bool, args: crate::cli::UpgradeArgs) -> Result<u8> {

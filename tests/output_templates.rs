@@ -32,6 +32,7 @@ fn project(repo: Option<&str>, name: &str, roles: &[&str]) -> ProjectSummary {
         display_name: name.into(),
         repository_full_name: repo.map(Into::into),
         branch: "main".into(),
+        dayaboard_project_key: None,
         roles: strings(roles),
         capabilities: Capabilities {
             create: rules.clone(),
@@ -101,6 +102,7 @@ fn list_is_a_table_with_a_next_step() {
     let report = ListReport {
         user_id: "u1".into(),
         expires_at: String::new(),
+        web_url: None,
         projects: vec![
             project(Some("acme/payment-specs"), "Payment", &["editor", "viewer"]),
             project(None, "Orphan", &["viewer"]),
@@ -117,6 +119,7 @@ fn an_empty_list_says_so_and_names_who_can_help() {
     let report = ListReport {
         user_id: "u1".into(),
         expires_at: String::new(),
+        web_url: None,
         projects: vec![],
     };
     assert_eq!(

@@ -82,6 +82,9 @@ pub struct ProjectSummary {
     #[serde(deserialize_with = "printable_text::option")]
     pub repository_full_name: Option<String>,
     pub branch: String,
+    /// Dayaboard project an epic's first ticket goes to, set by a platform admin. Older APIs send none.
+    #[serde(default, deserialize_with = "printable_text::option")]
+    pub dayaboard_project_key: Option<String>,
     #[serde(deserialize_with = "printable_text::list")]
     pub roles: Vec<String>,
     pub capabilities: Capabilities,
@@ -93,6 +96,9 @@ pub struct SnapshotBody {
     pub authorization_version: i64,
     pub issued_at: String,
     pub expires_at: String,
+    /// Origin of the Speq Web app; a document opens at `<web_url>/p/<project_id>/<path>`. Older APIs send none.
+    #[serde(default)]
+    pub web_url: Option<String>,
     pub projects: Vec<ProjectSummary>,
 }
 

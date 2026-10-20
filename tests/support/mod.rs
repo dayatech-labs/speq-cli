@@ -19,6 +19,20 @@ pub const PROJECT: &str = "proj_payment";
 pub const REPO: &str = "acme/payment-specs";
 pub const STORY: &str = "epic-payment/st-001-create-payment";
 
+/// A canned Dayaboard answer: status, JSON body, extra headers.
+pub type DayaboardReply = (u16, Value, Vec<(String, String)>);
+
+/// One request Dayaboard's workflow or docs API received.
+#[derive(Clone, Debug)]
+pub struct DayaboardCall {
+    pub method: String,
+    /// Path and query, as sent.
+    pub url: String,
+    pub authorization: Option<String>,
+    pub idempotency_key: Option<String>,
+    pub body: Value,
+}
+
 /// What the fake does for a login that asks for Dayaboard. The same server also plays Dayaboard itself.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FakeDayaboard {
@@ -42,6 +56,8 @@ pub struct Session {
 pub struct Project {
     pub repo: Option<String>,
     pub bare: PathBuf,
+    /// The Dayaboard project a platform admin set for it.
+    pub dayaboard_project_key: Option<String>,
 }
 
 pub struct State {
@@ -56,6 +72,12 @@ pub struct State {
     pub dayaboard_disconnects: Vec<String>,
     /// `app-disconnect` answers `503`.
     pub dayaboard_down: bool,
+    /// What `GET /v1/projects` names as the Web app origin.
+    pub web_url: Option<String>,
+    /// Every call to Dayaboard's workflow or docs API.
+    pub dayaboard_calls: Vec<DayaboardCall>,
+    /// The answer to the next such call (status, body, headers); `200 {"ok": true}` when unset.
+    pub dayaboard_reply: Option<DayaboardReply>,
     pub next_login_user: String,
     sessions: HashMap<String, Session>,
     access_index: HashMap<String, String>,
@@ -279,6 +301,7 @@ impl State {
                 Project {
                     repo: Some(repo.into()),
                     bare,
+                    dayaboard_project_key: None,
                 },
             );
         }
@@ -302,6 +325,9 @@ impl State {
             dayaboard_keys: BTreeSet::new(),
             dayaboard_disconnects: vec![],
             dayaboard_down: false,
+            web_url: Some("https://speq.example".into()),
+            dayaboard_calls: vec![],
+            dayaboard_reply: None,
             next_login_user: "user_a".into(),
             sessions: HashMap::new(),
             access_index: HashMap::new(),
@@ -802,6 +828,26 @@ fn handle(
             }
             return (200, tokens, vec![]);
         }
+        (_, p) if p.starts_with("/api/v1/workflow/") || p.starts_with("/api/docs/") => {
+            st.dayaboard_calls.push(DayaboardCall {
+                method: method.to_string(),
+                url: url.to_string(),
+                authorization: headers.get("authorization").cloned(),
+                idempotency_key: headers.get("idempotency-key").cloned(),
+                body: body.clone(),
+            });
+            if !bearer.is_some_and(|key| st.dayaboard_keys.contains(&key)) {
+                return (
+                    401,
+                    json!({ "error": "invalid_api_key", "message": "The provided API key is invalid." }),
+                    vec![],
+                );
+            }
+            return st
+                .dayaboard_reply
+                .take()
+                .unwrap_or((200, json!({ "ok": true }), vec![]));
+        }
         ("POST", "/api/auth/app-disconnect") => {
             st.dayaboard_disconnects
                 .push(headers.get("authorization").cloned().unwrap_or_default());
@@ -875,11 +921,11 @@ fn handle(
             .iter()
             .filter_map(|id| st.projects.get(id).map(|p| (id, p)))
             .map(|(id, p)| {
-                json!({ "project_id": id, "display_name": id, "repository_full_name": p.repo, "branch": "main", "roles": ["engineer"],
+                json!({ "project_id": id, "display_name": id, "repository_full_name": p.repo, "branch": "main", "dayaboard_project_key": p.dayaboard_project_key, "roles": ["engineer"],
                     "capabilities": { "create": { "allow": ["**"], "deny": deny }, "update": { "allow": ["**"], "deny": deny }, "can_delete": true, "can_restore": false, "can_manage": false } })
             })
             .collect();
-        let body = json!({ "user_id": user, "authorization_version": st.auth_version.get(&user).copied().unwrap_or(1), "issued_at": iso(0), "expires_at": iso(st.snapshot_ttl), "projects": projects });
+        let body = json!({ "user_id": user, "authorization_version": st.auth_version.get(&user).copied().unwrap_or(1), "issued_at": iso(0), "expires_at": iso(st.snapshot_ttl), "web_url": st.web_url, "projects": projects });
         return (200, body, vec![("ETag".into(), etag)]);
     }
 

@@ -130,6 +130,12 @@ pub enum Command {
     )]
     Context(ContextArgs),
 
+    /// Call the Dayaboard API (tickets) with this device's Dayaboard key
+    #[command(
+        after_help = "Examples:\n  speq dayaboard GET /api/v1/workflow/projects\n  speq dayaboard GET '/api/v1/workflow/issues?projectKey=DEV&q=st-003'\n  speq dayaboard POST /api/v1/workflow/issues --data @story.json --idempotency-key <uuid>\n  speq dayaboard PATCH /api/v1/workflow/issues/DEV-12 --data '{\"status\":\"Done\"}'\n\nUses the Dayaboard API key `speq login` stored; the key is never printed. Only paths under /api/v1/workflow/ and\n/api/docs/ are allowed, and there is no DELETE (Dayaboard does deletions in its Web app). Dayaboard's JSON answer is\nprinted to stdout, also for errors, which then exit with the matching code. No key, an expired one, or one Dayaboard\nrejects exits with code 3: run `speq login` again. API reference: https://dayaboard.odyssey.co.id/llms-full.txt\n\n"
+    )]
+    Dayaboard(DayaboardArgs),
+
     /// Install the Speq skills for AI coding agents: using the CLI, and drafting and reviewing spec documents
     #[command(
         after_help = "Examples:\n  speq skills install\n  speq skills install --json\n\nWrites the speq-cli skill (using speq: pull, branches, push, conflicts, rejected pushes, story context) and the\nspeq-write skill (drafting and reviewing spec documents), in Agent Skills format, to ~/.agents/skills, read by\nCodex, Cursor, Copilot, Gemini CLI and OpenCode, and to ~/.claude/skills (or $CLAUDE_CONFIG_DIR/skills) for\nClaude Code. Older copies are replaced; other skills there are never touched. The installers and `speq upgrade`\nrun this for you; run it yourself after installing speq with a package manager. `speq uninstall` removes the\nskills. Needs no login.\n\n"
@@ -158,6 +164,7 @@ impl Command {
             Command::Clone(_) => "clone",
             Command::Deinit(_) => "deinit",
             Command::Context(_) => "context",
+            Command::Dayaboard(_) => "dayaboard",
             Command::Skills(_) => "skills",
             Command::Upgrade(_) => "upgrade",
             Command::Uninstall(_) => "uninstall",
@@ -198,6 +205,21 @@ pub struct DeinitArgs {
 pub struct ContextArgs {
     /// `<epic>`, `<epic>/<story>` or `<epic>/<story>/<task>`, for example `epic-payment/st-001-create-payment`
     pub target: String,
+}
+
+#[derive(Args, Debug)]
+pub struct DayaboardArgs {
+    /// HTTP method
+    #[arg(value_parser = clap::builder::PossibleValuesParser::new(crate::dayaboard::METHODS), ignore_case = true)]
+    pub method: String,
+    /// Path with an optional query, under /api/v1/workflow/ or /api/docs/
+    pub path: String,
+    /// JSON body: inline, `@<file>`, or `-` for stdin
+    #[arg(long, value_name = "JSON|@FILE|-")]
+    pub data: Option<String>,
+    /// Idempotency-Key header (a UUID): send the same one again when retrying the same create
+    #[arg(long, value_name = "UUID")]
+    pub idempotency_key: Option<String>,
 }
 
 #[derive(Args, Debug)]
