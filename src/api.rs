@@ -425,6 +425,35 @@ impl Client {
         Ok(head.head_sha)
     }
 
+    /// A short-lived token that only fetches this project: what `git-credential-speq` gives Git, so Git never holds
+    /// the CLI token.
+    pub async fn git_token(&self, token: &SecretString, project_id: &str) -> Result<SecretString> {
+        #[derive(Deserialize)]
+        struct GitToken {
+            token: String,
+        }
+        let path = format!("/v1/projects/{project_id}/git/token");
+        let issued: GitToken = Self::json(
+            self.send(self.post_call(&path, Some(token), serde_json::json!({})))
+                .await?,
+        )
+        .await?;
+        // It becomes a `password=` line of Git's credential protocol: one plain token, nothing that adds a line.
+        let plain = issued.token.len() <= 4096
+            && issued.token.strip_prefix("sgr_").is_some_and(|rest| {
+                !rest.is_empty()
+                    && rest
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
+            });
+        if !plain {
+            return Err(Error::Other(
+                "the Speq API returned an invalid Git token".into(),
+            ));
+        }
+        Ok(SecretString::from(issued.token))
+    }
+
     /// Re-creates the commits on the remote and moves its branch. Never retried automatically.
     pub async fn git_push(
         &self,

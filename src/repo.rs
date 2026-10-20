@@ -61,7 +61,16 @@ pub struct SpecsRepo {
     pub project_id: String,
 }
 
-fn valid_project_id(id: &str) -> bool {
+/// `credential.<api>.useHttpPath`: Git then sends `git-credential-speq` the fetch URL's path, which names the
+/// project the helper asks a Git fetch token for.
+pub fn credential_path_key(api_url: &Url) -> String {
+    format!(
+        "credential.{}.useHttpPath",
+        api_url.as_str().trim_end_matches('/')
+    )
+}
+
+pub fn valid_project_id(id: &str) -> bool {
     (1..=64).contains(&id.len())
         && id
             .chars()
@@ -173,6 +182,18 @@ impl SpecsRepo {
                 .map(|root| (root, None))
                 .ok_or(Error::NotInitialized),
             Err(error) => Err(error),
+        }
+    }
+
+    /// Sets [`credential_path_key`] in a repository cloned before Git fetch tokens. Best effort, like
+    /// [`SpecsRepo::origin_repair`]: without it only Git fetches fail, with a message that leads back here.
+    pub fn ensure_credential_path(&self, git: &Git) {
+        let key = credential_path_key(&self.api_url);
+        if matches!(
+            git.succeeds(Some(&self.root), ["config", "--get", &key]),
+            Ok(false)
+        ) {
+            let _ = git.output(Some(&self.root), ["config", &key, "true"]);
         }
     }
 

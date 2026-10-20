@@ -147,9 +147,11 @@ and every Git command exits with Git's code.
 speq.address             <api>/v1/projects/<id>              marks the folder as this project's specs repository
 remote.origin.url        <api>/v1/projects/<id>/git          fetch: the API's read-only Git endpoint
 remote.origin.pushurl    speq::<api>/v1/projects/<id>        push: git-remote-speq → POST /git/push
-credential.<api>.helper  speq                                git-credential-speq hands Git your Speq token
+credential.<api>.helper  speq                                git-credential-speq hands Git a fetch token
+credential.<api>.useHttpPath=true                            Git tells the helper which project it fetches
 user.name / user.email   your Speq account                   pushes must be authored and committed as you
 core.autocrlf=false                                          documents keep their bytes (and blob SHAs)
+core.symlinks=false                                          a link on the remote is checked out as a plain file
 pull.rebase=true, rebase.autoStash=true                      pulls rebase, so pushes rarely carry merges
 merge.conflictStyle=diff3                                    conflicts show the base version too
 ```
@@ -227,9 +229,13 @@ work as in any Git repository. Prefer merges? `speq config pull.rebase false`; m
 * The Speq access token lives only in the OS credential store (Keychain, Credential Manager, Secret Service). It is
   signed, valid for 30 days, and there is no refresh: when it expires (or the API answers `401`) the CLI removes its
   local state, commands exit with code 3, and you run `speq login` again. Google and GitHub tokens never reach the CLI.
-* The token never enters Git's configuration. `git-credential-speq` gives it to Git only for the API origin that
-  issued it (the store is keyed by origin), and tells Git not to prompt when you are logged out. `speq clone`
-  resets the helper list for that origin, so a system helper such as osxkeychain never stores the token.
+* The token never enters Git's configuration, and Git never gets it. `git-credential-speq` trades it for a Git fetch
+  token (`POST git/token`) and gives Git only that: valid for 10 minutes, only for fetching the one project Git
+  names, and ended by `logout --all` too. Any program you run could ask the helper, so it never hands out the
+  token that pushes and signs you out everywhere, and it answers only for the API origin that issued the token (the
+  store is keyed by origin). It tells Git not to prompt when you are logged out. `speq clone` resets the helper list
+  for that origin, so a system helper such as osxkeychain never stores a token. A repository cloned before fetch
+  tokens gets `useHttpPath` from its next `speq` command.
 * speq runs Git with the variables that redirect it elsewhere removed (`GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`,
   ...), so a command always acts on the specs repository speq found.
 * The capability cache (projects, roles, expiry) is stored in the per-user application-data folder with owner-only

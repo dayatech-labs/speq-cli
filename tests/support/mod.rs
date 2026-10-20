@@ -51,6 +51,10 @@ pub struct State {
     pub external_before_push: Option<(String, String)>,
     /// Every `POST /git/push` body, for assertions on what the helper sent.
     pub pushes: Vec<Value>,
+    /// Git fetch tokens (`sgr_`): token -> (CLI session it was issued to, project).
+    git_tokens: HashMap<String, (String, String)>,
+    /// The credential each Git HTTP request carried: `git token`, `cli token`, or `none`.
+    pub git_credentials: Vec<&'static str>,
     config: PathBuf,
 }
 
@@ -285,6 +289,8 @@ impl State {
             forbid_paths: vec![],
             external_before_push: None,
             pushes: vec![],
+            git_tokens: HashMap::new(),
+            git_credentials: vec![],
             config,
         }
     }
@@ -358,6 +364,13 @@ impl State {
         let id = self.access_index.get(token)?;
         let s = self.sessions.get(id)?;
         (!s.revoked && s.access.as_deref() == Some(token)).then(|| s.user.clone())
+    }
+
+    /// The user of a Git fetch token, if it is live and was issued for `project`.
+    fn git_token_user(&self, token: &str, project: &str) -> Option<String> {
+        let (session, issued_for) = self.git_tokens.get(token)?;
+        let s = self.sessions.get(session)?;
+        (!s.revoked && issued_for == project).then(|| s.user.clone())
     }
 
     fn snapshot_etag(&self, user: &str) -> String {
@@ -592,7 +605,7 @@ fn git_http(
     headers: &HashMap<String, String>,
     body: &[u8],
 ) -> http::Reply {
-    let st = state.lock().expect("state");
+    let mut st = state.lock().expect("state");
     let challenge = || http::Reply {
         status: 401,
         headers: vec![("WWW-Authenticate".into(), "Basic realm=\"Speq\"".into())],
@@ -606,12 +619,19 @@ fn git_http(
                 .and_then(|d| d.split_once(':').map(|(_, p)| p.to_string()))
         })
     });
-    let Some(user) = token.as_deref().and_then(|t| st.user_for(t)) else {
-        return challenge();
-    };
     let path = url.split('?').next().unwrap_or(url);
     let rest = path.trim_start_matches("/v1/projects/");
     let (project, tail) = rest.split_once("/git/").unwrap_or((rest, ""));
+    // A Git fetch token for this project, or (as the API still allows for older CLIs) the CLI token itself.
+    let (kind, user) = match token.as_deref() {
+        Some(t) if t.starts_with("sgr_") => ("git token", st.git_token_user(t, project)),
+        Some(t) => ("cli token", st.user_for(t)),
+        None => ("none", None),
+    };
+    st.git_credentials.push(kind);
+    let Some(user) = user else {
+        return challenge();
+    };
     let member = st
         .members
         .get(&user)
@@ -821,6 +841,16 @@ fn handle(
     let project_id = project_id.to_string();
     match (method, tail) {
         ("GET", "git/head") => (200, json!({ "head_sha": st.head(&project_id) }), vec![]),
+        ("POST", "git/token") => {
+            let session = st.access_index[bearer.as_deref().expect("checked above")].clone();
+            let token = st.next("sgr");
+            st.git_tokens.insert(token.clone(), (session, project_id));
+            (
+                200,
+                json!({ "token": token, "expires_at": iso(600) }),
+                vec![],
+            )
+        }
         ("POST", "git/push") => st.push(&project_id, &user, &body),
         _ => error(404, "not_found", "Not found", None),
     }

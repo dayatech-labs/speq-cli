@@ -136,6 +136,80 @@ async fn symbolic_links_from_the_remote_are_checked_out_as_plain_files() {
     assert!(m.run(&specs, &["status", "--short"]).ok().stdout.is_empty());
 }
 
+/// Git itself, as someone typing `git` in the specs folder: the machine's environment, speq's helpers on `PATH`.
+fn plain_git(m: &Machine, dir: &Path, args: &[&str]) -> std::process::Output {
+    let speq = m.command(dir, &[]);
+    let mut git = std::process::Command::new("git");
+    git.args(args)
+        .current_dir(dir)
+        .stdin(std::process::Stdio::null());
+    for (key, value) in speq.get_envs() {
+        match value {
+            Some(value) => git.env(key, value),
+            None => git.env_remove(key),
+        };
+    }
+    let bin = Path::new(env!("CARGO_BIN_EXE_speq")).parent().unwrap();
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    let path = std::env::join_paths(
+        std::iter::once(bin.to_path_buf()).chain(std::env::split_paths(&path)),
+    )
+    .unwrap();
+    git.env("PATH", path).output().unwrap()
+}
+
+#[tokio::test]
+async fn git_fetches_with_a_short_lived_project_token_never_the_cli_token() {
+    let m = Machine::new().await;
+    let (_app, specs) = m.clone_into_app();
+    m.api.external_change(PRD, Some("# PRD\n\nRefunds.\n"));
+    m.run(&specs, &["pull"]).ok();
+    assert_eq!(
+        std::fs::read_to_string(specs.join(PRD)).unwrap(),
+        "# PRD\n\nRefunds.\n"
+    );
+
+    let used = m.api.with(|s| s.git_credentials.clone());
+    assert!(used.contains(&"git token"), "{used:?}");
+    assert!(!used.contains(&"cli token"), "{used:?}");
+    let key = format!("credential.{}.useHttpPath", m.api.url);
+    assert_eq!(
+        m.run(&specs, &["config", "--get", &key]).ok().stdout.trim(),
+        "true"
+    );
+}
+
+#[tokio::test]
+async fn a_repository_cloned_before_fetch_tokens_is_updated_by_the_next_speq_command() {
+    let m = Machine::new().await;
+    let (_app, specs) = m.clone_into_app();
+    let key = format!("credential.{}.useHttpPath", m.api.url);
+    assert!(
+        plain_git(&m, &specs, &["config", "--unset", &key])
+            .status
+            .success()
+    );
+    let before = m.api.with(|s| s.git_credentials.len());
+
+    // Without the path Git does not name the project: no token at all, and certainly not the CLI token.
+    let refused = plain_git(&m, &specs, &["fetch", "origin"]);
+    assert!(!refused.status.success());
+    let stderr = String::from_utf8_lossy(&refused.stderr);
+    assert!(stderr.contains("speq status"), "{stderr}");
+    assert!(
+        m.api
+            .with(|s| s.git_credentials[before..].iter().all(|c| *c == "none"))
+    );
+
+    m.run(&specs, &["status"]).ok();
+    let fetched = plain_git(&m, &specs, &["fetch", "origin"]);
+    assert!(
+        fetched.status.success(),
+        "{}",
+        String::from_utf8_lossy(&fetched.stderr)
+    );
+}
+
 #[tokio::test]
 async fn an_unsafe_repository_name_from_the_api_never_names_the_clone_folder() {
     let m = Machine::new().await;
@@ -768,19 +842,25 @@ async fn the_credential_helper_answers_only_for_the_speq_origin() {
         String::from_utf8_lossy(&out.stdout).into_owned()
     };
     let host = m.api.url.trim_start_matches("http://").to_string();
-    let answer = ask(format!("protocol=http\nhost={host}\n\n"));
+    let fetch = format!("protocol=http\nhost={host}\npath=v1/projects/{PROJECT}/git\n\n");
+    // A fetch token for the project Git names, never the CLI token (`at_` in the fake API).
+    let answer = ask(fetch.clone());
     assert!(
-        answer.starts_with("username=speq\npassword=at_"),
+        answer.starts_with("username=speq\npassword=sgr_"),
         "{answer}"
     );
-    // Another host never gets the token (the store is keyed by origin), and Git is told not to prompt.
+    // Any program can run the helper: leaving the project out gets nothing, not the CLI token instead.
+    assert_eq!(ask(format!("protocol=http\nhost={host}\n\n")), "quit=1\n");
+    // Another host never gets a token (the store is keyed by origin), and Git is told not to prompt.
     assert_eq!(
-        ask("protocol=https\nhost=github.com\n\n".into()),
+        ask(format!(
+            "protocol=https\nhost=github.com\npath=v1/projects/{PROJECT}/git\n\n"
+        )),
         "quit=1\n"
     );
 
     m.run(Path::new("."), &["logout"]).ok();
-    assert_eq!(ask(format!("protocol=http\nhost={host}\n\n")), "quit=1\n");
+    assert_eq!(ask(fetch), "quit=1\n");
 }
 
 #[tokio::test]

@@ -216,6 +216,7 @@ fn prepare(
     let helper = format!("credential.{origin}.helper");
     config(git, target, &["--add", &helper, ""])?;
     config(git, target, &["--add", &helper, "speq"])?;
+    config(git, target, &[&repo::credential_path_key(api_url), "true"])?;
     config(git, target, &["user.name", &name])?;
     config(git, target, &["user.email", &me.email])?;
     for (key, value) in REPOSITORY_CONFIG {

@@ -130,12 +130,14 @@ pub fn run_git(route: Route, specs_dir: &str) -> Result<u8> {
         Route::GitHelp(args) => git.passthrough(None, args),
         Route::Git(args) => {
             let repo = SpecsRepo::discover(&git, &cwd, specs_dir)?;
+            repo.ensure_credential_path(&git);
             let code = git.passthrough(repo.git_dir_for(&cwd).as_deref(), args);
             warn_about_origin(&git, &repo);
             code
         }
         Route::SquashPush(args) => {
             let repo = SpecsRepo::discover(&git, &cwd, specs_dir)?;
+            repo.ensure_credential_path(&git);
             let dir = repo.git_dir_for(&cwd);
             let squashed = squash::squash(&git, dir.as_deref())?;
             if squashed > 1 {
