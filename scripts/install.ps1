@@ -78,9 +78,11 @@ function Install-GitIfMissing {
 $Version = $Version.TrimStart("v")
 if ($Version -and $Version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+([0-9A-Za-z.+-]*)$') { throw "invalid version: $Version" }
 
-$arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
-if ($arch -ne [System.Runtime.InteropServices.Architecture]::X64) {
-  throw "unsupported architecture: $arch. Download a build for your system from $Releases and install it manually."
+# RuntimeInformation.OSArchitecture can be empty under Windows PowerShell 5.1, so read the OS
+# variables instead. PROCESSOR_ARCHITEW6432 holds the OS architecture inside a 32-bit PowerShell.
+$arch = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
+if ($arch -ne "AMD64") {
+  throw "unsupported architecture: '$arch'. Download a build for your system from $Releases and install it manually."
 }
 $target = "x86_64-pc-windows-msvc"
 

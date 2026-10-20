@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """Tests for next_version.py and stamp_version.py. Run: python3 scripts/test_release_scripts.py"""
 import functools
+import contextlib
 import hashlib
 import http.server
 import os
 import pathlib
 import platform
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -97,6 +99,24 @@ def installer_target():
     return None
 
 
+@contextlib.contextmanager
+def serve(directory):
+    """Serves a local release mirror; yields its base URL."""
+
+    class Quiet(http.server.SimpleHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+    handler = functools.partial(Quiet, directory=str(directory))
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}"
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 class Installer(unittest.TestCase):
     def test_banner_matches_the_cli_in_both_installers(self):
         rows = rust_banner()
@@ -116,17 +136,10 @@ class Installer(unittest.TestCase):
         digest = hashlib.sha256(binary.read_bytes()).hexdigest()
         (release / "SHA256SUMS").write_text(f"{digest}  {name}\n")
 
-        class Quiet(http.server.SimpleHTTPRequestHandler):
-            def log_message(self, *args):
-                pass
-
-        handler = functools.partial(Quiet, directory=str(tmp / "mirror"))
-        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
-        threading.Thread(target=server.serve_forever, daemon=True).start()
-        try:
+        with serve(tmp / "mirror") as url:
             home = tmp / "home"
             home.mkdir()
-            env = {**os.environ, "HOME": str(home), "SPEQ_RELEASE_URL": f"http://127.0.0.1:{server.server_port}"}
+            env = {**os.environ, "HOME": str(home), "SPEQ_RELEASE_URL": url}
             env.pop("NO_COLOR", None)
             if fake_git is not None:
                 fake = tmp / "fakebin"
@@ -144,9 +157,6 @@ class Installer(unittest.TestCase):
                 start_new_session=True,
                 timeout=60,
             )
-        finally:
-            server.shutdown()
-            server.server_close()
         return home, done.stdout
 
     @unittest.skipUnless(installer_target(), "install.sh supports macOS and x86_64 Linux only")
@@ -183,6 +193,55 @@ class Installer(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             _, out = self.run_installer(pathlib.Path(tmp), "--no-git", fake_git="exit 1")
             self.assertNotIn("Git 2.28", out)
+
+
+@unittest.skipUnless(shutil.which("pwsh"), "pwsh is not installed")
+class WindowsInstallerArchitecture(unittest.TestCase):
+    """install.ps1 reads the OS variables, which Windows PowerShell 5.1 and PowerShell 7 both set."""
+
+    NO_BUILD = "this release has no build for x86_64-pc-windows-msvc"
+
+    def run_ps1(self, **arch_vars):
+        """Runs install.ps1 against a mirror with no Windows build, so it stops right after the architecture check."""
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = pathlib.Path(tmp)
+            release = tmp / "mirror" / "download" / "v0.1.0"
+            release.mkdir(parents=True)
+            (release / "SHA256SUMS").write_text(f"{'0' * 64}  speq-0.1.0-x86_64-apple-darwin\n")
+            env = {k: v for k, v in os.environ.items() if k not in ("PROCESSOR_ARCHITECTURE", "PROCESSOR_ARCHITEW6432")}
+            env.update(arch_vars)
+            env["LOCALAPPDATA"] = str(tmp / "appdata")
+            with serve(tmp / "mirror") as url:
+                env["SPEQ_RELEASE_URL"] = url
+                done = subprocess.run(
+                    ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(HERE / "install.ps1"), "-Version", "0.1.0"],
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    stdin=subprocess.DEVNULL,
+                    timeout=120,
+                )
+        self.assertNotEqual(done.returncode, 0)
+        return done.stdout + done.stderr
+
+    def test_x64_passes_the_architecture_check(self):
+        out = self.run_ps1(PROCESSOR_ARCHITECTURE="AMD64")
+        self.assertIn("Fetching the release manifest", out)
+        self.assertIn(self.NO_BUILD, out)
+        self.assertNotIn("unsupported architecture", out)
+
+    def test_32_bit_powershell_on_x64_windows_passes(self):
+        out = self.run_ps1(PROCESSOR_ARCHITECTURE="x86", PROCESSOR_ARCHITEW6432="AMD64")
+        self.assertIn(self.NO_BUILD, out)
+        self.assertNotIn("unsupported architecture", out)
+
+    def test_other_architectures_are_named_and_stop_before_any_download(self):
+        for arch_vars, shown in (({"PROCESSOR_ARCHITECTURE": "ARM64"}, "'ARM64'"), ({"PROCESSOR_ARCHITECTURE": "x86"}, "'x86'"), ({}, "''")):
+            with self.subTest(arch_vars=arch_vars):
+                out = self.run_ps1(**arch_vars)
+                self.assertIn(f"unsupported architecture: {shown}", out)
+                self.assertNotIn("Fetching the release manifest", out)
+
 
 if __name__ == "__main__":
     unittest.main()

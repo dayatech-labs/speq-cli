@@ -175,3 +175,12 @@ jobs:
           & $exe --version
           & $exe help | Out-Null
           & $exe upgrade --check
+      # Windows PowerShell 5.1 is the only PowerShell many users have; it differs from pwsh in .NET APIs.
+      - name: Install the published release (Windows PowerShell 5.1)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $v = "${{ needs.plan.outputs.version }}"
+          $script = Invoke-RestMethod "https://github.com/${{ github.repository }}/releases/download/v$v/install.ps1"
+          & ([scriptblock]::Create($script)) -Version $v
+          & (Join-Path $env:LOCALAPPDATA "Speq\bin\speq.exe") --version
