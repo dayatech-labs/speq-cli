@@ -5,7 +5,7 @@ use crate::error::{Error, IoContext, Result};
 use crate::fsx::{self, Visibility};
 use crate::git::Git;
 use crate::links;
-use crate::repo::{self, DEFAULT_DIR, TRANSPORT};
+use crate::repo::{self, TRANSPORT};
 use crate::session::Session;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -79,6 +79,8 @@ pub struct CloneReport {
 pub struct CloneOptions<'a> {
     pub repo: &'a str,
     pub dir: Option<&'a str>,
+    /// The folder used inside a Git repository when `dir` is not given: the `--specs-dir`, `specs` by default.
+    pub default_dir: &'a str,
 }
 
 /// Settings every specs repository gets. Line endings are kept byte for byte (a document must hash the same here
@@ -267,11 +269,11 @@ pub async fn clone(
     let outer = enclosing_work_tree(git, cwd)?;
     let dir = match options.dir {
         Some(dir) => dir.to_string(),
-        None if outer.is_some() => DEFAULT_DIR.to_string(),
+        None if outer.is_some() => options.default_dir.to_string(),
         None => repository
             .rsplit('/')
             .next()
-            .unwrap_or(DEFAULT_DIR)
+            .unwrap_or(options.default_dir)
             .to_string(),
     };
     let target = cwd.join(&dir);

@@ -1,19 +1,20 @@
 //! `speq context <epic>[/<story>[/<task>]]`: a deterministic list of the files a coding agent should read for one
-//! epic, one story, or one task of a story, from the specs repository's working tree (the epic and its stories live
+//! epic, one story, or one task of a story, from the specs folder's working tree (the epic and its stories live
 //! under `epics/<epic>/`).
 use crate::error::{Error, Result};
 use crate::git::Git;
 use crate::paths::{
     DocumentKind, STORY_FILES, document_kind, is_folder_name, is_story_folder, is_task_file,
 };
-use crate::repo::SpecsRepo;
 use serde::Serialize;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Serialize)]
 pub struct ContextReport {
-    pub project_id: String,
+    /// The Speq project; absent when the folder is a plain clone that speq did not make.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<String>,
     /// The commit checked out (empty before the first commit).
     pub head_sha: String,
     pub paths: Vec<String>,
@@ -67,9 +68,9 @@ impl<'a> Target<'a> {
 
 /// Canonical documents in the working tree, tracked or new (ignored files excluded). Symlinks are never listed:
 /// a coding agent is pointed only at regular files inside the repository.
-fn documents(git: &Git, repo: &SpecsRepo) -> Result<BTreeSet<String>> {
+fn documents(git: &Git, root: &Path) -> Result<BTreeSet<String>> {
     let output = git.output(
-        Some(&repo.root),
+        Some(root),
         [
             "ls-files",
             "-z",
@@ -86,9 +87,7 @@ fn documents(git: &Git, repo: &SpecsRepo) -> Result<BTreeSet<String>> {
         .split(|b| *b == 0)
         .filter_map(|p| std::str::from_utf8(p).ok())
         .filter(|p| document_kind(p).is_some())
-        .filter(|p| {
-            std::fs::symlink_metadata(repo.root.join(p)).is_ok_and(|m| m.file_type().is_file())
-        })
+        .filter(|p| std::fs::symlink_metadata(root.join(p)).is_ok_and(|m| m.file_type().is_file()))
         .map(str::to_string)
         .collect())
 }
@@ -144,9 +143,15 @@ fn shown(repo_root: &Path, cwd: &Path, path: &str) -> String {
     }
 }
 
-pub fn context(git: &Git, repo: &SpecsRepo, cwd: &Path, target: &str) -> Result<ContextReport> {
+pub fn context(
+    git: &Git,
+    root: &Path,
+    project_id: Option<String>,
+    cwd: &Path,
+    target: &str,
+) -> Result<ContextReport> {
     let target = Target::parse(target)?;
-    let files = documents(git, repo)?;
+    let files = documents(git, root)?;
     let epic = target.epic();
     let epic_dir = format!("epics/{epic}");
 
@@ -198,14 +203,14 @@ pub fn context(git: &Git, repo: &SpecsRepo, cwd: &Path, target: &str) -> Result<
     candidates.push(format!("{epic_dir}/architecture.md"));
     candidates.extend(focus);
 
-    let head = git.output(Some(&repo.root), ["rev-parse", "--verify", "-q", "HEAD"])?;
+    let head = git.output(Some(root), ["rev-parse", "--verify", "-q", "HEAD"])?;
     Ok(ContextReport {
-        project_id: repo.project_id.clone(),
+        project_id,
         head_sha: String::from_utf8_lossy(&head.stdout).trim().to_string(),
         paths: candidates
             .into_iter()
             .filter(|p| files.contains(p))
-            .map(|p| shown(&repo.root, cwd, &p))
+            .map(|p| shown(root, cwd, &p))
             .collect(),
     })
 }

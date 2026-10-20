@@ -8,7 +8,7 @@ use crate::error::{Error, Result};
 use crate::git::Git;
 use crate::links;
 use crate::output::emit;
-use crate::repo::SpecsRepo;
+use crate::repo::{self, SpecsRepo};
 use crate::session::Session;
 use crate::skills;
 use crate::squash;
@@ -45,15 +45,33 @@ pub enum Route {
     GitHelp(Vec<OsString>),
 }
 
-/// Decides from the arguments after the program name. speq's global flags (`--json`, `--api-url`) may come first;
-/// anything else that starts with `-` is a Git option (`-C`, `-c`, `--no-pager`) and goes to Git with the rest.
+/// The value of speq's leading `--specs-dir` flag, which `route` strips before the rest goes to Git.
+pub fn leading_specs_dir(args: &[OsString]) -> Option<String> {
+    let mut rest = args;
+    while let Some(a) = rest.first().and_then(|a| a.to_str()) {
+        match a {
+            "--json" => rest = &rest[1..],
+            "--api-url" => rest = rest.get(2..).unwrap_or(&[]),
+            "--specs-dir" => return rest.get(1)?.to_str().map(str::to_string),
+            _ if a.starts_with("--api-url=") => rest = &rest[1..],
+            _ => return a.strip_prefix("--specs-dir=").map(str::to_string),
+        }
+    }
+    None
+}
+
+/// Decides from the arguments after the program name. speq's global flags (`--json`, `--api-url`, `--specs-dir`) may
+/// come first; anything else that starts with `-` is a Git option (`-C`, `-c`, `--no-pager`) and goes to Git with
+/// the rest.
 pub fn route(args: &[OsString]) -> Route {
     let mut rest = args;
     loop {
         match rest.first().and_then(|a| a.to_str()) {
             Some("--json") => rest = &rest[1..],
-            Some("--api-url") => rest = rest.get(2..).unwrap_or(&[]),
-            Some(a) if a.starts_with("--api-url=") => rest = &rest[1..],
+            Some("--api-url" | "--specs-dir") => rest = rest.get(2..).unwrap_or(&[]),
+            Some(a) if a.starts_with("--api-url=") || a.starts_with("--specs-dir=") => {
+                rest = &rest[1..]
+            }
             _ => break,
         }
     }
@@ -105,19 +123,19 @@ fn warn_about_origin(git: &Git, repo: &SpecsRepo) {
 }
 
 /// Runs a Git route and returns Git's exit code.
-pub fn run_git(route: Route) -> Result<u8> {
+pub fn run_git(route: Route, specs_dir: &str) -> Result<u8> {
     let git = Git::locate(helper_dir())?;
     let cwd = current_dir()?;
     match route {
         Route::GitHelp(args) => git.passthrough(None, args),
         Route::Git(args) => {
-            let repo = SpecsRepo::discover(&git, &cwd)?;
+            let repo = SpecsRepo::discover(&git, &cwd, specs_dir)?;
             let code = git.passthrough(repo.git_dir_for(&cwd).as_deref(), args);
             warn_about_origin(&git, &repo);
             code
         }
         Route::SquashPush(args) => {
-            let repo = SpecsRepo::discover(&git, &cwd)?;
+            let repo = SpecsRepo::discover(&git, &cwd, specs_dir)?;
             let dir = repo.git_dir_for(&cwd);
             let squashed = squash::squash(&git, dir.as_deref())?;
             if squashed > 1 {
@@ -193,6 +211,7 @@ fn confirm(prompt: &str) -> Result<bool> {
 
 pub async fn run(cli: Cli, env: &Env) -> Result<u8> {
     let json = cli.json;
+    let specs_dir = repo::specs_dir(cli.specs_dir.as_deref());
     match cli.command {
         Command::Login(_) => Ok(emit(json, &Session::new(env).login().await?)),
         Command::Logout(args) => Ok(emit(json, &Session::new(env).logout(args.all).await?)),
@@ -202,6 +221,7 @@ pub async fn run(cli: Cli, env: &Env) -> Result<u8> {
             let options = CloneOptions {
                 repo: &args.repo,
                 dir: args.dir.as_deref(),
+                default_dir: &specs_dir,
             };
             Ok(emit(
                 json,
@@ -211,7 +231,7 @@ pub async fn run(cli: Cli, env: &Env) -> Result<u8> {
         Command::Deinit(args) => {
             let git = Git::locate(None)?;
             let cwd = current_dir()?;
-            let target = deinit::find(&git, &cwd)?;
+            let target = deinit::find(&git, &cwd, &specs_dir)?;
             if !args.yes {
                 let folders = deinit::folders(&target)
                     .iter()
@@ -238,10 +258,10 @@ pub async fn run(cli: Cli, env: &Env) -> Result<u8> {
         Command::Context(args) => {
             let git = Git::locate(None)?;
             let cwd = current_dir()?;
-            let repo = SpecsRepo::discover(&git, &cwd)?;
+            let (root, project_id) = SpecsRepo::docs_root(&git, &cwd, &specs_dir)?;
             Ok(emit(
                 json,
-                &context::context(&git, &repo, &cwd, &args.target)?,
+                &context::context(&git, &root, project_id, &cwd, &args.target)?,
             ))
         }
         Command::Skills(args) => match args.action {
@@ -390,6 +410,55 @@ mod tests {
         ] {
             assert_eq!(route(&args(line)), Route::Speq, "{line:?}");
         }
+    }
+
+    #[test]
+    fn specs_dir_flag_is_speqs_not_gits() {
+        for line in [
+            &["--specs-dir", "docs/specs", "context", "a/b"][..],
+            &["--specs-dir=docs/specs", "context", "a/b"],
+            &["--json", "--specs-dir", ".", "clone", "x"],
+        ] {
+            assert_eq!(route(&args(line)), Route::Speq, "{line:?}");
+        }
+        assert_eq!(
+            route(&args(&["--specs-dir", "docs/specs", "status"])),
+            Route::Git(args(&["status"]))
+        );
+        assert_eq!(
+            route(&args(&["--specs-dir=docs/specs", "--json", "log", "-1"])),
+            Route::Git(args(&["log", "-1"]))
+        );
+    }
+
+    #[test]
+    fn the_leading_specs_dir_is_read_past_other_global_flags() {
+        let dir = |line: &[&str]| leading_specs_dir(&args(line));
+        assert_eq!(
+            dir(&["--specs-dir", "docs/specs", "status"]).as_deref(),
+            Some("docs/specs")
+        );
+        assert_eq!(dir(&["--specs-dir=.", "status"]).as_deref(), Some("."));
+        assert_eq!(
+            dir(&[
+                "--json",
+                "--api-url",
+                "http://x",
+                "--specs-dir",
+                "d",
+                "status"
+            ])
+            .as_deref(),
+            Some("d")
+        );
+        assert_eq!(
+            dir(&["--api-url=http://x", "--specs-dir=d", "log"]).as_deref(),
+            Some("d")
+        );
+        assert_eq!(dir(&["status"]), None);
+        assert_eq!(dir(&["--specs-dir"]), None);
+        // A Git option after the first command is Git's own.
+        assert_eq!(dir(&["log", "--specs-dir", "d"]), None);
     }
 
     #[test]

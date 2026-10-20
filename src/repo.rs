@@ -10,8 +10,25 @@ use url::Url;
 
 /// Push URLs of specs repositories start with this: Git hands the rest to `git-remote-speq`.
 pub const TRANSPORT: &str = "speq::";
-/// The folder `speq clone` uses inside an implementation repository, and where speq looks for it from there.
+/// The folder `speq clone` uses inside an implementation repository, and where speq looks for it from there,
+/// unless `--specs-dir` or [`DIR_ENV`] names another.
 pub const DEFAULT_DIR: &str = "specs";
+/// Environment variable behind `--specs-dir`.
+pub const DIR_ENV: &str = "SPEQ_SPECS_DIR";
+
+/// The specs folder: `--specs-dir`, else [`DIR_ENV`], else [`DEFAULT_DIR`]. Empty values count as not given.
+pub fn specs_dir(flag: Option<&str>) -> String {
+    pick_dir(flag, std::env::var(DIR_ENV).ok().as_deref())
+}
+
+fn pick_dir(flag: Option<&str>, env: Option<&str>) -> String {
+    [flag, env]
+        .into_iter()
+        .flatten()
+        .find(|dir| !dir.trim().is_empty())
+        .unwrap_or(DEFAULT_DIR)
+        .to_string()
+}
 /// Git config key holding the repository's [`address`], written by `speq clone`.
 pub const ADDRESS_KEY: &str = "speq.address";
 /// Where the older, pre-Git speq kept a workspace's state.
@@ -103,14 +120,15 @@ impl SpecsRepo {
         }))
     }
 
-    /// The repository `start` is in, else a `specs/` repository in `start` or any parent (the implementation
-    /// repository around it). A pre-Git `.speq/` workspace on the way is reported with what to do instead.
-    pub fn discover(git: &Git, start: &Path) -> Result<SpecsRepo> {
+    /// The repository `start` is in, else the repository in folder `specs_dir` of `start` or any parent (the
+    /// implementation repository around it). A pre-Git `.speq/` workspace on the way is reported with what to do
+    /// instead.
+    pub fn discover(git: &Git, start: &Path, specs_dir: &str) -> Result<SpecsRepo> {
         if let Some(repo) = SpecsRepo::open(git, start)? {
             return Ok(repo);
         }
         for dir in start.ancestors() {
-            let candidate = dir.join(DEFAULT_DIR);
+            let candidate = dir.join(specs_dir);
             if candidate.join(".git").exists()
                 && let Some(repo) = SpecsRepo::open(git, &candidate)?
             {
@@ -125,6 +143,26 @@ impl SpecsRepo {
             }
         }
         Err(Error::NotInitialized)
+    }
+
+    /// Where the documents are for a command that only reads them: a specs repository (with its project ID), else
+    /// the folder `specs_dir` of `start` or any parent, such as a plain clone of the `<product>-specs` repository
+    /// from GitHub, which speq did not make and has no project ID for.
+    pub fn docs_root(
+        git: &Git,
+        start: &Path,
+        specs_dir: &str,
+    ) -> Result<(PathBuf, Option<String>)> {
+        match SpecsRepo::discover(git, start, specs_dir) {
+            Ok(repo) => Ok((repo.root, Some(repo.project_id))),
+            Err(Error::NotInitialized) => start
+                .ancestors()
+                .map(|dir| dir.join(specs_dir))
+                .find(|candidate| candidate.is_dir())
+                .map(|root| (root, None))
+                .ok_or(Error::NotInitialized),
+            Err(error) => Err(error),
+        }
     }
 
     /// How to point `origin` back at this repository's project, or None when it already does. Best effort: speq
@@ -239,6 +277,16 @@ mod tests {
         ] {
             assert!(parse_address(bad).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn the_specs_folder_is_the_flag_then_the_environment_then_specs() {
+        assert_eq!(pick_dir(None, None), "specs");
+        assert_eq!(pick_dir(None, Some("docs/specs")), "docs/specs");
+        assert_eq!(pick_dir(Some("."), Some("docs/specs")), ".");
+        // Empty or blank values are not a choice.
+        assert_eq!(pick_dir(Some(""), Some(" ")), "specs");
+        assert_eq!(pick_dir(Some(" "), Some("docs/specs")), "docs/specs");
     }
 
     #[test]

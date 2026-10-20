@@ -18,7 +18,8 @@ To write or review the documents themselves, use the `speq-write` skill. This sk
 ## 1. Find the specs repository
 
 1. A specs repository has `speq.address` in its Git config: `git config --get speq.address` prints it.
-2. In an implementation repository it is usually `./specs`, which `speq clone` adds to that repository's `.gitignore`. From there, `speq <command>` runs in `./specs` by itself.
+2. In an implementation repository it is usually `./specs`, which `speq clone` adds to that repository's `.gitignore`. From there, `speq <command>` runs in `./specs` by itself. Another folder is named with `--specs-dir <dir>` or `SPEQ_SPECS_DIR` (default `specs`).
+   If the user works directly in a clone of the `<product>-specs` repository from GitHub (`git config --get speq.address` prints nothing, `llms.txt` and `epics/` are in its root), speq did not make it: use `git` there, with the user's own GitHub access, not `speq` for pull, commit, and push. Only `speq --specs-dir . context <target>` applies (run it in that root), and `speq login` is not needed.
 3. Always run `speq`, never `git`, for the specs. From the implementation repository, `git add specs/...` acts on the implementation repository, where `specs/` is ignored.
 4. Paths you type follow your location: `speq add epics/epic-payment/prd.md` from the implementation repository root (relative to `specs/`), `speq add prd.md` from `specs/epics/epic-payment/`.
 5. No specs repository yet: run `speq list` and show the user the repositories and roles. Run `speq clone <repo>` from the implementation repository only when the user asks. `<repo>` is `owner/repo`, the repo name, or a project name that is unique in `speq list`.
@@ -89,7 +90,7 @@ It prints, one path per line and relative to where you are, the files to read be
 - `<epic>/<story>`: the story's `README.md`, `acceptance-criteria.md`, design files, and tasks.
 - `<epic>/<story>/<task>`: the story's `README.md`, `acceptance-criteria.md`, and design files, and only that task.
 
-Read all of them before writing code. Use the narrowest target that covers the work: the task when the user names one task, the epic only when asked to implement the whole epic. The arguments are folder names and the task file name (`.md` optional); list them with `ls specs/epics`, `ls specs/epics/<epic>/stories`, and `ls specs/epics/<epic>/stories/<story>/tasks`. Run `speq pull` first so the files are current.
+Read all of them before writing code. Use the narrowest target that covers the work: the task when the user names one task, the epic only when asked to implement the whole epic. The arguments are folder names and the task file name (`.md` optional); list them with `ls specs/epics`, `ls specs/epics/<epic>/stories`, and `ls specs/epics/<epic>/stories/<story>/tasks` (without the `specs/` prefix when the specs folder is `.`). Run `speq pull` first so the files are current.
 
 ## 6. Other commands
 

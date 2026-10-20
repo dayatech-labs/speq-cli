@@ -12,7 +12,7 @@ A Speq document turns the documents upstream of it into the next one in the team
 
 ## 1. Locate the repository and the user's permissions
 
-1. The specs are a Git repository cloned with `speq clone`. Its root holds `llms.txt` and `epics/`, and `git config --get speq.address` prints the Speq project there. From an implementation repository it is usually `./specs`. Every path below is relative to that root. For a new product without a specs repository yet, start with `references/new-product.md`.
+1. The specs are a Git repository cloned with `speq clone`. Its root holds `llms.txt` and `epics/`, and `git config --get speq.address` prints the Speq project there. From an implementation repository it is usually `./specs` (another folder if the user set `--specs-dir` or `SPEQ_SPECS_DIR`). A plain clone of the `<product>-specs` repository from GitHub has the same layout in its root and no `speq.address`: write there the same way, and let the user commit and push with `git`. Every path below is relative to that root. For a new product without a specs repository yet, start with `references/new-product.md`.
 2. Run `speq pull` there, so you work on the latest `main`. If it stops with `CONFLICT`, stop and ask the user to resolve it first.
 3. Read `references/conventions.md` (in this skill's directory). It defines the structure, file names, IDs, frontmatter, permissions, and how to treat sources outside the repository. `speq push` refuses any path that does not follow it.
 4. Read the user's roles and write permissions as described in `conventions.md` §Membaca izin yang berlaku. Use them in step 2.

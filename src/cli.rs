@@ -45,8 +45,13 @@ Git commands:
   speq merge | reset | checkout | blame    ...and any other Git command, with Git's flags
   speq help <git command>                  Git's manual for that command
 
-Git commands run in the specs repository you are in, or in ./specs from the repository around it.
+Git commands run in the specs repository you are in, or in ./specs (or --specs-dir / $SPEQ_SPECS_DIR) from the
+repository around it.
 Pushes go to main only: no force push, no tags or other branches, at most 20 commits, documents only.
+
+Environment (set once instead of passing the flag every time):
+  SPEQ_SPECS_DIR    folder of the specs, default `specs`; `.` for a plain clone of <product>-specs from GitHub
+  SPEQ_API_URL      Speq API origin, for example http://localhost:8787
 
 Get started:
   speq login
@@ -78,6 +83,10 @@ pub struct Cli {
     #[arg(long, global = true, env = "SPEQ_API_URL", value_name = "URL")]
     pub api_url: Option<String>,
 
+    /// Folder of the specs, inside the repository you are in or above it (default: `specs`; `.` is this folder)
+    #[arg(long, global = true, env = "SPEQ_SPECS_DIR", value_name = "DIR")]
+    pub specs_dir: Option<String>,
+
     #[command(subcommand)]
     pub command: Command,
 }
@@ -104,7 +113,8 @@ pub enum Command {
 
     /// Clone a specs repository from `speq list` as a Git repository wired to Speq
     #[command(
-        after_help = "Arguments:\n  <REPO>  `owner/repo` from `speq list`, or the repo name or project name when it is unique\n  [DIR]   folder to create (default: `specs` inside a Git repository, which is then ignored there; else the repo name)\n\nExamples:\n  speq clone payment-specs\n  speq clone acme/payment-specs docs/specs\n\nAfterwards use Git's commands through speq: speq status, speq add, speq commit, speq pull, speq push, speq log.\nPulls rebase, line endings are kept byte for byte, and commits are authored with your Speq account email.\n\n"
+        after_help = "Arguments:\n  <REPO>  `owner/repo` from `speq list`, or the repo name or project name when it is unique\n  [DIR]   folder to create (default: `specs`, or --specs-dir, inside a Git repository, which is then ignored there;
+          else the repo name)\n\nExamples:\n  speq clone payment-specs\n  speq clone acme/payment-specs docs/specs\n\nAfterwards use Git's commands through speq: speq status, speq add, speq commit, speq pull, speq push, speq log.\nPulls rebase, line endings are kept byte for byte, and commits are authored with your Speq account email.\n\n"
     )]
     Clone(CloneArgs),
 
@@ -116,7 +126,7 @@ pub enum Command {
 
     /// Print the files a coding agent should read for one epic, story, or task
     #[command(
-        after_help = "Arguments:\n  <TARGET>  `<epic>`, `<epic>/<story>` or `<epic>/<story>/<task>`: the epic folder, the story folder, and the\n            task file name (`.md` optional), for example epic-payment/st-001-create-payment/be-001-api\n\nExamples:\n  speq context epic-payment\n  speq context epic-payment/st-001-create-payment\n  speq context epic-payment/st-001-create-payment/be-001-api\n  speq context epic-payment/st-001-create-payment --json\n\nPrints one path per line (relative to this directory) in a fixed order, from the working tree (no network): llms.txt,\nREADME.md, architecture.md, the epic's briefs, prd.md and architecture.md, then\n  <epic>                  every story of the epic, by folder name, each with its tasks\n  <epic>/<story>          the story's README.md, acceptance-criteria.md, DESIGN.md, layout.html and tasks\n  <epic>/<story>/<task>   the story's README.md, acceptance-criteria.md, DESIGN.md, layout.html and that task only\nOnly files that exist are listed.\n\n"
+        after_help = "Arguments:\n  <TARGET>  `<epic>`, `<epic>/<story>` or `<epic>/<story>/<task>`: the epic folder, the story folder, and the\n            task file name (`.md` optional), for example epic-payment/st-001-create-payment/be-001-api\n\nExamples:\n  speq context epic-payment\n  speq context epic-payment/st-001-create-payment\n  speq context epic-payment/st-001-create-payment/be-001-api\n  speq context epic-payment/st-001-create-payment --json\n\nPrints one path per line (relative to this directory) in a fixed order, from the working tree (no network): llms.txt,\nREADME.md, architecture.md, the epic's briefs, prd.md and architecture.md, then\n  <epic>                  every story of the epic, by folder name, each with its tasks\n  <epic>/<story>          the story's README.md, acceptance-criteria.md, DESIGN.md, layout.html and tasks\n  <epic>/<story>/<task>   the story's README.md, acceptance-criteria.md, DESIGN.md, layout.html and that task only\nOnly files that exist are listed.\n\nWorks in a plain clone of the specs repository from GitHub too, with `speq --specs-dir . context <TARGET>` run in its root.\n\n"
     )]
     Context(ContextArgs),
 

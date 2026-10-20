@@ -137,7 +137,7 @@ impl Error {
                 "Your token expired or was revoked, so the local credentials were removed.".into()
             }
             Error::NotInitialized => {
-                "Neither this directory, its repository, nor a specs/ folder above it is a repository made by `speq clone`.".into()
+                "Neither this directory, its repository, nor a specs/ folder above it (see --specs-dir) is a repository made by `speq clone`.".into()
             }
             Error::Api(e) => e.message.clone(),
             Error::Network(m)

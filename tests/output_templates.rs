@@ -191,7 +191,7 @@ fn uninstall_is_clean_only_when_nothing_is_left_to_do() {
 #[test]
 fn context_stays_a_bare_list_of_paths_for_agents_and_scripts() {
     let report = ContextReport {
-        project_id: "p1".into(),
+        project_id: Some("p1".into()),
         head_sha: SHA.into(),
         paths: strings(&["a/prd.md", "a/spec.md"]),
     };

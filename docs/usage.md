@@ -46,6 +46,7 @@ Global options for the commands above:
 | Option | What it does |
 | --- | --- |
 | `--json` | JSON output. Errors are JSON on stderr |
+| `--specs-dir <DIR>` or env `SPEQ_SPECS_DIR` | The specs folder, relative to where you are or to a folder above it. Default `specs`. `.` is the current folder, for a plain clone of `<product>-specs` from GitHub. It sets where speq looks for the repository, the folder `speq clone` creates, and where `speq context` reads |
 | `--api-url <URL>` or env `SPEQ_API_URL` | Another Speq API, for example `http://localhost:8787` for local development |
 
 ## 2. Git commands through speq

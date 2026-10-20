@@ -68,8 +68,8 @@ pub struct DeinitReport {
 }
 
 /// The specs repository `cwd` belongs to (as Git commands find it), else an older workspace above `cwd`.
-pub fn find(git: &Git, cwd: &Path) -> Result<Target> {
-    match SpecsRepo::discover(git, cwd) {
+pub fn find(git: &Git, cwd: &Path, specs_dir: &str) -> Result<Target> {
+    match SpecsRepo::discover(git, cwd, specs_dir) {
         Ok(repo) => Ok(Target::Repo(repo)),
         Err(error) => match repo::legacy_workspace(cwd) {
             Some(root) => Ok(Target::Legacy {

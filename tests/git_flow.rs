@@ -987,3 +987,107 @@ async fn a_repository_cloned_before_speq_address_is_still_recognised() {
     let out = m.run(&app, &["status"]).ok();
     assert!(!out.stderr.contains(ORIGIN_WARNING), "{}", out.stderr);
 }
+
+fn git_init(m: &Machine, dir: &Path) {
+    let status = std::process::Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(dir)
+        .env("GIT_CONFIG_GLOBAL", m.dir("gitconfig").join("none"))
+        .status()
+        .unwrap();
+    assert!(status.success());
+}
+
+#[tokio::test]
+async fn a_specs_folder_other_than_specs_is_used_by_flag_and_by_environment() {
+    let m = Machine::new().await;
+    let app = m.dir("app");
+    git_init(&m, &app);
+    m.run(
+        &app,
+        &["--specs-dir", "docs/specs", "clone", "acme/payment-specs"],
+    )
+    .ok();
+    let specs = app.join("docs/specs");
+    assert!(specs.join(".git").is_dir());
+    assert!(!app.join("specs").exists());
+    let ignore = std::fs::read_to_string(app.join(".gitignore")).unwrap();
+    assert!(ignore.lines().any(|l| l == "docs/specs/"), "{ignore}");
+
+    // Without the option speq looks in `specs` only.
+    assert_eq!(m.run(&app, &["status"]).code, 7);
+    assert_eq!(m.run(&app, &["context", STORY]).code, 7);
+
+    // Git commands and speq's own commands both follow the flag.
+    m.run(&app, &["--specs-dir", "docs/specs", "status"]).ok();
+    m.run(&app, &["--specs-dir=docs/specs", "--json", "status"])
+        .ok();
+    let context = m
+        .run(&app, &["--specs-dir", "docs/specs", "context", STORY])
+        .ok()
+        .stdout;
+    assert!(context.starts_with("docs/specs/llms.txt\n"), "{context}");
+
+    // The environment variable gives the same without a flag; the flag wins over it.
+    let mut env_status = m.command(&app, &["status"]);
+    env_status.env("SPEQ_SPECS_DIR", "docs/specs");
+    assert!(env_status.output().unwrap().status.success());
+    let mut flag_wins = m.command(&app, &["--specs-dir", "docs/specs", "status"]);
+    flag_wins.env("SPEQ_SPECS_DIR", "elsewhere");
+    assert!(flag_wins.output().unwrap().status.success());
+
+    m.run(&app, &["--specs-dir", "docs/specs", "deinit", "--yes"])
+        .ok();
+    assert!(!specs.exists());
+}
+
+#[tokio::test]
+async fn context_reads_a_plain_clone_of_the_specs_repository_from_github() {
+    let m = Machine::new().await;
+    let plain = m.dir("payment-specs");
+    git_init(&m, &plain);
+    for (path, content) in [
+        ("llms.txt", "# Payment\n"),
+        (PRD, "# PRD\n"),
+        (
+            "epics/epic-payment/stories/st-001-create-payment/README.md",
+            "# Story\n",
+        ),
+    ] {
+        m.write(&plain.join(path), content);
+    }
+
+    // The default folder is `specs`, which a plain clone does not have.
+    assert_eq!(m.run(&plain, &["context", STORY]).code, 7);
+
+    let out = m
+        .run(&plain, &["--specs-dir", ".", "context", STORY])
+        .ok()
+        .stdout;
+    assert_eq!(
+        out.lines().collect::<Vec<_>>(),
+        [
+            "llms.txt",
+            "epics/epic-payment/prd.md",
+            "epics/epic-payment/stories/st-001-create-payment/README.md",
+        ]
+    );
+    // No Speq project is known, so none is reported; the file listing needs no login or API.
+    let json: serde_json::Value = serde_json::from_str(
+        &m.run(&plain, &["--json", "--specs-dir", ".", "context", STORY])
+            .ok()
+            .stdout,
+    )
+    .unwrap();
+    assert!(json.get("project_id").is_none(), "{json}");
+    assert_eq!(json["paths"].as_array().unwrap().len(), 3);
+
+    // A folder named from the repository around it works the same.
+    let around = m.dir("workspace");
+    std::fs::rename(&plain, around.join("payment-specs")).unwrap();
+    let out = m
+        .run(&around, &["--specs-dir", "payment-specs", "context", STORY])
+        .ok()
+        .stdout;
+    assert!(out.starts_with("payment-specs/llms.txt\n"), "{out}");
+}

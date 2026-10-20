@@ -1,4 +1,4 @@
-use speq::commands::{Route, parse_args, route, run, run_git};
+use speq::commands::{Route, leading_specs_dir, parse_args, route, run, run_git};
 use speq::env::Env;
 use speq::error::{Error, exit};
 use speq::links::{Invocation, invocation};
@@ -41,7 +41,8 @@ fn main() -> ExitCode {
     match route(args.get(1..).unwrap_or_default()) {
         Route::Speq => {}
         git => {
-            return match run_git(git) {
+            let specs_dir = speq::repo::specs_dir(leading_specs_dir(&args[1..]).as_deref());
+            return match run_git(git, &specs_dir) {
                 Ok(code) => ExitCode::from(code),
                 Err(e) => {
                     report_error(json, &e);
