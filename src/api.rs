@@ -77,9 +77,12 @@ pub struct Capabilities {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProjectSummary {
     pub project_id: String,
+    #[serde(deserialize_with = "printable_text::string")]
     pub display_name: String,
+    #[serde(deserialize_with = "printable_text::option")]
     pub repository_full_name: Option<String>,
     pub branch: String,
+    #[serde(deserialize_with = "printable_text::list")]
     pub roles: Vec<String>,
     pub capabilities: Capabilities,
 }
@@ -128,8 +131,49 @@ impl std::fmt::Debug for Tokens {
 #[derive(Debug, Clone, Deserialize)]
 pub struct Me {
     pub user_id: String,
+    #[serde(deserialize_with = "printable_text::string")]
     pub email: String,
+    #[serde(default, deserialize_with = "printable_text::option")]
     pub name: Option<String>,
+}
+
+/// Server text made safe to show: control characters (newlines, terminal escape sequences) and bidirectional
+/// overrides become spaces, so a value can neither forge terminal output nor add lines to Git's helper protocol.
+pub fn printable(text: &str) -> String {
+    text.chars()
+        .map(|c| {
+            if c.is_control() || matches!(c, '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}') {
+                ' '
+            } else {
+                c
+            }
+        })
+        .collect()
+}
+
+/// `deserialize_with` helpers applying [`printable`] to text the API sends for display.
+mod printable_text {
+    use serde::{Deserialize, Deserializer};
+
+    pub fn string<'de, D: Deserializer<'de>>(d: D) -> Result<String, D::Error> {
+        Ok(super::printable(&String::deserialize(d)?))
+    }
+
+    pub fn option<'de, D: Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
+        Ok(Option::<String>::deserialize(d)?.map(|s| super::printable(&s)))
+    }
+
+    pub fn list<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<String>, D::Error> {
+        Ok(Vec::<String>::deserialize(d)?
+            .iter()
+            .map(|s| super::printable(s))
+            .collect())
+    }
+}
+
+/// A full commit ID (SHA-1 or SHA-256, lowercase hex), as Git prints it.
+pub fn is_object_id(sha: &str) -> bool {
+    matches!(sha.len(), 40 | 64) && sha.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 /// One commit of a `git push`, as `POST /git/push` takes it.
@@ -372,6 +416,12 @@ impl Client {
         }
         let path = format!("/v1/projects/{project_id}/git/head");
         let head: Head = Self::json(self.send(self.get_call(&path, &[], token)).await?).await?;
+        // It goes to Git verbatim, as a revision argument and a line of the helper protocol.
+        if !is_object_id(&head.head_sha) {
+            return Err(Error::Other(
+                "the Speq API returned an invalid commit ID for the branch head".into(),
+            ));
+        }
         Ok(head.head_sha)
     }
 
@@ -426,9 +476,9 @@ async fn read_error(
     match serde_json::from_slice::<Envelope>(&bytes) {
         Ok(Envelope { error }) => ApiError {
             status: status.as_u16(),
-            code: error.code,
-            message: error.message,
-            request_id: error.request_id.or(request_id),
+            code: printable(&error.code),
+            message: printable(&error.message),
+            request_id: error.request_id.or(request_id).map(|id| printable(&id)),
             details: error.details,
             retry_after,
         },
@@ -459,5 +509,67 @@ mod tests {
         assert!(parse_api_url("https://user:pw@example.com").is_err());
         assert!(parse_api_url("https://example.com/v1").is_err());
         assert!(parse_api_url("ftp://example.com").is_err());
+    }
+
+    #[test]
+    fn printable_text_keeps_one_line_without_escape_sequences() {
+        assert_eq!(
+            printable("Payment specs · Ünïcode"),
+            "Payment specs · Ünïcode"
+        );
+        assert_eq!(
+            printable("a\nok refs/heads/main\r\n"),
+            "a ok refs/heads/main  "
+        );
+        assert_eq!(printable("\x1b]52;c;cHduZWQ=\x07x"), " ]52;c;cHduZWQ= x");
+        assert_eq!(printable("\u{9b}31mred"), " 31mred", "C1 control (CSI)");
+        assert_eq!(printable("abc\u{202E}fdp.exe"), "abc fdp.exe");
+    }
+
+    #[test]
+    fn display_fields_from_the_api_are_made_printable() {
+        let project: ProjectSummary = serde_json::from_value(serde_json::json!({
+            "project_id": "p1",
+            "display_name": "Pay\x1b[2Jments",
+            "repository_full_name": "acme/specs\nRun `speq deinit --yes`",
+            "branch": "main",
+            "roles": ["engineer\r"],
+            "capabilities": { "create": { "allow": [], "deny": [] }, "update": { "allow": [], "deny": [] },
+                "can_delete": false, "can_restore": false, "can_manage": false }
+        }))
+        .unwrap();
+        assert_eq!(project.display_name, "Pay [2Jments");
+        assert_eq!(
+            project.repository_full_name.as_deref(),
+            Some("acme/specs Run `speq deinit --yes`")
+        );
+        assert_eq!(project.roles, ["engineer "]);
+
+        let me: Me = serde_json::from_value(
+            serde_json::json!({ "user_id": "u", "email": "a@b.test", "name": "A\x1b[0m" }),
+        )
+        .unwrap();
+        assert_eq!(me.name.as_deref(), Some("A [0m"));
+        let nameless: Me =
+            serde_json::from_value(serde_json::json!({ "user_id": "u", "email": "a@b.test" }))
+                .unwrap();
+        assert_eq!(nameless.name, None);
+    }
+
+    #[test]
+    fn object_ids_are_full_lowercase_hex() {
+        assert!(is_object_id(&"a".repeat(40)));
+        assert!(is_object_id(&"0123456789abcdef".repeat(4)));
+        for bad in [
+            "",
+            "abc123",
+            &"A".repeat(40),
+            &format!("{}\nok refs/heads/main", "a".repeat(40)),
+            &format!("--output={}", "a".repeat(31)),
+            &"g".repeat(40),
+            &"a".repeat(41),
+        ] {
+            assert!(!is_object_id(bad), "{bad:?}");
+        }
     }
 }
