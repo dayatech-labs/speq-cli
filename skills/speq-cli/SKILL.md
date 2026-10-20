@@ -8,12 +8,12 @@ metadata:
 
 # Using the speq CLI
 
-`speq` makes a product's specs repository an ordinary Git repository. Its own commands are `login`, `logout`, `list`, `clone`, `deinit`, `context`, `skills`, `upgrade`, and `uninstall`; every other command is Git: `speq <command> <args>` runs `git <command> <args>` with Git's output and exit code. Two things differ from plain Git:
+`speq` makes a product's specs repository an ordinary Git repository. Its own commands are `login`, `logout`, `list`, `clone`, `deinit`, `context`, `dayaboard`, `skills`, `upgrade`, and `uninstall`; every other command is Git: `speq <command> <args>` runs `git <command> <args>` with Git's output and exit code. Two things differ from plain Git:
 
 - The user signs in with a Speq account. There are no GitHub credentials, and the remote has only `main`.
 - The Speq API checks every push (role, author, document paths) before it lands on `main`. Accepted commits keep their SHA.
 
-To write or review the documents themselves, use the `speq-write` skill. This skill covers running the commands.
+To write or review the documents themselves, use the `speq-write` skill. To create Dayaboard tickets from them (`speq dayaboard`), use the `speq-dayaboard` skill. This skill covers running the commands.
 
 ## 1. Find the specs repository
 

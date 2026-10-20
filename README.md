@@ -81,7 +81,7 @@ shell profile (Unix) or the user PATH entry (Windows) is left for you to remove;
 
 ### Skills for AI coding agents
 
-The binary ships two [Agent Skills](https://agentskills.io) skills.
+The binary ships three [Agent Skills](https://agentskills.io) skills.
 
 `speq-cli` knows how to run speq on a specs repository: always `speq`, never `git`, from the implementation
 repository; one short-lived local branch per piece of work, created from `origin/main`; the push rules; resolving a
@@ -96,7 +96,14 @@ write permissions (read live from `speq list --json`). Ask your agent to use it 
 * review an existing document, or check whether a story is ready for engineering;
 * set up the first documents of a new product, or move existing `docs/` from an implementation repository into Speq.
 
-Neither skill commits or pushes unless you ask. The installers run `speq skills install`, which writes both to
+`speq-dayaboard` turns an epic, its stories, and their tasks into Dayaboard tickets (Epic, Story, Task) through
+`speq dayaboard`, with the Dayaboard API key `speq login` stored. It finds tickets that already exist, asks for the
+estimates the specs leave open, and creates nothing before you confirm the plan. Each document then carries its ticket
+key in the front matter (`ticket-id: DEV-42`), and each ticket names its document and the specs commit it reflects, so
+a later update changes only what changed in the spec. Its API reference is
+https://dayaboard.odyssey.co.id/llms-full.txt.
+
+No skill commits or pushes unless you ask. The installers run `speq skills install`, which writes all three to
 `~/.agents/skills/` (Codex, Cursor, Copilot, Gemini CLI, OpenCode) and `~/.claude/skills/` (Claude Code; or
 `$CLAUDE_CONFIG_DIR/skills/`), and `speq upgrade` refreshes them, so the skills always match the CLI version. After
 installing with Homebrew, Scoop, WinGet, or by hand, run `speq skills install` yourself. Other skills in those folders

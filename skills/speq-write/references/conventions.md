@@ -73,7 +73,32 @@ Hal yang belum diputuskan sumber (angka, nama, aturan, pemilik, tanggal) tidak b
 
 ## Frontmatter
 
-Hanya brief dan PRD yang memakai frontmatter. Web app Speq membaca dua key: `version` dan `briefs`. Jangan menambahkan key lain di dokumen mana pun. Dokumen selain brief dan PRD tidak memakai frontmatter sama sekali.
+Hanya tiga key yang boleh ada. Jangan menambahkan key lain di dokumen mana pun.
+
+| Key | Dokumen | Arti |
+| --- | --- | --- |
+| `version` | brief, PRD | Versi isi dokumen. Dibaca Web app Speq. |
+| `briefs` | PRD | Brief yang menjadi acuan saat PRD terakhir ditinjau. Dibaca Web app Speq. |
+| `ticket-id` | PRD, README story, task | Key tiket Dayaboard dokumen itu, misalnya `DEV-42`. |
+
+Dokumen lain (acceptance criteria, architecture, decision, DESIGN, README produk) tidak memakai frontmatter sama sekali. README story dan task hanya memakai frontmatter bila sudah punya tiket.
+
+### `ticket-id` di PRD, story, dan task
+
+`ticket-id` menandai bahwa dokumen sudah punya tiket di Dayaboard: PRD → tiket Epic, README story → tiket Story, task → tiket Task.
+
+1. Ditulis oleh skill `speq-dayaboard` setelah tiketnya dibuat, atau oleh user. Jangan mengisinya dengan tebakan atau menyalin dari dokumen lain.
+2. Isinya hanya key tiket (`DEV-42`), tanpa URL.
+3. Menambah atau mengubah `ticket-id` bukan perubahan isi: `version` PRD **tidak** dinaikkan untuk itu.
+4. Pertahankan `ticket-id` saat mengubah dokumen. Hapus hanya bila user memintanya.
+
+```markdown
+---
+ticket-id: DEV-42
+---
+
+# be-001 — Buat endpoint charge kartu
+```
 
 ### `version` di brief dan PRD
 

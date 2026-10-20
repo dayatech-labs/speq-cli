@@ -11,7 +11,7 @@ Path: `epics/<epic>/prd.md`. PRD menjelaskan **mengapa** dan **apa** pada tingka
 5. Salin open questions dari brief ke §10, lalu tambahkan celah yang kamu temukan. Tandai **blocking** bila story belum dapat dikerjakan engineering sebelum dijawab.
 6. Setiap goal, BR, dan kebutuhan kualitas menyebut sumbernya (`brief: <section>`, `DoD <n>`). Turunan atau usulan Analyst yang tidak ada di brief ditandai *(Analyst)*.
 7. Goal tanpa ukuran keberhasilan di brief: tulis Definition of done-nya, lalu tambahkan pertanyaan ke PO tentang ukuran setelah rilis.
-8. Isi frontmatter: `version` (angka lama + 1, atau 1 untuk PRD baru) dan `briefs` dengan versi setiap brief yang sudah dicocokkan.
+8. Isi frontmatter: `version` (angka lama + 1, atau 1 untuk PRD baru) dan `briefs` dengan versi setiap brief yang sudah dicocokkan. `ticket-id` yang sudah ada dipertahankan.
 
 Persetujuan PO dicatat Analyst di baris **Approved by PO**, karena role `po` tidak dapat menulis PRD.
 

@@ -1,6 +1,6 @@
 # Task (engineer)
 
-Path: `epics/<epic>/stories/st-NNN-<nama>/tasks/<jenis>-NNN-<judul>.md`, satu file per task. Task menjelaskan **cara** menyelesaikan story yang sudah ada. Tidak memakai frontmatter.
+Path: `epics/<epic>/stories/st-NNN-<nama>/tasks/<jenis>-NNN-<judul>.md`, satu file per task. Task menjelaskan **cara** menyelesaikan story yang sudah ada. Tidak memakai frontmatter, kecuali `ticket-id` setelah task punya tiket Dayaboard (`conventions.md` §Frontmatter).
 
 Secara bawaan hanya role `engineer` yang dapat push task. Bila user bukan engineer, tanyakan dulu apakah ia ingin draf lokal untuk diserahkan ke engineer.
 

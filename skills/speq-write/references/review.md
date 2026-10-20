@@ -13,7 +13,7 @@ Dipakai dalam tiga keadaan. Review menghasilkan laporan temuan dan tidak menguba
 **Semua dokumen**
 
 - Path dan nama file sesuai `conventions.md`.
-- Hanya brief dan PRD yang memiliki frontmatter, dan isinya hanya `version` (serta `briefs` di PRD). Key lain dihapus.
+- Frontmatter hanya memakai key yang diizinkan `conventions.md` §Frontmatter: `version` (brief, PRD), `briefs` (PRD), `ticket-id` (PRD, README story, task). Key lain dihapus; `ticket-id` yang sudah ada dipertahankan.
 - Tautan relatif mengarah ke file yang ada.
 - Setiap aturan, angka, nama, dan tanggal punya sumber (brief, PRD, BR, atau pertanyaan terbuka). Yang tidak bersumber dan belum diputuskan menjadi pertanyaan.
 - Tidak ada sisa template: `<...>`, `TBD`, `TODO`, atau komentar HTML.

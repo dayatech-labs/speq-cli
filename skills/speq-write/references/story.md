@@ -1,6 +1,6 @@
 # Story (analyst)
 
-Path: `epics/<epic>/stories/st-NNN-<nama>/README.md`. Buat satu folder per story yang tercantum di PRD §5. Story tidak memakai frontmatter.
+Path: `epics/<epic>/stories/st-NNN-<nama>/README.md`. Buat satu folder per story yang tercantum di PRD §5. Story tidak memakai frontmatter, kecuali `ticket-id` setelah story punya tiket Dayaboard (`conventions.md` §Frontmatter).
 
 ## Aturan isi
 
