@@ -38,7 +38,12 @@ download anonymously). To suppress a release for a code change, use a non-releas
 5. **verify-install** — installs the published release with the real installers on Linux, macOS (both archs), and Windows, then
    runs `--version`, `help`, `upgrade --check`.
 
-A `workflow_dispatch` run re-evaluates the same rules on the current `main`; it cannot force a version.
+A `workflow_dispatch` run re-evaluates the same rules on the current `main`; it cannot force a version. Dispatched on
+any other branch, `plan` is skipped and so is every job after it: only `main` publishes.
+
+Workflow supply chain (checked by `scripts/test_release_scripts.py`): every action is pinned to a full commit SHA, with
+its tag in a comment; update both together. No `actions/checkout` keeps the token in `.git/config`
+(`persist-credentials: false`); `publish` hands its write token only to `gh`.
 
 Release assets (per version `V`, target `T`):
 

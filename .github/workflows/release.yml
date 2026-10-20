@@ -7,6 +7,10 @@
 # built commit, so a failed build never leaves a tag behind. (Tags made with GITHUB_TOKEN do not
 # trigger other workflows, which is why this workflow runs on `main`, not on tags.)
 # The repository must be public so installers can download anonymously.
+#
+# Supply chain: a manual run releases only from `main` (`plan` is skipped on any other ref, and every
+# later job needs it). Actions are pinned to full commit SHAs (the tag is in the comment), and no
+# checkout keeps the token in .git/config.
 name: release
 on:
   push:
@@ -21,16 +25,19 @@ concurrency:
 
 jobs:
   plan:
+    # `workflow_dispatch` lets the caller pick any branch; only reviewed `main` may publish.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     outputs:
       release: ${{ steps.next.outputs.release }}
       version: ${{ steps.next.outputs.version }}
       tag: ${{ steps.next.outputs.tag }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           fetch-tags: true
+          persist-credentials: false
       - name: Release scripts are correct
         run: python3 scripts/test_release_scripts.py
       - id: next
@@ -45,10 +52,12 @@ jobs:
     if: needs.plan.outputs.release == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - run: cargo fmt --check
       - run: cargo clippy --locked --all-targets -- -D warnings
-      - uses: EmbarkStudios/cargo-deny-action@v2
+      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
         with:
           command: check advisories bans licenses sources
       - name: Installer scripts are valid
@@ -74,13 +83,15 @@ jobs:
     env:
       SPEQ_COMMIT: ${{ github.sha }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Stamp the release version (CI only, not committed)
         run: python3 scripts/stamp_version.py "${{ needs.plan.outputs.version }}"
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           targets: ${{ matrix.target }}
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: release-${{ matrix.target }}
       - if: runner.os == 'Linux'
@@ -113,7 +124,7 @@ jobs:
           else
             tar -czf "dist/speq-$version-$target.tar.gz" -C stage .
           fi
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dist-${{ matrix.target }}
           path: dist/*
@@ -125,8 +136,11 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v8
+      # The write token is only for `gh` below (GH_TOKEN); repository scripts never see it on disk.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: dist-*
           merge-multiple: true

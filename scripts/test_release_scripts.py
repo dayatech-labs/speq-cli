@@ -236,6 +236,60 @@ class ReleaseUrl(unittest.TestCase):
         self.assertIn("https://*) protocols='=https' ;;", text)
 
 
+def steps_using(text, action):
+    """Each `- uses: <action>@...` step of a workflow, with the lines that belong to it."""
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        match = re.match(r"^(\s*)- uses: " + re.escape(action) + "@", line)
+        if not match:
+            continue
+        block = [line]
+        for following in lines[i + 1 :]:
+            if following.strip() and len(following) - len(following.lstrip()) <= len(match.group(1)):
+                break
+            block.append(following)
+        yield "\n".join(block)
+
+
+class Workflows(unittest.TestCase):
+    """Supply-chain rules for .github/workflows, which a later edit could quietly undo."""
+
+    WORKFLOWS = {p.name: p.read_text() for p in sorted((HERE.parent / ".github" / "workflows").glob("*.yml"))}
+
+    def test_every_action_is_pinned_to_a_full_commit_sha(self):
+        self.assertIn("release.yml", self.WORKFLOWS)
+        for name, text in self.WORKFLOWS.items():
+            for ref in re.findall(r"^\s*-?\s*uses:\s*(\S+)", text, re.M):
+                with self.subTest(workflow=name, ref=ref):
+                    self.assertRegex(ref, r"^[\w.-]+/[\w./-]+@[0-9a-f]{40}$")
+
+    def test_no_checkout_keeps_the_token_in_git_config(self):
+        for name, text in self.WORKFLOWS.items():
+            checkouts = list(steps_using(text, "actions/checkout"))
+            self.assertTrue(checkouts, name)
+            for step in checkouts:
+                with self.subTest(workflow=name, step=step):
+                    self.assertRegex(step, r"(?m)^\s+persist-credentials: false$")
+
+    def test_releases_are_published_from_main_only(self):
+        text = self.WORKFLOWS["release.yml"]
+        jobs = re.split(r"(?m)^  (?=[\w-]+:$)", text.split("\njobs:\n", 1)[1])
+        jobs = {job.split(":", 1)[0]: job for job in jobs if job.strip()}
+        self.assertRegex(jobs["plan"], r"(?m)^    if: github\.ref == 'refs/heads/main'$")
+        # Every other job needs `plan`, directly or through another job, so all of them are skipped with it.
+        needs = {
+            name: re.findall(r"[\w-]+", (re.search(r"(?m)^    needs: (.*)$", body) or [None, ""])[1])
+            for name, body in jobs.items()
+        }
+        gated = {"plan"}
+        while True:
+            more = {name for name, deps in needs.items() if name not in gated and gated & set(deps)}
+            if not more:
+                break
+            gated |= more
+        self.assertEqual(gated, set(jobs))
+
+
 @unittest.skipUnless(shutil.which("pwsh"), "pwsh is not installed")
 class WindowsInstaller(unittest.TestCase):
     """install.ps1 reads the OS variables, which Windows PowerShell 5.1 and PowerShell 7 both set."""
