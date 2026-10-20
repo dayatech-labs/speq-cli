@@ -36,9 +36,9 @@ next step), and `--json` gives machine-readable output.
 | `speq clone <repo> [dir]` | Clone a specs repository as a Git repository wired to Speq. `<repo>` can be `owner/repo`, the repo name, or the project name when it is unique in `speq list`. Default `dir`: `specs` when run inside a Git repository (it is then added to that repository's `.gitignore`), else the repo name |
 | `speq deinit [--yes]` | Delete the specs repository (or a workspace of the older speq) to start over. Before deleting, speq names what would be lost: uncommitted changes, unpushed commits, and stashes |
 | `speq context <epic>/<story>` | The files a coding agent should read for one story, one path per line, relative to where you are. Example: `speq context epic-payment/st-001-create-payment` |
-| `speq skills install` | Write the `speq-write` skill for AI coding agents to `~/.agents/skills` and `~/.claude/skills` (or `$CLAUDE_CONFIG_DIR/skills`). The installers and `speq upgrade` do this for you |
-| `speq upgrade [--check] [--yes] [--version X.Y.Z]` | Check for or install a newer `speq`, and refresh the skill |
-| `speq uninstall [--yes]` | Remove speq's local data and the skill, and the binary when the official installer put it there. Specs repositories are not touched |
+| `speq skills install` | Write the `speq-cli` and `speq-write` skills for AI coding agents to `~/.agents/skills` and `~/.claude/skills` (or `$CLAUDE_CONFIG_DIR/skills`). The installers and `speq upgrade` do this for you |
+| `speq upgrade [--check] [--yes] [--version X.Y.Z]` | Check for or install a newer `speq`, and refresh the skills |
+| `speq uninstall [--yes]` | Remove speq's local data and the skills, and the binary when the official installer put it there. Specs repositories are not touched |
 | `speq help [command]`, `speq --version` | Help and version |
 
 Global options for the commands above:
@@ -172,6 +172,13 @@ speq context epic-payment/st-001-create-payment
 # specs/epics/epic-payment/prd.md
 # ...
 ```
+
+### Running speq through an AI coding agent
+
+Ask your agent to use `speq-cli` (in Claude Code: `/speq-cli`) to pull, branch, commit, and push the specs, resolve a
+`speq pull` conflict, fix a rejected push, or read a story's context files before implementing it. It runs `speq`
+rather than `git`, works on a branch created from `origin/main`, and asks before it commits, pushes, or discards
+anything. Where both sides of a conflict disagree on meaning, it shows you both versions instead of picking one.
 
 ### Writing and reviewing documents with an AI coding agent
 

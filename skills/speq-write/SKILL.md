@@ -58,7 +58,7 @@ Run the checklist in `references/review.md` §Daftar periksa per dokumen on ever
 
 1. Run `speq status`. Your files should show as new or modified.
 2. Do not commit or push unless the user asks. A push makes the documents final for everyone, so the user decides when.
-3. When the user asks to publish, run `speq add <files>`, `speq commit -m "docs: <ringkasan>"`, and `speq push`. Pushes go to `main` only. A `403` means the user's role may not write one of the paths, and nothing was written. A `fetch first` rejection means someone pushed first: run `speq pull`, then `speq push` again.
+3. When the user asks to publish, follow the `speq-cli` skill: `speq add <files>`, `speq commit -m "docs: <ringkasan>"`, `speq pull`, and `speq push`. It covers rejected pushes and conflicts. A `403` means the user's role may not write one of the paths, and nothing was written.
 4. Reply in Bahasa Indonesia with:
    - the files written,
    - the new IDs (stories, AC, BR, tasks),

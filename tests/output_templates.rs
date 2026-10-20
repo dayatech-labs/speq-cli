@@ -258,11 +258,11 @@ fn an_upgrade_that_could_not_refresh_the_skills_says_how_to_do_it() {
 fn skills_install_names_the_skills_every_folder_and_how_to_use_them() {
     let report = SkillsReport {
         dirs: strings(&["/home/ana/.agents/skills", "/home/ana/.claude/skills"]),
-        skills: strings(&["speq-write"]),
+        skills: strings(&["speq-cli", "speq-write"]),
     };
     assert_eq!(
         plain(&report),
-        "✔ Installed the Speq skill for AI coding agents\n\n  skills  speq-write\n  folder  /home/ana/.agents/skills\n  folder  /home/ana/.claude/skills\n\n  → Start a new session of your coding agent (Claude Code, Codex, Cursor, Copilot, Gemini CLI, OpenCode), then ask it to use speq-write."
+        "✔ Installed the Speq skills for AI coding agents\n\n  skills  speq-cli, speq-write\n  folder  /home/ana/.agents/skills\n  folder  /home/ana/.claude/skills\n\n  → Start a new session of your coding agent (Claude Code, Codex, Cursor, Copilot, Gemini CLI, OpenCode), then ask it to use speq-cli or speq-write."
     );
 }
 

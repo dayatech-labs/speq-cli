@@ -78,20 +78,26 @@ and the package manager's own command is printed (`brew uninstall speq`, `scoop 
 only removes the credential of the API origin in use (`--api-url` / `SPEQ_API_URL`). The installer's PATH line in your
 shell profile (Unix) or the user PATH entry (Windows) is left for you to remove; the command points it out.
 
-### Skill for AI coding agents
+### Skills for AI coding agents
 
-The binary ships `speq-write`, an [Agent Skills](https://agentskills.io) skill that knows the specs layout, the IDs,
-the `version` / `briefs` front matter the Web app reads, and each role's write permissions (read live from
-`speq list --json`). Ask your agent to use it to:
+The binary ships two [Agent Skills](https://agentskills.io) skills.
+
+`speq-cli` knows how to run speq on a specs repository: always `speq`, never `git`, from the implementation
+repository; one short-lived local branch per piece of work, created from `origin/main`; the push rules; resolving a
+`speq pull` conflict; fixing each rejected-push reason; and `speq context` before implementing a story. It asks before
+anything that reaches other people or loses work (commit, push, `deinit`, discarding changes) and never force-pushes.
+
+`speq-write` knows the specs layout, the IDs, the `version` / `briefs` front matter the Web app reads, and each role's
+write permissions (read live from `speq list --json`). Ask your agent to use it to:
 
 * draft the next document from the ones before it: brief, PRD, stories, acceptance criteria, tasks, epic architecture
   (tech discovery), decision records;
 * review an existing document, or check whether a story is ready for engineering;
 * set up the first documents of a new product, or move existing `docs/` from an implementation repository into Speq.
 
-It never commits or pushes unless you ask. The installers run `speq skills install`, which writes it to
+Neither skill commits or pushes unless you ask. The installers run `speq skills install`, which writes both to
 `~/.agents/skills/` (Codex, Cursor, Copilot, Gemini CLI, OpenCode) and `~/.claude/skills/` (Claude Code; or
-`$CLAUDE_CONFIG_DIR/skills/`), and `speq upgrade` refreshes it, so the skill always matches the CLI version. After
+`$CLAUDE_CONFIG_DIR/skills/`), and `speq upgrade` refreshes them, so the skills always match the CLI version. After
 installing with Homebrew, Scoop, WinGet, or by hand, run `speq skills install` yourself. Other skills in those folders
 are never touched; the `speq-review` skill of earlier versions is removed.
 
@@ -125,8 +131,8 @@ A step-by-step guide with every supported command, the everyday flow, and what t
 | `deinit [--yes]` | delete the specs repository (or a workspace of the older speq) to start over. Asks first on a terminal and names what would be lost: uncommitted changes, unpushed commits, stashes. The login and the `.gitignore` entry stay |
 | `context <epic>/<story>` | deterministic list of context files for one story (`st-NNN-name` folder), from the working tree: `llms.txt`, root `README.md` and `architecture.md`, the epic's briefs, `prd.md`, `architecture.md`, then the story's `README.md`, `acceptance-criteria.md`, `DESIGN.md`, `layout.html`, and tasks. Only files that exist; paths relative to where you are |
 | `push --squash [args]` | fold the commits not yet on the remote into one, then `git push [args]` (opt-in; see below) |
-| `skills install` | write the `speq-write` skill for AI coding agents |
-| `upgrade` / `uninstall` | check for / install a newer `speq` (and refresh the skill); remove local data, the skill, and an official install |
+| `skills install` | write the `speq-cli` and `speq-write` skills for AI coding agents |
+| `upgrade` / `uninstall` | check for / install a newer `speq` (and refresh the skills); remove local data, the skills, and an official install |
 | **anything else** | Git: `speq <command> <args>` runs `git <command> <args>` in the specs repository you are in, or in `./specs` (from the implementation repository), with Git's exit code |
 
 Text output of speq's own commands follows one template (`src/template.rs`): a title with an icon (`✔` done, `!` needs

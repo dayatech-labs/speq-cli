@@ -56,17 +56,27 @@ fn skills_install_writes_the_skills_for_every_agent_without_login() {
     };
 
     let body = install(None);
-    assert_eq!(body["skills"], serde_json::json!(["speq-write"]));
+    assert_eq!(
+        body["skills"],
+        serde_json::json!(["speq-cli", "speq-write"])
+    );
     for dir in [".agents/skills", ".claude/skills"] {
-        assert!(
-            home.path().join(dir).join("speq-write/SKILL.md").is_file(),
-            "{dir}"
-        );
+        for skill in ["speq-cli", "speq-write"] {
+            assert!(
+                home.path().join(dir).join(skill).join("SKILL.md").is_file(),
+                "{dir}/{skill}"
+            );
+        }
     }
 
     let custom = home.path().join("claude-config");
     install(Some(&custom));
-    assert!(custom.join("skills/speq-write/SKILL.md").is_file());
+    for skill in ["speq-cli", "speq-write"] {
+        assert!(
+            custom.join("skills").join(skill).join("SKILL.md").is_file(),
+            "{skill}"
+        );
+    }
 }
 
 #[test]

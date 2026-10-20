@@ -140,12 +140,14 @@ async fn the_agent_skills_are_removed_from_every_folder_and_other_skills_are_kep
 
     assert_eq!(
         report.removed_skills.len(),
-        2,
-        "{:?}",
+        4,
+        "two skills in two folders: {:?}",
         report.removed_skills
     );
     for dir in &device.env.skills_dirs {
-        assert!(!dir.join("speq-write").exists());
+        for skill in ["speq-cli", "speq-write"] {
+            assert!(!dir.join(skill).exists(), "{skill}");
+        }
     }
     assert!(other.exists());
 }

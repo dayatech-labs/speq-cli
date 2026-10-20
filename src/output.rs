@@ -278,11 +278,11 @@ impl Human for SkillsReport {
         let mut facts = vec![("skills", self.skills.join(", "))];
         facts.extend(self.dirs.iter().map(|d| ("folder", d.clone())));
         let mut s = Screen::new(theme);
-        s.title(Tone::Ok, "Installed the Speq skill for AI coding agents")
+        s.title(Tone::Ok, "Installed the Speq skills for AI coding agents")
             .facts(&facts)
             .hint(&format!(
                 "Start a new session of your coding agent (Claude Code, Codex, Cursor, Copilot, Gemini CLI, OpenCode), then ask it to use {}.",
-                self.skills.join(", ")
+                self.skills.join(" or ")
             ));
         s.finish()
     }

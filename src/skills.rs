@@ -16,6 +16,9 @@ macro_rules! skill_files {
 
 /// `(path under the skills directory, content)`. The test below fails when a file in `skills/` is missing here.
 pub const SKILLS: &[(&str, &str)] = skill_files![
+    "speq-cli/SKILL.md",
+    "speq-cli/references/conflicts.md",
+    "speq-cli/references/rejections.md",
     "speq-write/SKILL.md",
     "speq-write/references/acceptance-criteria.md",
     "speq-write/references/architecture.md",
@@ -155,7 +158,7 @@ mod tests {
 
         let report = install(&dirs).unwrap();
 
-        assert_eq!(report.skills, vec!["speq-write"]);
+        assert_eq!(report.skills, vec!["speq-cli", "speq-write"]);
         assert_eq!(report.dirs.len(), 2);
         for dir in &dirs {
             for (path, content) in SKILLS {
@@ -171,15 +174,55 @@ mod tests {
     }
 
     #[test]
-    fn the_installed_skill_names_the_cli_version_that_wrote_it() {
+    fn every_installed_skill_names_the_cli_version_that_wrote_it() {
         let (_root, dirs) = two_dirs();
         install(&dirs).unwrap();
-        let skill = std::fs::read_to_string(dirs[0].join("speq-write/SKILL.md")).unwrap();
-        assert!(
-            skill.contains(&format!("version: \"{}\"", env!("CARGO_PKG_VERSION"))),
-            "{skill}"
-        );
-        assert!(!skill.contains(VERSION_PLACEHOLDER));
+        for name in names() {
+            let skill = std::fs::read_to_string(dirs[0].join(name).join("SKILL.md")).unwrap();
+            assert!(
+                skill.contains(&format!("version: \"{}\"", env!("CARGO_PKG_VERSION"))),
+                "{name}: {skill}"
+            );
+            assert!(!skill.contains(VERSION_PLACEHOLDER), "{name}");
+        }
+    }
+
+    /// Agents pick a skill by the `name` in its front matter, which must match its folder (agentskills.io), and
+    /// read only the references its `SKILL.md` names: a reference no `SKILL.md` mentions is never read.
+    #[test]
+    fn every_skill_is_named_after_its_folder_and_names_each_of_its_references() {
+        for name in names() {
+            let skill = SKILLS
+                .iter()
+                .find(|(path, _)| *path == format!("{name}/SKILL.md"))
+                .map(|(_, content)| *content)
+                .unwrap_or_else(|| panic!("{name} has no SKILL.md"));
+            let front = skill
+                .strip_prefix("---\n")
+                .and_then(|rest| rest.split_once("\n---\n"))
+                .map(|(front, _)| front)
+                .unwrap_or_else(|| panic!("{name}: no front matter"));
+            assert!(
+                front.lines().any(|l| l == format!("name: {name}")),
+                "{name}"
+            );
+            assert!(
+                front
+                    .lines()
+                    .any(|l| l.starts_with("description: Use when")),
+                "{name}: the description says when to use the skill"
+            );
+            let references = SKILLS.iter().filter_map(|(path, _)| {
+                path.strip_prefix(&format!("{name}/"))
+                    .filter(|p| p.starts_with("references/"))
+            });
+            for reference in references {
+                assert!(
+                    skill.contains(reference),
+                    "{name}/SKILL.md never names {reference}"
+                );
+            }
+        }
     }
 
     #[test]
@@ -195,8 +238,13 @@ mod tests {
 
         let removed = remove(&dirs).unwrap();
 
-        assert_eq!(removed.len(), 3, "{removed:?}");
+        assert_eq!(
+            removed.len(),
+            5,
+            "two skills in two folders, plus the retired one"
+        );
         for dir in &dirs {
+            assert!(!dir.join("speq-cli").exists());
             assert!(!dir.join("speq-write").exists());
             assert!(!dir.join("speq-review").exists());
         }

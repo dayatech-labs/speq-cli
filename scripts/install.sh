@@ -144,7 +144,7 @@ print_banner
 
 # ---- Agent skills shipped inside the binary; a failure here never undoes the install
 if "$bin_dir/speq" skills install >/dev/null 2>&1; then
-  printf 'Installed the Speq skill for AI coding agents (speq-write).\n'
+  printf 'Installed the Speq skills for AI coding agents (speq-cli, speq-write).\n'
 else
   printf 'note: the agent skills were not installed; run `speq skills install` later.\n'
 fi

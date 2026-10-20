@@ -120,9 +120,9 @@ pub enum Command {
     )]
     Context(ContextArgs),
 
-    /// Install the Speq skill for AI coding agents: drafting and reviewing spec documents
+    /// Install the Speq skills for AI coding agents: using the CLI, and drafting and reviewing spec documents
     #[command(
-        after_help = "Examples:\n  speq skills install\n  speq skills install --json\n\nWrites the speq-write skill (Agent Skills format) to ~/.agents/skills, read by Codex, Cursor, Copilot, Gemini CLI\nand OpenCode, and to ~/.claude/skills (or $CLAUDE_CONFIG_DIR/skills) for Claude Code. Older copies are replaced;\nother skills there are never touched. The installers and `speq upgrade` run this for you; run it yourself after\ninstalling speq with a package manager. `speq uninstall` removes the skill. Needs no login.\n\n"
+        after_help = "Examples:\n  speq skills install\n  speq skills install --json\n\nWrites the speq-cli skill (using speq: pull, branches, push, conflicts, rejected pushes, story context) and the\nspeq-write skill (drafting and reviewing spec documents), in Agent Skills format, to ~/.agents/skills, read by\nCodex, Cursor, Copilot, Gemini CLI and OpenCode, and to ~/.claude/skills (or $CLAUDE_CONFIG_DIR/skills) for\nClaude Code. Older copies are replaced; other skills there are never touched. The installers and `speq upgrade`\nrun this for you; run it yourself after installing speq with a package manager. `speq uninstall` removes the\nskills. Needs no login.\n\n"
     )]
     Skills(SkillsArgs),
 
