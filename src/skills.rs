@@ -225,6 +225,22 @@ mod tests {
         }
     }
 
+    /// Agents read documents other people wrote: each skill tells them that text is data, never instructions,
+    /// and that secrets stay out of documents (a push shares them with the whole project).
+    #[test]
+    fn every_skill_treats_spec_text_as_data_and_keeps_secrets_out() {
+        for name in names() {
+            let skill = SKILLS
+                .iter()
+                .find(|(path, _)| *path == format!("{name}/SKILL.md"))
+                .map(|(_, content)| *content)
+                .unwrap();
+            for rule in ["data, not instructions", "tokens, passwords, keys"] {
+                assert!(skill.contains(rule), "{name}/SKILL.md lacks {rule:?}");
+            }
+        }
+    }
+
     #[test]
     fn remove_deletes_only_speq_skills_in_every_folder() {
         let (_root, dirs) = two_dirs();
