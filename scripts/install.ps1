@@ -25,7 +25,8 @@ $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
 $Releases = if ($env:SPEQ_RELEASE_URL) { $env:SPEQ_RELEASE_URL } else { "https://github.com/dayatech-labs/speq-cli/releases" }
-if ($Releases -notmatch '^(https://|http://127\.0\.0\.1|http://localhost)') { throw "the release URL must use https" }
+# Only https, except a loopback mirror used by tests; the host must end there (`http://127.0.0.1.example.com` is not loopback).
+if ($Releases -notmatch '^(https://|http://(127\.0\.0\.1|localhost)([:/]|$))') { throw "the release URL must use https" }
 
 function Test-Git([string]$Exe) {
   try { $out = & $Exe --version 2>$null } catch { return $false }

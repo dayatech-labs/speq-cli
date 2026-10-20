@@ -67,9 +67,11 @@ case "$VERSION" in
 esac
 case "$VERSION" in *[!0-9A-Za-z.+-]*) fail "invalid version: $VERSION" ;; esac
 
-# Only https, except a loopback mirror used by tests.
+# Only https, also for redirects, except a loopback mirror used by tests (the host must end at `:`, `/`
+# or the end, so `http://127.0.0.1.example.com` is not loopback).
 case "$RELEASES" in
-  https://*|http://127.0.0.1*|http://localhost*) ;;
+  https://*) protocols='=https' ;;
+  http://127.0.0.1|http://127.0.0.1[:/]*|http://localhost|http://localhost[:/]*) protocols='=https,http' ;;
   *) fail "the release URL must use https" ;;
 esac
 
@@ -95,7 +97,7 @@ if [ -z "${target:-}" ]; then
   fail "unsupported platform: $os $arch. Download an archive for your system from $RELEASES and install it manually."
 fi
 
-fetch() { curl --proto '=https,http' --tlsv1.2 -fsSL --retry 2 -o "$2" "$1"; }
+fetch() { curl --proto "$protocols" --proto-redir "$protocols" --tlsv1.2 -fsSL --retry 2 -o "$2" "$1"; }
 
 if [ -n "$VERSION" ]; then base="$RELEASES/download/v$VERSION"; else base="$RELEASES/latest/download"; fi
 

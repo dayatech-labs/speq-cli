@@ -195,8 +195,49 @@ class Installer(unittest.TestCase):
             self.assertNotIn("Git 2.28", out)
 
 
+# Plain http is for a loopback test mirror only; these merely start like one.
+LOOKALIKE_URLS = (
+    "http://127.0.0.1.attacker.test",
+    "http://localhost.attacker.test/dl",
+    "http://localhost@attacker.test",
+    "http://example.test",
+)
+
+
+class ReleaseUrl(unittest.TestCase):
+    def run_sh(self, url):
+        return subprocess.run(
+            ["sh", str(HERE / "install.sh"), "--version", "0.1.0"],
+            env={**os.environ, "SPEQ_RELEASE_URL": url},
+            capture_output=True,
+            text=True,
+            stdin=subprocess.DEVNULL,
+            timeout=60,
+        )
+
+    def test_install_sh_allows_plain_http_only_on_loopback(self):
+        for url in LOOKALIKE_URLS:
+            with self.subTest(url=url):
+                done = self.run_sh(url)
+                self.assertNotEqual(done.returncode, 0)
+                self.assertIn("the release URL must use https", done.stderr)
+        # Nothing listens on port 1: these pass the URL check and fail later, on the download or the platform.
+        for url in ("http://127.0.0.1:1", "http://localhost:1/mirror"):
+            with self.subTest(url=url):
+                done = self.run_sh(url)
+                self.assertNotEqual(done.returncode, 0)
+                self.assertNotIn("must use https", done.stderr)
+
+    def test_install_sh_downloads_and_follows_redirects_over_https_only(self):
+        text = (HERE / "install.sh").read_text()
+        fetch = re.search(r"^fetch\(\) \{ curl (.*)\}$", text, re.M).group(1)
+        self.assertIn('--proto "$protocols"', fetch)
+        self.assertIn('--proto-redir "$protocols"', fetch)
+        self.assertIn("https://*) protocols='=https' ;;", text)
+
+
 @unittest.skipUnless(shutil.which("pwsh"), "pwsh is not installed")
-class WindowsInstallerArchitecture(unittest.TestCase):
+class WindowsInstaller(unittest.TestCase):
     """install.ps1 reads the OS variables, which Windows PowerShell 5.1 and PowerShell 7 both set."""
 
     NO_BUILD = "this release has no build for x86_64-pc-windows-msvc"
@@ -241,6 +282,20 @@ class WindowsInstallerArchitecture(unittest.TestCase):
                 out = self.run_ps1(**arch_vars)
                 self.assertIn(f"unsupported architecture: {shown}", out)
                 self.assertNotIn("Fetching the release manifest", out)
+
+    def test_plain_http_is_allowed_only_on_loopback(self):
+        for url in LOOKALIKE_URLS:
+            with self.subTest(url=url):
+                done = subprocess.run(
+                    ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(HERE / "install.ps1")],
+                    env={**os.environ, "SPEQ_RELEASE_URL": url},
+                    capture_output=True,
+                    text=True,
+                    stdin=subprocess.DEVNULL,
+                    timeout=120,
+                )
+                self.assertNotEqual(done.returncode, 0)
+                self.assertIn("the release URL must use https", done.stdout + done.stderr)
 
 
 if __name__ == "__main__":
