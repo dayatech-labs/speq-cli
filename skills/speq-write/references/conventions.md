@@ -83,15 +83,16 @@ Hal yang belum diputuskan sumber (angka, nama, aturan, pemilik, tanggal) tidak b
 
 ## Frontmatter
 
-Hanya tiga key yang boleh ada. Jangan menambahkan key lain di dokumen mana pun.
+Hanya empat key yang boleh ada. Jangan menambahkan key lain di dokumen mana pun.
 
 | Key | Dokumen | Arti |
 | --- | --- | --- |
 | `version` | brief, PRD | Versi isi dokumen. Dibaca Web app Speq. |
 | `briefs` | PRD | Brief yang menjadi acuan saat PRD terakhir ditinjau. Dibaca Web app Speq. |
 | `ticket-id` | PRD, README story, task | Key tiket Dayaboard dokumen itu, misalnya `DEV-42`. |
+| `status` | task | Kemajuan task: `TODO`, `IN-PROGRESS`, `BLOCKED`, atau `DONE` (huruf besar semua). |
 
-Dokumen lain (acceptance criteria, architecture, decision, DESIGN, README produk) tidak memakai frontmatter sama sekali. README story dan task hanya memakai frontmatter bila sudah punya tiket.
+Dokumen lain (acceptance criteria, architecture, decision, DESIGN, README produk) tidak memakai frontmatter sama sekali. README story hanya memakai frontmatter bila sudah punya tiket. Task selalu memakainya, karena setiap task punya `status`.
 
 ### `ticket-id` di PRD, story, dan task
 
@@ -105,6 +106,31 @@ Dokumen lain (acceptance criteria, architecture, decision, DESIGN, README produk
 ```markdown
 ---
 ticket-id: DEV-42
+---
+
+# be-001 — Buat endpoint charge kartu
+```
+
+### `status` di task
+
+`status` menunjukkan kemajuan task. Nilainya hanya salah satu dari empat ini, huruf besar semua, persis seperti tertulis:
+
+| Nilai | Arti |
+| --- | --- |
+| `TODO` | Task belum dikerjakan. Nilai awal task baru. |
+| `IN-PROGRESS` | Task sedang diimplementasi. |
+| `BLOCKED` | Task tidak dapat dilanjutkan: menunggu jawaban pertanyaan blocking (baris **Menunggu**), task lain, atau hal di luar task. Tulis penyebabnya di baris **Menunggu**. |
+| `DONE` | Task sudah diimplementasi. |
+
+1. Task baru ditulis dengan `status: TODO`.
+2. **`DONE` hanya ditulis setelah task benar-benar diimplementasi:** kodenya ada dan syarat di bagian *Selesai bila* terpenuhi, atau user menyatakan task selesai. Jangan menebak dari judul atau estimasi, dan jangan memakai `DONE` untuk task yang baru dimulai, tertunda, atau sebagian jadi.
+3. Ubah nilainya hanya sesuai keadaan sebenarnya, atau bila user memintanya. Jangan menimpa `DONE` kecuali user membuka kembali task itu.
+4. Perubahan `status` bukan perubahan isi. Letakkan di frontmatter berdampingan dengan `ticket-id` bila ada, dan pertahankan `ticket-id`.
+
+```markdown
+---
+ticket-id: DEV-42
+status: IN-PROGRESS
 ---
 
 # be-001 — Buat endpoint charge kartu

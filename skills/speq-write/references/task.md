@@ -1,6 +1,6 @@
 # Task (engineer)
 
-Path: `epics/<epic>/stories/st-NNN-<nama>/tasks/<jenis>-NNN-<judul>.md`, satu file per task. Task menjelaskan **cara** menyelesaikan story yang sudah ada. Tidak memakai frontmatter, kecuali `ticket-id` setelah task punya tiket Dayaboard (`conventions.md` §Frontmatter).
+Path: `epics/<epic>/stories/st-NNN-<nama>/tasks/<jenis>-NNN-<judul>.md`, satu file per task. Task menjelaskan **cara** menyelesaikan story yang sudah ada. Frontmatter task berisi `status` dan, setelah task punya tiket Dayaboard, `ticket-id` (`conventions.md` §Frontmatter).
 
 Secara bawaan hanya role `engineer` yang dapat push task. Bila user bukan engineer, tanyakan dulu apakah ia ingin draf lokal untuk diserahkan ke engineer.
 
@@ -19,9 +19,17 @@ Secara bawaan hanya role `engineer` yang dapat push task. Bila user bukan engine
 - **Dependensi.** Dalam story yang sama cukup ID singkat (`be-001`). Rujukan ke story lain memakai story dan ID-nya (`mcat st-001 be-001`).
 - **Tiket.** Judul tiket di project tracker memakai format `[<epic> <story> <ID task>] <judul task>`, misalnya `[mcat st-003 be-001] Pembentukan section`.
 
+## Status task
+
+Setiap task punya `status` di frontmatter: `TODO` (task baru), `IN-PROGRESS`, `BLOCKED`, atau `DONE`, huruf besar semua (`conventions.md` §Frontmatter). Ubah sesuai keadaan sebenarnya. `DONE` hanya ditulis setelah task diimplementasi (kode ada dan syarat *Selesai bila* terpenuhi, atau user menyatakannya selesai). Untuk `BLOCKED`, tulis penyebabnya di baris **Menunggu**.
+
 ## Kerangka
 
 ```markdown
+---
+status: TODO
+---
+
 # be-001 — <judul task, kata kerja di depan>
 
 | | |

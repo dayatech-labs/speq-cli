@@ -66,7 +66,7 @@ ticket-id: DEV-42
 ---
 ```
 
-A story README or task without front matter gets this block above its `#` heading. A PRD already has front matter: add `ticket-id` next to `version` and `briefs`, change nothing else, and do **not** raise `version`. `ticket-id` marks that the document has a ticket. Never write it before the ticket exists, and never copy it from another document.
+A story README without front matter gets this block above its `#` heading. A task and a PRD already have front matter (`status`; `version` and `briefs`): add `ticket-id` next to the existing keys, change nothing else, and do **not** raise `version`. `ticket-id` marks that the document has a ticket. Never write it before the ticket exists, and never copy it from another document.
 
 **In the ticket**, the description **ends** with this footer, which the skill writes and keeps up to date. It is one line, because Dayaboard renders the description as markdown, where single newlines are not line breaks: a three-line block comes out as `…prd.mdSynced: 497ec45` run together. Separate the three parts with ` · `, and open the line with `> ` so it reads as a footnote rather than part of the requirements:
 

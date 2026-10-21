@@ -51,7 +51,8 @@ When the user asks for the whole chain, write it in order: PRD, then stories, th
 2. **Turn gaps into questions.** A missing number, rule, name, owner, or date becomes an open question in the checklist format of `conventions.md` §Pertanyaan terbuka. Write `menunggu: <ringkasan>` where the answer is needed. Never fill a gap with a plausible guess.
 3. **Use only four IDs:** `st-NNN`, `AC-NN`, `BR-NN`, and the task ID (`be-001`). Do not create FR, NFR, or numbered OQ IDs. A new number is the highest existing number + 1. Never renumber or reuse a number.
 4. **Keep the chain traceable:** every behavior has a source, every AC names what it tests, every task names its AC, and every AC is covered by a task.
-5. **Frontmatter has three keys only:** `version` (brief, PRD), `briefs` (PRD), and `ticket-id` (PRD, story README, task: the Dayaboard ticket key, written by the `speq-dayaboard` skill). Follow the rules and examples in `conventions.md` §Frontmatter. Keep an existing `ticket-id` when you edit a document; changing only `ticket-id` does not raise `version`. Other documents have no frontmatter.
+5. **Frontmatter has four keys only:** `version` (brief, PRD), `briefs` (PRD), `ticket-id` (PRD, story README, task: the Dayaboard ticket key, written by the `speq-dayaboard` skill), and `status` (task only: `TODO`, `IN-PROGRESS`, `BLOCKED`, `DONE`). Follow the rules and examples in `conventions.md` §Frontmatter. Keep an existing `ticket-id` when you edit a document; changing only `ticket-id` or `status` does not raise `version`. Other documents have no frontmatter.
+   - **Task `status`** is one of `TODO`, `IN-PROGRESS`, `BLOCKED`, `DONE`, all uppercase. Write a new task with `status: TODO`; set `IN-PROGRESS` while it is being implemented and `BLOCKED` when it cannot continue (say why in its **Menunggu** row). Set `DONE` **only after the task is actually implemented**: the code exists and the task's *Selesai bila* conditions hold, or the user says it is done. Never guess it.
 6. **Sources outside the repository** follow the table in `conventions.md` §Sumber di luar repository. Ask the user when you cannot tell whether data defines behavior or is content another team maintains.
 7. **Language.** Write in Bahasa Indonesia and keep the team's English terms (AC, endpoint, story, redirect). Write plain, specific sentences: who does what, with which value.
 8. **Update `llms.txt`:** one line, with a link and a short summary, for each new document.
@@ -77,7 +78,9 @@ Run the checklist in `references/review.md` §Daftar periksa per dokumen on ever
 | Mistake | Correct form |
 | --- | --- |
 | `FR-01`, `NFR-02`, or `OQ-03` in a document | Behaviors as a numbered list in the story, quality requirements as a list in PRD §7, open questions as a checklist |
-| `id`, `type`, `owner`, `status`, or other frontmatter keys | Only `version` (brief, PRD), `briefs` (PRD), and `ticket-id` (PRD, story README, task) |
+| `id`, `type`, `owner`, or other frontmatter keys, or `status` anywhere but a task | Only `version` (brief, PRD), `briefs` (PRD), `ticket-id` (PRD, story README, task), and `status` (task) |
+| `status: done`, `In Progress`, or `IN_PROGRESS` on a task | One of `TODO`, `IN-PROGRESS`, `BLOCKED`, `DONE`, uppercase, hyphen as shown |
+| `status: DONE` on a task that is only started, blocked, or partly built | `DONE` only once the task is implemented |
 | `briefs: [mcat-br-001]` in a PRD | `briefs: br-001@3`, built as in `conventions.md` §Frontmatter |
 | Editing a brief or PRD without raising `version` | Old value + 1 on every content change |
 | A plausible number fills a gap ("maksimal 3 kali", "5 detik") | An open question, plus `menunggu: <ringkasan>` where it is needed |
