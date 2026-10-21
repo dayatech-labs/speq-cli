@@ -27,8 +27,8 @@ Dipakai dalam tiga keadaan. Review menghasilkan laporan temuan dan tidak menguba
 | PRD | `version` ada. `briefs` memuat setiap brief epic dengan format `br-NNN@<version>`, dan setiap versi sama dengan `version` brief saat ini (bila tidak, PRD tertinggal; sebutkan brief-nya). Problem bernomor, goal merujuk problem, metrik terukur atau menjadi pertanyaan. Ringkasan story ada. Pertanyaan blocking menyebut story-nya |
 | Story | User story berisi role, kemampuan, dan manfaat. Setiap butir perilaku adalah satu perilaku yang dapat diamati, dengan sumber. Di luar ruang lingkup ditulis. Section desain menyebut perlu atau tidak |
 | Acceptance criteria | Given/When/Then. Setiap *Then* dapat diamati. Setiap butir perilaku story diuji minimal oleh satu AC. Ada kasus gagal. Tidak menyebut implementasi |
-| Task | Menyebut AC. Satu lapisan. Muat dalam satu PR. "Selesai bila" dapat diperiksa. Tidak menambah aturan bisnis. Dependensi merujuk ID yang ada. Nama tabel berprefix `master_` atau `trans_` |
-| Architecture | Jawaban tech discovery disertai bukti. Klaim tanpa bukti ditandai. Keputusan merujuk DR. Nama tabel baru berprefix `master_` atau `trans_` dan entitasnya terdaftar di pengelompokan prefix |
+| Task | Menyebut AC. Satu lapisan. Muat dalam satu PR. "Selesai bila" dapat diperiksa. Tidak menambah aturan bisnis. Dependensi merujuk ID yang ada. Nama tabel berprefix `master_` atau `trans_`. Tabel baru memuat enam kolom audit di migrasi yang sama |
+| Architecture | Jawaban tech discovery disertai bukti. Klaim tanpa bukti ditandai. Keputusan merujuk DR. Nama tabel baru berprefix `master_` atau `trans_` dan entitasnya terdaftar di pengelompokan prefix. Tabel baru memuat enam kolom audit di migrasi yang sama |
 | Decision Record | Konteks, opsi, keputusan, dan dampak ada. Nama dan role pengambil keputusan ditulis |
 
 **Gaya tulisan** (cukup yang mengganggu pemahaman)

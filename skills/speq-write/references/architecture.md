@@ -50,7 +50,7 @@ Catatan sistem yang ada dan relevan untuk epic ini:
 
 ## Data
 
-<Tabel, kolom, event, atau file yang berubah; migrasi yang diperlukan. Nama tabel mengikuti `conventions.md` §Nama tabel database (`master_` atau `trans_`).>
+<Tabel, kolom, event, atau file yang berubah; migrasi yang diperlukan. Nama tabel mengikuti `conventions.md` §Nama tabel database (`master_` atau `trans_`). Setiap tabel baru memuat keenam kolom audit di migrasi yang sama (`conventions.md` §Kolom audit tabel database).>
 
 ## Keputusan
 

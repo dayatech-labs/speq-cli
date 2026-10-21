@@ -43,6 +43,25 @@ Berlaku untuk setiap nama tabel yang ditulis di dokumen spesifikasi (architectur
 - Tabel tanpa prefix tidak boleh dibuat.
 - Pengelompokan entitas ke prefix ada di `architecture.md` produk (di repository `engaugemetrics-specs`: §5.5). Entitas baru yang belum terdaftar: tentukan prefix dari dua definisi di atas, lalu tambahkan ke daftar itu.
 
+## Kolom audit tabel database
+
+Berlaku untuk setiap tabel yang ditulis di dokumen spesifikasi (architecture, task, story) dan untuk migrasi yang dirujuk dokumen itu.
+
+- Setiap tabel wajib memuat keenam kolom audit di bawah, tanpa kecuali, di migrasi yang sama dengan tabelnya (bukan menyusul). Nama, tipe, dan urutannya sama di semua tabel, dan letaknya setelah kolom milik tabel itu:
+
+| Kolom | Tipe | Arti |
+| --- | --- | --- |
+| `created_at` | `DATETIME(3) NOT NULL` | Waktu baris dibuat |
+| `updated_at` | `DATETIME(3) NOT NULL` | Waktu ubah terakhir. Pakai `ON UPDATE CURRENT_TIMESTAMP(3)` atau isi dari aplikasi |
+| `created_by` | `CHAR(36) NULL` (tipe PK user) | Id user yang membuat, bila ada |
+| `updated_by` | `CHAR(36) NULL` | Id user yang terakhir mengubah, bila ada |
+| `deleted_at` | `DATETIME(3) NULL` | Soft delete. `NULL` berarti aktif |
+| `deleted_by` | `CHAR(36) NULL` | Id user yang menghapus, bila ada |
+
+- `created_by`, `updated_by`, dan `deleted_by` berisi id user bila ada. Bila perubahan tidak dilakukan oleh user (job terjadwal, proses sistem, atau pengguna belum login), kolomnya `NULL`.
+- Waktu diisi aplikasi dari jam server (UTC), satu nilai `now` yang sama dalam satu transaksi. `created_at` tidak pernah diubah setelah baris dibuat, dan `updated_at` sama dengan `created_at` saat baris dibuat.
+- Di dokumen spesifikasi, kolom audit tidak perlu diulang per tabel. Cukup tulis kolom milik tabel itu, dan pastikan migrasinya menambahkan keenam kolom audit.
+
 ## Istilah dan ID
 
 Hanya empat jenis ID yang dipakai. Jangan membuat ID lain (FR, NFR, OQ, atau sejenisnya).

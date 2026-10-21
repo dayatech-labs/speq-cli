@@ -51,7 +51,7 @@ status: TODO
 | --- | --- |
 | **Komponen** | <aplikasi, modul, route, atau file nyata> |
 | **Kontrak API** | <method + path + payload ringkas, atau tautan ke architecture.md> |
-| **Data** | <tabel/kolom/event yang berubah, atau "tidak ada"; nama tabel memakai prefix `master_` atau `trans_`> |
+| **Data** | <tabel/kolom/event yang berubah, atau "tidak ada"; nama tabel memakai prefix `master_` atau `trans_`; tabel baru memuat enam kolom audit di migrasi yang sama, lihat `conventions.md` §Kolom audit tabel database> |
 
 Aturan yang ditegakkan di task ini:
 
