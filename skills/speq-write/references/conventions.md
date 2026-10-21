@@ -33,6 +33,16 @@ Aturan nama:
 
 **Epic** adalah area produk jangka panjang (`mcat`, `landing-page`), tidak dibuat ulang untuk setiap permintaan. **Brief** adalah satu permintaan bisnis yang masuk ke epic. Permintaan berikutnya pada area yang sama menjadi `br-002`, `br-003`, dan seterusnya.
 
+## Nama tabel database
+
+Berlaku untuk setiap nama tabel yang ditulis di dokumen spesifikasi (architecture, task, story) dan untuk migrasi dan query yang dirujuk dokumen itu.
+
+- Nama tabel memakai prefix menurut jenis datanya, lalu `snake_case` tunggal.
+- `master_` untuk master data: data referensi, konfigurasi, dan entitas yang dikelola pengguna dan berubah jarang. Contoh: `master_role`, `master_organization`, `master_test`. Tabel relasi mengikuti induknya, mis. `master_role_permission`.
+- `trans_` untuk transaksi: data yang dihasilkan oleh aktivitas atau peristiwa dan bertambah seiring pemakaian. Contoh: `trans_session`, `trans_response`, `trans_audit_log`.
+- Tabel tanpa prefix tidak boleh dibuat.
+- Pengelompokan entitas ke prefix ada di `architecture.md` produk (di repository `engaugemetrics-specs`: §5.5). Entitas baru yang belum terdaftar: tentukan prefix dari dua definisi di atas, lalu tambahkan ke daftar itu.
+
 ## Istilah dan ID
 
 Hanya empat jenis ID yang dipakai. Jangan membuat ID lain (FR, NFR, OQ, atau sejenisnya).

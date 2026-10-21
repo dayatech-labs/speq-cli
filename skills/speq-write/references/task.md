@@ -43,7 +43,7 @@ Secara bawaan hanya role `engineer` yang dapat push task. Bila user bukan engine
 | --- | --- |
 | **Komponen** | <aplikasi, modul, route, atau file nyata> |
 | **Kontrak API** | <method + path + payload ringkas, atau tautan ke architecture.md> |
-| **Data** | <tabel/kolom/event yang berubah, atau "tidak ada"> |
+| **Data** | <tabel/kolom/event yang berubah, atau "tidak ada"; nama tabel memakai prefix `master_` atau `trans_`> |
 
 Aturan yang ditegakkan di task ini:
 

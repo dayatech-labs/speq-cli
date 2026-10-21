@@ -12,6 +12,7 @@ Ada dua tahap:
 - Setiap klaim tentang sistem yang ada menyebut buktinya: path file, endpoint, nama tabel, atau tautan dokumen. Klaim tanpa bukti ditulis `belum diverifikasi` dan dimasukkan ke daftar yang perlu dicek engineer.
 - Kalau sesi ini berjalan di repository implementasi, baca kodenya untuk menjawab pertanyaan teknis. Jangan menebak stack, versi, atau struktur.
 - Pilihan yang signifikan (database, layanan pihak ketiga, pola integrasi) ditulis singkat di tabel Keputusan, lalu diusulkan menjadi Decision Record (`decisions/dr-NNN-*.md`).
+- Tabel baru memakai prefix `master_` atau `trans_` (`conventions.md` §Nama tabel database). Entitas baru yang belum terdaftar di pengelompokan prefix produk ditambahkan ke sana.
 - Isi bisnis (aturan, angka) tidak ditulis ulang di sini. Rujuk perilaku story atau `BR-NN`.
 
 ## Kerangka
@@ -49,7 +50,7 @@ Catatan sistem yang ada dan relevan untuk epic ini:
 
 ## Data
 
-<Tabel, kolom, event, atau file yang berubah; migrasi yang diperlukan.>
+<Tabel, kolom, event, atau file yang berubah; migrasi yang diperlukan. Nama tabel mengikuti `conventions.md` §Nama tabel database (`master_` atau `trans_`).>
 
 ## Keputusan
 
