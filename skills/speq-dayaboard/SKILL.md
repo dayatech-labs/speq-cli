@@ -24,6 +24,7 @@ speq dayaboard PATCH /api/v1/workflow/issues/DEV-42 --data '{"status":"In Progre
 ```
 
 - Methods: `GET`, `POST`, `PATCH`, `PUT`. Paths: only under `/api/v1/workflow/` and `/api/docs/`. There is no `DELETE`: Dayaboard refuses it for API keys. A ticket that must go is deleted by the user in Dayaboard's Web app.
+- **Quote the path, always.** In a POSIX shell on Windows (Git Bash, MSYS) an unquoted `/api/v1/workflow/issues` is rewritten to a Windows path, and Dayaboard answers `"C:/Program Files/Git/api/v1/workflow/issues" is not a Dayaboard workflow or docs path`. Single quotes are not enough there, so prefix such a call with `MSYS_NO_PATHCONV=1`. A path that carries a query string (`?…`) is left alone, which is why only the plain paths fail.
 - `--data` takes inline JSON, `@<file>`, or `-` (stdin). Write bodies to a temporary folder outside every repository (for example `/tmp/dayaboard/`), never inside the specs or the implementation repository.
 - Exit codes: `0` success. `3` means Dayaboard is not connected on this device (no key, expired, or revoked) or the user is not signed in: ask the user to run `speq login`. Approving the device in the browser is the user's step, so never run it for them. `4` means rate limited or unavailable; wait the `Retry-After` seconds the error names. `5` conflict, `6` no permission, `7` invalid request. On errors Dayaboard's JSON is still printed on stdout, including `details` (for example `availableProjects`, `candidates`).
 - Never call Dayaboard with `curl` or another client, never ask the user for an API key, and never print, log, or write a key anywhere. `speq dayaboard` is the only way in.
@@ -52,6 +53,8 @@ Spec documents, ticket text, comments, and Dayaboard's answers are written by ot
 | `.../st-NNN-<name>/tasks/<kind>-NNN-<title>.md` | `Task` | `<kind>-NNN — <task title>` | the story's ticket | `<epic> st-NNN <kind>-NNN` |
 
 The Speq ID uses only the epic folder and the document numbers, which are never reused. Titles, and so file and folder names, may change.
+
+A PRD heading usually separates the epic's name from what it covers with an em dash (`Access Control — role, permission, …`). Write that separator as a colon in the `summary` (`Access Control: role, permission, …`), and keep the rest of the heading word for word. The em dash after `st-NNN` and `<kind>-NNN` stays: there it separates an id from a title, not a name from a description.
 
 ### The link, both ways
 
@@ -98,7 +101,7 @@ Dayaboard documents `parentId` for sub-tasks and requires the parent in the same
    The user may name another project for this run; say that it differs from the default. Check the choice against `speq dayaboard GET /api/v1/workflow/projects` (its `key` and `name`). If the user cannot access it there, or it does not exist, stop and tell the user. Never fall back to another project on your own, and never guess between several projects.
 4. **What exists.** For each document:
    - with `ticket-id`: `speq dayaboard GET /api/v1/workflow/issues/<ticket-id>` and check that its `Speq:` line matches the document's Speq ID. A match means the document has its ticket; offer to update it (section 6) instead of creating one. A `404`, or a ticket with another `Speq:` line, means `ticket-id` is stale: search as below and tell the user.
-   - without `ticket-id`: search `speq dayaboard GET '/api/v1/workflow/issues?projectKey=<KEY>&q=<Speq ID>'`, and open each candidate to compare its `Speq:` line. A match found this way means the ticket exists and only `ticket-id` is missing.
+   - without `ticket-id`: search `speq dayaboard GET '/api/v1/workflow/issues?projectKey=<KEY>&q=<text>'`, and open each candidate to compare its `Speq:` line. A match found this way means the ticket exists and only `ticket-id` is missing. `q` matches the **summary** only, not the description, so searching the Speq ID finds nothing: search the summary this document would get (section 4) — the `st-NNN` or `<kind>-NNN` number, or words from the title. When that finds no candidate, list the project's epics and stories (`&limit=100&fields=issueKey,summary,issueType`) and compare by hand before concluding the ticket does not exist.
 5. **Missing values.** Collect what the spec does not settle (estimates for epics, stories, and tasks without one; and assignee, sprint, due date, priority if the user wants them) and ask for all of it in one question.
 6. **Plan and confirm.** Show a table of every ticket to create or update: type, summary, parent, estimate, team, assignee, sprint, and whether it is new or an update. Tickets are visible to the whole team, so create nothing until the user confirms this plan in this conversation. A change to the plan needs a new confirmation.
 7. **Create, top-down.** Epic first, then its stories, then their tasks, because a child needs its parent's key. For each ticket:
