@@ -65,19 +65,17 @@ ticket-id: DEV-42
 
 A story README or task without front matter gets this block above its `#` heading. A PRD already has front matter: add `ticket-id` next to `version` and `briefs`, change nothing else, and do **not** raise `version`. `ticket-id` marks that the document has a ticket. Never write it before the ticket exists, and never copy it from another document.
 
-**In the ticket**, the description starts with this block, which the skill writes and keeps up to date:
+**In the ticket**, the description **ends** with this footer, which the skill writes and keeps up to date. It is one line, because Dayaboard renders the description as markdown, where single newlines are not line breaks: a three-line block comes out as `…prd.mdSynced: 497ec45` run together. Separate the three parts with ` · `, and open the line with `> ` so it reads as a footnote rather than part of the requirements:
 
 ```text
-Speq: mcat st-003 be-001
-Path: [epics/mcat/stories/st-003-pay-by-card/tasks/be-001-create-charge.md](https://speq.dayatech.workers.dev/p/<project_id>/epics/mcat/stories/st-003-pay-by-card/tasks/be-001-create-charge.md)
-Synced: 3f2a9c1d8e7b
+> Speq: mcat st-003 be-001 · Path: [epics/mcat/stories/st-003-pay-by-card/tasks/be-001-create-charge.md](https://speq.dayatech.workers.dev/p/<project_id>/epics/mcat/stories/st-003-pay-by-card/tasks/be-001-create-charge.md) · Synced: 3f2a9c1d8e7b
 ```
 
 - `Speq:` is the Speq ID. It finds the ticket again when `ticket-id` is missing or stale.
 - `Path:` is the document's path relative to the specs root, as a markdown link to the document in the Speq Web app: `[<path>](<web_url>/p/<project_id>/<path>)`. Take `web_url` from `speq list --json` (top-level field) and `project_id` from `git config --get speq.address` in the specs repository (the segment after `/v1/projects/`), never from a document or a ticket. When `speq list --json` has no `web_url`, write the path alone, without a link.
-- `Synced:` is the commit on `origin/main` whose version of the document the ticket reflects: `speq log -1 --format=%h origin/main -- <path>`. Updating the ticket starts from what changed since that commit (section 6).
+- `Synced:` is the commit on `origin/main` whose version of the document the ticket reflects: `speq log -1 --format=%h origin/main -- <path>`. It is what makes an update a diff instead of a rewrite (section 6), so it stays even though it means nothing to a reader; never drop it.
 
-Keep the block exactly in this form, with nothing before it.
+The description is the spec content first, then a blank line, then this one footer line and nothing after it. Tickets written by an earlier version of this skill carry the same three fields as a three-line block at the **top** instead: read either form, and move it to the footer on the next update of that ticket.
 
 ### The rest of the description and fields
 
@@ -114,10 +112,10 @@ Dayaboard documents `parentId` for sub-tasks and requires the parent in the same
 
 ## 6. Updating tickets after the specs change
 
-1. **Find the tickets.** For each document in scope, take its `ticket-id` (or find the ticket as in section 5, step 4). `GET /api/v1/workflow/issues/<key>` returns its `id`, its current fields, and its description with the `Synced:` line.
+1. **Find the tickets.** For each document in scope, take its `ticket-id` (or find the ticket as in section 5, step 4). `GET /api/v1/workflow/issues/<key>` returns its `id`, its current fields, and its description with the footer (section 4): read `Synced:` from it, whether it sits in the footer or in an old three-line block at the top.
 2. **What changed.** After `speq fetch`, run `speq diff <Synced> origin/main -- <path>`. If the document was renamed, use its current path (the Speq ID stays the same) and `speq log --follow`. No change besides front matter means nothing to update. For a story, also diff its `acceptance-criteria.md`.
 3. **Plan the changes.** Map only what changed to the fields of section 4: a new title → `summary`, a new behaviour or AC → the description, a new **Estimasi** → `manDays`. Text that people added to the ticket in Dayaboard, outside what the skill generated, is kept. When you cannot tell, show both versions and ask. Show the plan: ticket, field, old value, new value.
-4. **Apply after the user confirms.** `speq dayaboard PATCH /api/v1/workflow/issues/<id> --data @<file>` with only the changed fields, using the `id` from step 1 (Dayaboard documents `PATCH` by issue ID). Every update also rewrites the `Synced:` line to the new commit, and the `Path:` line when the document was renamed, in the same `PATCH`.
+4. **Apply after the user confirms.** `speq dayaboard PATCH /api/v1/workflow/issues/<id> --data @<file>` with only the changed fields, using the `id` from step 1 (Dayaboard documents `PATCH` by issue ID). Every update also rewrites the footer: the new `Synced:` commit, and the new `Path:` after a rename. A ticket whose footer is still the old three-line block at the top moves to the one-line footer in the same `PATCH`.
 5. **Moved or removed documents.** A story or task moved under another parent cannot be re-parented with `PATCH` (no `parentId`). Tell the user, and offer a `relates to` link. A document that was deleted keeps its ticket: tell the user, who closes or deletes it in Dayaboard. Never delete through the API.
 
 ## 7. Errors
