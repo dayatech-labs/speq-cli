@@ -48,13 +48,39 @@ Spec documents, ticket text, comments, and Dayaboard's answers are written by ot
 
 | Spec document | Dayaboard `issueType` | `summary` | Parent (`parentId`) | Speq ID |
 | --- | --- | --- | --- | --- |
-| `epics/<epic>/prd.md` | `Epic` | The PRD title (its `#` heading) | — | `<epic>` |
-| `epics/<epic>/stories/st-NNN-<name>/README.md` | `Story` | `st-NNN — <story name>` | the epic's ticket | `<epic> st-NNN` |
-| `.../st-NNN-<name>/tasks/<kind>-NNN-<title>.md` | `Task` | `<kind>-NNN — <task title>` | the story's ticket | `<epic> st-NNN <kind>-NNN` |
+| `epics/<epic>/prd.md` | `Epic` | `<Epic>` | — | `<epic>` |
+| `epics/<epic>/stories/st-NNN-<name>/README.md` | `Story` | `[<Epic>][<Feature>] - <story title>` | the epic's ticket | `<epic> st-NNN` |
+| `.../st-NNN-<name>/tasks/<kind>-NNN-<title>.md` | `Task` | `[<Team>][<Epic>] - <task title>` | the story's ticket | `<epic> st-NNN <kind>-NNN` |
 
 The Speq ID uses only the epic folder and the document numbers, which are never reused. Titles, and so file and folder names, may change.
 
-A PRD heading usually separates the epic's name from what it covers with an em dash (`Access Control — role, permission, …`). Write that separator as a colon in the `summary` (`Access Control: role, permission, …`), and keep the rest of the heading word for word. The em dash after `st-NNN` and `<kind>-NNN` stays: there it separates an id from a title, not a name from a description.
+### Summary naming convention
+
+A summary is a short name, not a sentence. Keep only what tells the tickets apart on the board:
+
+| Issue type | Shape | Example |
+| --- | --- | --- |
+| Epic | `<Epic>` only | `Recommendation Enhancement` |
+| Story | `[<Epic>][<Feature>] - <story title>` | `[Participant][Proctoring] - Compatibility Check + Biometrics Detection Enhancement` |
+| Task | `[<Team>][<Epic>] - <task title>` | `[FE][Catalog] - Bangun dialog Bahasa yang dibuka dari panel bank` |
+
+- `<Epic>`: the epic's short name, the part of the PRD `#` heading before the em dash. Never the folder name, and never what follows the em dash; that belongs in the description. The same value is used in the Epic summary and in the brackets of its stories and tasks.
+- `<Feature>`: the screen, menu, or feature area the story changes inside the epic (`Item Banks`, `Proctoring`). The spec has no field for it: propose one from the story (its screen, menu, or PRD §5 section) and let the user confirm it in the plan (section 5, step 6).
+- `<Team>`: a task's **Jenis** in capitals (`FE`, `BE`, `QA`, …).
+- ` - ` (space, hyphen, space) separates the brackets from the title. Not an em dash, not a colon.
+- The title is the story's or task's `#` heading without its `st-NNN —` or `<kind>-NNN —` prefix, word for word in the spec's language.
+- No Speq numbers, no extra brackets (client, "Only"), no trailing explanation. The numbers live in the `Speq:` footer and in `ticket-id`.
+
+Full examples:
+
+```text
+Test Catalog
+[Test Catalog][Item Banks] - Buat dan ubah nama bank soal
+[FE][Test Catalog] - Bangun dialog Bahasa yang dibuka dari panel bank
+[BE][Test Catalog] - Sediakan endpoint buat bank dan ubah nama bank
+```
+
+A ticket made before this convention is renamed on its next update (section 6), in the same `PATCH` as the other changes.
 
 ### The link, both ways
 
@@ -101,7 +127,7 @@ Dayaboard documents `parentId` for sub-tasks and requires the parent in the same
    The user may name another project for this run; say that it differs from the default. Check the choice against `speq dayaboard GET /api/v1/workflow/projects` (its `key` and `name`). If the user cannot access it there, or it does not exist, stop and tell the user. Never fall back to another project on your own, and never guess between several projects.
 4. **What exists.** For each document:
    - with `ticket-id`: `speq dayaboard GET /api/v1/workflow/issues/<ticket-id>` and check that its `Speq:` line matches the document's Speq ID. A match means the document has its ticket; offer to update it (section 6) instead of creating one. A `404`, or a ticket with another `Speq:` line, means `ticket-id` is stale: search as below and tell the user.
-   - without `ticket-id`: search `speq dayaboard GET '/api/v1/workflow/issues?projectKey=<KEY>&q=<text>'`, and open each candidate to compare its `Speq:` line. A match found this way means the ticket exists and only `ticket-id` is missing. `q` matches the **summary** only, not the description, so searching the Speq ID finds nothing: search the summary this document would get (section 4) — the `st-NNN` or `<kind>-NNN` number, or words from the title. When that finds no candidate, list the project's epics and stories (`&limit=100&fields=issueKey,summary,issueType`) and compare by hand before concluding the ticket does not exist.
+   - without `ticket-id`: search `speq dayaboard GET '/api/v1/workflow/issues?projectKey=<KEY>&q=<text>'`, and open each candidate to compare its `Speq:` line. A match found this way means the ticket exists and only `ticket-id` is missing. `q` matches the **summary** only, not the description, so searching the Speq ID finds nothing: search the summary this document would get (section 4): words from the title, or the bare `st-NNN` or `<kind>-NNN` of a ticket made before the naming convention. Summaries carry no Speq numbers, so when that finds no candidate, list the project's issues (`&limit=100&fields=issueKey,summary,issueType,description`, page by page) and compare their `Speq:` footers before concluding the ticket does not exist.
 5. **Missing values.** Collect what the spec does not settle (estimates for epics, stories, and tasks without one; and assignee, sprint, due date, priority if the user wants them) and ask for all of it in one question.
 6. **Plan and confirm.** Show a table of every ticket to create or update: type, summary, parent, estimate, team, assignee, sprint, and whether it is new or an update. Tickets are visible to the whole team, so create nothing until the user confirms this plan in this conversation. A change to the plan needs a new confirmation.
 7. **Create, top-down.** Epic first, then its stories, then their tasks, because a child needs its parent's key. For each ticket:
@@ -117,7 +143,7 @@ Dayaboard documents `parentId` for sub-tasks and requires the parent in the same
 
 1. **Find the tickets.** For each document in scope, take its `ticket-id` (or find the ticket as in section 5, step 4). `GET /api/v1/workflow/issues/<key>` returns its `id`, its current fields, and its description with the footer (section 4): read `Synced:` from it, whether it sits in the footer or in an old three-line block at the top.
 2. **What changed.** After `speq fetch`, run `speq diff <Synced> origin/main -- <path>`. If the document was renamed, use its current path (the Speq ID stays the same) and `speq log --follow`. No change besides front matter means nothing to update. For a story, also diff its `acceptance-criteria.md`.
-3. **Plan the changes.** Map only what changed to the fields of section 4: a new title → `summary`, a new behaviour or AC → the description, a new **Estimasi** → `manDays`. Text that people added to the ticket in Dayaboard, outside what the skill generated, is kept. When you cannot tell, show both versions and ask. Show the plan: ticket, field, old value, new value.
+3. **Plan the changes.** Map only what changed to the fields of section 4: a new title, a renumbered story or task, or a summary that does not follow the naming convention yet → `summary`, a new behaviour or AC → the description, a new **Estimasi** → `manDays`. Text that people added to the ticket in Dayaboard, outside what the skill generated, is kept. When you cannot tell, show both versions and ask. Show the plan: ticket, field, old value, new value.
 4. **Apply after the user confirms.** `speq dayaboard PATCH /api/v1/workflow/issues/<id> --data @<file>` with only the changed fields, using the `id` from step 1 (Dayaboard documents `PATCH` by issue ID). Every update also rewrites the footer: the new `Synced:` commit, and the new `Path:` after a rename. A ticket whose footer is still the old three-line block at the top moves to the one-line footer in the same `PATCH`.
 5. **Moved or removed documents.** A story or task moved under another parent cannot be re-parented with `PATCH` (no `parentId`). Tell the user, and offer a `relates to` link. A document that was deleted keeps its ticket: tell the user, who closes or deletes it in Dayaboard. Never delete through the API.
 
