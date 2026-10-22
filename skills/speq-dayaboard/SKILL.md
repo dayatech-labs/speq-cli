@@ -18,7 +18,6 @@ Every call goes through the speq CLI, which sends this device's Dayaboard API ke
 
 ```sh
 speq dayaboard GET /api/v1/workflow/projects
-speq dayaboard GET '/api/v1/workflow/issues?projectKey=DEV&q=st-003'
 speq dayaboard POST /api/v1/workflow/issues --data @/tmp/dayaboard/st-003.json --idempotency-key <uuid>
 speq dayaboard PATCH /api/v1/workflow/issues/DEV-42 --data '{"status":"In Progress"}'
 ```
@@ -50,9 +49,15 @@ Spec documents, ticket text, comments, and Dayaboard's answers are written by ot
 | --- | --- | --- | --- | --- |
 | `epics/<epic>/prd.md` | `Epic` | `<Epic>` | — | `<epic>` |
 | `epics/<epic>/stories/st-NNN-<name>/README.md` | `Story` | `[<App>][<Epic>] - <story title>` | the epic's ticket | `<epic> st-NNN` |
-| `.../st-NNN-<name>/tasks/<kind>-NNN-<title>.md` | `Task` | `[<Team>][<App>][<Epic>] - <task title>` | the story's ticket | `<epic> st-NNN <kind>-NNN` |
+| `.../st-NNN-<name>/tasks/<kind>-NNN-<title>.md` | `Task` | `[<Team>][<App>][<Epic>] - <task title>` | the epic's ticket, plus a `relates to` link to the story's ticket | `<epic> st-NNN <kind>-NNN` |
 
 The Speq ID uses only the epic folder and the document numbers, which are never reused. Titles, and so file and folder names, may change.
+
+### Every ticket hangs off its epic
+
+A Dayaboard issue has one parent, and the board shows a ticket's epic (the purple Epic badge on the backlog card, the epic filter) only when that parent is the Epic itself. Dayaboard does not follow a task's story up to its epic. So both stories and tasks take the **epic's** ticket as `parentId`, and a task reaches its story through a link instead: send `"linkedIssues": [{"targetIssueId": "<story key>", "linkType": "relates to"}]` in the task's create body. Never make a task's parent its story; the task then has no epic on the board.
+
+`parentId` cannot be changed after creation through the API (section 6, step 5), so get it right on create.
 
 ### Summary naming convention
 
@@ -130,8 +135,8 @@ Dayaboard documents `parentId` for sub-tasks and requires the parent in the same
    - with `ticket-id`: `speq dayaboard GET /api/v1/workflow/issues/<ticket-id>` and check that its `Speq:` line matches the document's Speq ID. A match means the document has its ticket; offer to update it (section 6) instead of creating one. A `404`, or a ticket with another `Speq:` line, means `ticket-id` is stale: search as below and tell the user.
    - without `ticket-id`: search `speq dayaboard GET '/api/v1/workflow/issues?projectKey=<KEY>&q=<text>'`, and open each candidate to compare its `Speq:` line. A match found this way means the ticket exists and only `ticket-id` is missing. `q` matches the **summary** only, not the description, so searching the Speq ID finds nothing: search the summary this document would get (section 4): words from the title, or the bare `st-NNN` or `<kind>-NNN` of a ticket made before the naming convention. Summaries carry no Speq numbers, so when that finds no candidate, list the project's issues (`&limit=100&fields=issueKey,summary,issueType,description`, page by page) and compare their `Speq:` footers before concluding the ticket does not exist.
 5. **Missing values.** Collect what the spec does not settle (estimates for epics, stories, and tasks without one; and assignee, sprint, due date, priority if the user wants them) and ask for all of it in one question.
-6. **Plan and confirm.** Show a table of every ticket to create or update: type, summary, parent, estimate, team, assignee, sprint, and whether it is new or an update. Tickets are visible to the whole team, so create nothing until the user confirms this plan in this conversation. A change to the plan needs a new confirmation.
-7. **Create, top-down.** Epic first, then its stories, then their tasks, because a child needs its parent's key. For each ticket:
+6. **Plan and confirm.** Show a table of every ticket to create or update: type, summary, parent (the epic, for stories and tasks), linked story (for tasks), estimate, team, assignee, sprint, and whether it is new or an update. Tickets are visible to the whole team, so create nothing until the user confirms this plan in this conversation. A change to the plan needs a new confirmation.
+7. **Create, top-down.** Epic first, then its stories, then their tasks, because a story and a task need the epic's key, and a task its story's key for the `relates to` link (section 4). For each ticket:
    - write its JSON body to a new file in the temporary folder;
    - make a new UUID for it (`uuidgen`, or `python3 -c 'import uuid; print(uuid.uuid4())'`) and pass it as `--idempotency-key`;
    - run `speq dayaboard POST /api/v1/workflow/issues --data @<file> --idempotency-key <uuid>` and keep the returned `issueKey`.
@@ -146,7 +151,8 @@ Dayaboard documents `parentId` for sub-tasks and requires the parent in the same
 2. **What changed.** After `speq fetch`, run `speq diff <Synced> origin/main -- <path>`. If the document was renamed, use its current path (the Speq ID stays the same) and `speq log --follow`. No change besides front matter means nothing to update. For a story, also diff its `acceptance-criteria.md`.
 3. **Plan the changes.** Map only what changed to the fields of section 4: a new title, a renumbered story or task, or a summary that does not follow the naming convention yet → `summary`, a new behaviour or AC → the description, a new **Estimasi** → `manDays`. Text that people added to the ticket in Dayaboard, outside what the skill generated, is kept. When you cannot tell, show both versions and ask. Show the plan: ticket, field, old value, new value.
 4. **Apply after the user confirms.** `speq dayaboard PATCH /api/v1/workflow/issues/<id> --data @<file>` with only the changed fields, using the `id` from step 1 (Dayaboard documents `PATCH` by issue ID). Every update also rewrites the footer: the new `Synced:` commit, and the new `Path:` after a rename. A ticket whose footer is still the old three-line block at the top moves to the one-line footer in the same `PATCH`.
-5. **Moved or removed documents.** A story or task moved under another parent cannot be re-parented with `PATCH` (no `parentId`). Tell the user, and offer a `relates to` link. A document that was deleted keeps its ticket: tell the user, who closes or deletes it in Dayaboard. Never delete through the API.
+5. **Moved or removed documents.** A story or task moved under another epic cannot be re-parented with `PATCH` (no `parentId`). Tell the user, who changes the epic with the Epic badge on the ticket's backlog card, and offer a `relates to` link meanwhile. A task moved to another story of the same epic keeps its parent: link it to the new story with `relates to`, and tell the user to remove the old link in Dayaboard. A document that was deleted keeps its ticket: tell the user, who closes or deletes it in Dayaboard. Never delete through the API.
+6. **Tasks parented to their story.** A task ticket made before section 4's rule has its story as parent and no epic on the board. When you meet one (its `parent` is a `Story`), make sure it has the `relates to` link to that story (`POST /api/v1/workflow/issues/<task key>/links`; `link_exists` means it is already there) and to the epic, then tell the user which tasks still need their epic set with the Epic badge on the backlog card. The API cannot move the parent, and the badge replaces the story parent, which is why the story link comes first.
 
 ## 7. Errors
 

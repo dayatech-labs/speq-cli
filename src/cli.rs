@@ -132,7 +132,7 @@ pub enum Command {
 
     /// Call the Dayaboard API (tickets) with this device's Dayaboard key
     #[command(
-        after_help = "Examples:\n  speq dayaboard GET /api/v1/workflow/projects\n  speq dayaboard GET '/api/v1/workflow/issues?projectKey=DEV&q=st-003'\n  speq dayaboard POST /api/v1/workflow/issues --data @story.json --idempotency-key <uuid>\n  speq dayaboard PATCH /api/v1/workflow/issues/DEV-12 --data '{\"status\":\"Done\"}'\n\nUses the Dayaboard API key `speq login` stored; the key is never printed. Only paths under /api/v1/workflow/ and\n/api/docs/ are allowed, and there is no DELETE (Dayaboard does deletions in its Web app). Dayaboard's JSON answer is\nprinted to stdout, also for errors, which then exit with the matching code. No key, an expired one, or one Dayaboard\nrejects exits with code 3: run `speq login` again. API reference: https://dayaboard.odyssey.co.id/llms-full.txt\n\n"
+        after_help = "Examples:\n  speq dayaboard GET /api/v1/workflow/projects\n  speq dayaboard POST /api/v1/workflow/issues --data @story.json --idempotency-key <uuid>\n  speq dayaboard PATCH /api/v1/workflow/issues/DEV-12 --data '{\"status\":\"Done\"}'\n\nUses the Dayaboard API key `speq login` stored; the key is never printed. Only paths under /api/v1/workflow/ and\n/api/docs/ are allowed, and there is no DELETE (Dayaboard does deletions in its Web app). Dayaboard's JSON answer is\nprinted to stdout, also for errors, which then exit with the matching code. No key, an expired one, or one Dayaboard\nrejects exits with code 3: run `speq login` again. API reference: https://dayaboard.odyssey.co.id/llms-full.txt\n\n"
     )]
     Dayaboard(DayaboardArgs),
 
