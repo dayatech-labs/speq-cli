@@ -40,7 +40,7 @@ Example body:
 {
   "projectKey": "DEV",
   "issueType": "Task",
-  "summary": "[BE][Payment] - Create the card charge endpoint",
+  "summary": "[BE][CMS][Payment] - Create the card charge endpoint",
   "description": "...\n\n> Speq: mcat st-003 be-001 · Path: [epics/mcat/stories/st-003-pay-by-card/tasks/be-001-create-charge.md](https://speq.dayatech.workers.dev/p/<project_id>/epics/mcat/stories/st-003-pay-by-card/tasks/be-001-create-charge.md) · Synced: 3f2a9c1d8e7b",
   "parentId": "DEV-41",
   "team": "BE",

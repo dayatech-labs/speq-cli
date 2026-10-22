@@ -49,8 +49,8 @@ Spec documents, ticket text, comments, and Dayaboard's answers are written by ot
 | Spec document | Dayaboard `issueType` | `summary` | Parent (`parentId`) | Speq ID |
 | --- | --- | --- | --- | --- |
 | `epics/<epic>/prd.md` | `Epic` | `<Epic>` | — | `<epic>` |
-| `epics/<epic>/stories/st-NNN-<name>/README.md` | `Story` | `[<Epic>][<Feature>] - <story title>` | the epic's ticket | `<epic> st-NNN` |
-| `.../st-NNN-<name>/tasks/<kind>-NNN-<title>.md` | `Task` | `[<Team>][<Epic>] - <task title>` | the story's ticket | `<epic> st-NNN <kind>-NNN` |
+| `epics/<epic>/stories/st-NNN-<name>/README.md` | `Story` | `[<App>][<Epic>] - <story title>` | the epic's ticket | `<epic> st-NNN` |
+| `.../st-NNN-<name>/tasks/<kind>-NNN-<title>.md` | `Task` | `[<Team>][<App>][<Epic>] - <task title>` | the story's ticket | `<epic> st-NNN <kind>-NNN` |
 
 The Speq ID uses only the epic folder and the document numbers, which are never reused. Titles, and so file and folder names, may change.
 
@@ -61,23 +61,24 @@ A summary is a short name, not a sentence. Keep only what tells the tickets apar
 | Issue type | Shape | Example |
 | --- | --- | --- |
 | Epic | `<Epic>` only | `Recommendation Enhancement` |
-| Story | `[<Epic>][<Feature>] - <story title>` | `[Participant][Proctoring] - Compatibility Check + Biometrics Detection Enhancement` |
-| Task | `[<Team>][<Epic>] - <task title>` | `[FE][Catalog] - Bangun dialog Bahasa yang dibuka dari panel bank` |
+| Story | `[<App>][<Epic>] - <story title>` | `[CMS][Test Catalog] - Buat dan ubah nama bank soal` |
+| Task | `[<Team>][<App>][<Epic>] - <task title>` | `[FE][CMS][Test Catalog] - Bangun dialog Bahasa yang dibuka dari panel bank` |
 
+- `<App>`: the application the story is delivered in, as the product names its apps (for example `CMS` for the console and `Participant` for the participant app). Read it from the story and the PRD (which app's screens or users it changes); when a story spans two apps, join them with `+` (`[CMS+Participant]`). The spec has no field for it, so show the proposed app in the plan (section 5, step 6) for the user to confirm. A task uses its story's app.
 - `<Epic>`: the epic's short name, the part of the PRD `#` heading before the em dash. Never the folder name, and never what follows the em dash; that belongs in the description. The same value is used in the Epic summary and in the brackets of its stories and tasks.
-- `<Feature>`: the screen, menu, or feature area the story changes inside the epic (`Item Banks`, `Proctoring`). The spec has no field for it: propose one from the story (its screen, menu, or PRD §5 section) and let the user confirm it in the plan (section 5, step 6).
-- `<Team>`: a task's **Jenis** in capitals (`FE`, `BE`, `QA`, …).
+- `<Team>`: a task's **Jenis** in capitals (`FE`, `BE`, `QA`, …). A task reads like its story with the team in front.
 - ` - ` (space, hyphen, space) separates the brackets from the title. Not an em dash, not a colon.
 - The title is the story's or task's `#` heading without its `st-NNN —` or `<kind>-NNN —` prefix, word for word in the spec's language.
-- No Speq numbers, no extra brackets (client, "Only"), no trailing explanation. The numbers live in the `Speq:` footer and in `ticket-id`.
+- No Speq numbers, no extra brackets (feature, client, "Only"), no trailing explanation. The numbers live in the `Speq:` footer and in `ticket-id`.
 
 Full examples:
 
 ```text
 Test Catalog
-[Test Catalog][Item Banks] - Buat dan ubah nama bank soal
-[FE][Test Catalog] - Bangun dialog Bahasa yang dibuka dari panel bank
-[BE][Test Catalog] - Sediakan endpoint buat bank dan ubah nama bank
+[CMS][Test Catalog] - Buat dan ubah nama bank soal
+[FE][CMS][Test Catalog] - Bangun dialog Bahasa yang dibuka dari panel bank
+[BE][CMS][Test Catalog] - Sediakan endpoint buat bank dan ubah nama bank
+[Participant][Test Delivery] - Cek perangkat
 ```
 
 A ticket made before this convention is renamed on its next update (section 6), in the same `PATCH` as the other changes.
