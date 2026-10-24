@@ -114,7 +114,33 @@ The description is the spec content first, then a blank line, then this one foot
 
 ### The rest of the description and fields
 
-- Epic: the PRD's problem and goals in a few lines. Story: the user story (**Pengguna**, **Goal**), the numbered behaviour list, and the acceptance criteria as a checklist (`- [ ] AC-01 …`) from `acceptance-criteria.md`. Task: **Rincian**, the AC it closes, and **Selesai bila**. Keep the spec's wording and language. Summarize; do not invent requirements. Open questions (`menunggu: …`) stay visible.
+- Keep the spec's wording and language. Summarize; do not invent requirements. Open questions (`menunggu: …`) and `[asumsi]` marks stay visible. What each issue type carries:
+  - **Epic:** the PRD's problem and goals in a few lines.
+  - **Story:** the sections of the story README in their own order, then the acceptance criteria, then the technical tasks, then the dependencies. The shape below is what the team reads on the board; it is assembled from three documents, so a story ticket is the only place they appear together.
+  - **Task:** **Rincian**, the AC it closes, and **Selesai bila**.
+
+A story description, in this order:
+
+| # | Heading | Source |
+| --- | --- | --- |
+| — | `**Acuan desain**: [<layar>](<tautan>)` as the first line, before section 1 | story **Acuan desain** |
+| 1 | `## 1. Latar Belakang` | story section 1 |
+| 2 | `## 2. User Story` | story section 2 |
+| 3 | `## 3. Ruang Lingkup` with **In scope** and **Out of scope** | story section 3 |
+| 4 | `## 4. Aktor & Hak Akses` | story section 4 |
+| 5 | `## 5. Pre-condition` | story section 5 |
+| 6 | `## 6. Alur Proses` with the main, alternative (`A1`…) and exception (`E1`…) flows | story section 6 |
+| 7 | `## 7. Perilaku` | story section 7 |
+| 8 | `## 8. Data dan Pemetaan`, the tables under their own sub-headings | story section 8 |
+| 9 | `## 9. Business Rules`, the `BR-NN` table | story section 9, plus the PRD §6 rules the story names |
+| 10 | `## 10. UI/UX` | story section 10 |
+| 11 | `## 11. Acceptance Criteria`, each AC as `**AC-NN: <judul>**` with its Given/When/Then | `acceptance-criteria.md` |
+| 12 | `## 12. Technical Task`, one sub-heading per task: its title, its Dayaboard key once it has one, and what it changes | `tasks/*.md` |
+| 13 | `## 13. Dependensi` | story section 11 |
+
+- A section the story writes as `—` is kept with `—` under it, so the numbering is the same on every ticket.
+- Sections 11 and 12 are a summary with a link to the task ticket, not a copy of the whole task document: the task's own ticket carries the detail.
+- A story written before 24 Okt 2026 may not have all eleven sections yet. Render what it has under the headings above, leave the rest out, and tell the user which sections the story is missing instead of inventing them.
 - `team`: a task's **Jenis** in capitals (`BE`, `FE`, `QA`, …). Leave it empty for epics and stories unless the user names a team.
 - Estimate: Dayaboard requires at least one of `storyPoints`, `manDays`, `manHours` greater than 0. A task's **Estimasi** is in working days, so send it as `manDays`. A missing estimate (`<hari kerja, diisi engineer>`, `—`, or empty), and every epic and story estimate, comes from the user. Never invent one.
 - `priority` (`Highest`, `High`, `Medium`, `Low`; Dayaboard defaults to `Medium`), `assignee` (email or name), `sprint` (`active`, a sprint name, or `backlog`), `startDate`/`dueDate` (`YYYY-MM-DD`): only from the user or the spec. Ask for them in one question with the estimates; leave out what the user does not give.

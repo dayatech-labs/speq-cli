@@ -4,9 +4,9 @@ Path: `epics/<epic>/stories/st-NNN-<nama>/acceptance-criteria.md`. AC menjelaska
 
 ## Aturan isi
 
-- Setiap butir di section Perilaku README story diuji minimal oleh satu AC. Judul AC menyebut yang diujinya: `(Perilaku 2)`, `(BR-01)`, atau `(PRD §7)`.
+- Setiap butir di section Perilaku README story diuji minimal oleh satu AC. Judul AC menyebut yang diujinya: `(Perilaku 2)`, `(§9 aturan 1)` untuk aturan story, `(BR-01)` untuk aturan PRD, `(A1)` atau `(E3)` untuk alur alternatif dan kegagalan di README section 6, atau `(PRD §7)`.
 - Format **Given / When / Then**. *Then* adalah hasil yang dapat diamati: teks yang tampil, status HTTP, data yang tersimpan, URL tujuan, atau waktu yang terukur. Kata seperti "berjalan dengan baik", "sesuai", atau "cepat" tidak dapat diuji.
-- Tulis juga kondisi gagal dan pengecualian yang penting: input tidak valid, waktu habis, koneksi putus, akses ditolak, data kosong.
+- Tulis juga kondisi gagal dan pengecualian yang penting: input tidak valid, waktu habis, koneksi putus, akses ditolak, data kosong. Setiap alur `A<n>` dan `E<n>` di README section 6 diuji minimal oleh satu AC.
 - Bila pengujian butuh pencocokan teks, tetapkan aturannya (kata utuh atau bagian kata, peka huruf besar atau tidak). Contoh: mencari "CORE" juga akan cocok dengan "SCORE".
 - AC tidak menyebut cara implementasi (nama tabel, komponen, library).
 - Nilai yang belum diputuskan ditulis `menunggu: <ringkasan pertanyaan> (PRD §10)`. AC itu tidak boleh diberi angka tebakan.

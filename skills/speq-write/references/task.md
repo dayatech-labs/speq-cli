@@ -14,7 +14,7 @@ Secara bawaan hanya role `engineer` yang dapat push task. Bila user bukan engine
 
 - **Satu task, satu PR.** Task dapat direview sendiri, selesai dalam sekitar dua hari kerja, dan berada di satu lapisan: `be`, `fe`, `qa`, atau jenis lain yang dipakai tim.
 - **Terhubung ke AC.** Setiap task menyebut AC yang diselesaikannya, dan setiap AC story ditutup minimal oleh satu task.
-- **Tidak menambah aturan bisnis.** Bila task membutuhkan aturan yang belum ada (batas retry, format, pesan error), tambahkan pertanyaannya ke README story section 6 dan kembalikan ke analyst.
+- **Tidak menambah aturan bisnis.** Bila task membutuhkan aturan yang belum ada (batas retry, format, pesan error), tambahkan pertanyaannya ke README story section 11 dan kembalikan ke analyst.
 - **Menunggu jawaban.** Task yang bergantung pada pertanyaan blocking menuliskannya di baris **Menunggu**.
 - **Dependensi.** Dalam story yang sama cukup ID singkat (`be-001`). Rujukan ke story lain memakai story dan ID-nya (`mcat st-001 be-001`).
 - **Tiket.** Judul tiket di project tracker memakai format `[<epic> <story> <ID task>] <judul task>`, misalnya `[mcat st-003 be-001] Pembentukan section`.
