@@ -216,3 +216,21 @@ jobs:
           $script = Invoke-RestMethod "https://github.com/${{ github.repository }}/releases/download/v$v/install.ps1"
           & ([scriptblock]::Create($script)) -Version $v
           & (Join-Path $env:LOCALAPPDATA "Speq\bin\speq.exe") --version
+
+  # Announces the release once the published installers work. GOOGLE_CHAT_WEBHOOK_URL is a repository secret
+  # (the URL is the credential); without it the release still succeeds and the run shows a warning.
+  notify:
+    needs: [plan, verify-install]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Announce the release in Google Chat
+        env:
+          WEBHOOK_URL: ${{ secrets.GOOGLE_CHAT_WEBHOOK_URL }}
+          TAG: ${{ needs.plan.outputs.tag }}
+          RELEASE_URL: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ needs.plan.outputs.tag }}
+        run: |
+          [ -n "$WEBHOOK_URL" ] || { echo "::warning::GOOGLE_CHAT_WEBHOOK_URL is not set; no release announcement"; exit 0; }
+          text=$(printf '*speq %s* is released and installs on Linux, macOS and Windows.\n<%s|Release notes> · commit %s\nUpgrade: `speq upgrade`' \
+            "$TAG" "$RELEASE_URL" "${GITHUB_SHA:0:7}")
+          jq -n --arg text "$text" '{text: $text}' |
+            curl --proto '=https' -fsS --retry 3 -o /dev/null -H 'Content-Type: application/json; charset=UTF-8' --data-binary @- "$WEBHOOK_URL"

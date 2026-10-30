@@ -37,6 +37,16 @@ download anonymously). To suppress a release for a code change, use a non-releas
    so a failed build leaves no tag, and users never see a partial release.
 5. **verify-install** — installs the published release with the real installers on Linux, macOS (both archs), and Windows, then
    runs `--version`, `help`, `upgrade --check`.
+6. **notify** — only when every install check passed: posts the tag, the release link, and the commit to Google Chat
+   through the `GOOGLE_CHAT_WEBHOOK_URL` repository secret. Without the secret the step only warns; a rejected post
+   fails the job (the release itself is already published).
+
+Set up the webhook (Google Chat space → *Apps & integrations* → *Webhooks*); the URL is the credential, so keep it a
+secret, never in the workflow:
+
+```bash
+gh secret set GOOGLE_CHAT_WEBHOOK_URL --repo dayatech-labs/speq-cli
+```
 
 A `workflow_dispatch` run re-evaluates the same rules on the current `main`; it cannot force a version. Dispatched on
 any other branch, `plan` is skipped and so is every job after it: only `main` publishes.

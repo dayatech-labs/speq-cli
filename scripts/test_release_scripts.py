@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Tests for next_version.py and stamp_version.py. Run: python3 scripts/test_release_scripts.py"""
+"""Tests for the release scripts and workflows. Run: python3 scripts/test_release_scripts.py"""
 import functools
 import contextlib
 import hashlib
+import json
 import http.server
 import os
 import pathlib
@@ -361,6 +362,70 @@ class ReleaseSigning(unittest.TestCase):
                 self.assertNotEqual(done.returncode, 0)
                 self.assertIn(message, done.stdout + done.stderr)
                 self.assertFalse((tmp / "dist" / "manifest.json.sig").exists())
+
+
+@unittest.skipUnless(shutil.which("bash") and shutil.which("jq"), "needs bash and jq")
+class ReleaseAnnouncement(unittest.TestCase):
+    """Runs the workflow's own Google Chat step, with a fake `curl` that records what it would send."""
+
+    TEXT = (HERE.parent / ".github/workflows/release.yml").read_text()
+    SCRIPT = step_script(TEXT, "Announce the release in Google Chat")
+    WEBHOOK = "https://chat.googleapis.com/v1/spaces/AAA/messages?key=k&token=t"
+
+    def announce(self, webhook=WEBHOOK, curl_exit=0, tag="v1.2.3"):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = pathlib.Path(tmp)
+            fake = tmp / "bin" / "curl"
+            fake.parent.mkdir()
+            fake.write_text(f'#!/bin/sh\nprintf "%s\\n" "$@" > "{tmp}/args"\ncat > "{tmp}/body"\nexit {curl_exit}\n')
+            fake.chmod(0o755)
+            env = {
+                **os.environ,
+                "PATH": f"{fake.parent}{os.pathsep}{os.environ['PATH']}",
+                "WEBHOOK_URL": webhook,
+                "TAG": tag,
+                "RELEASE_URL": f"https://github.com/dayatech-labs/speq-cli/releases/tag/{tag}",
+                "GITHUB_SHA": "0123456789abcdef0123456789abcdef01234567",
+            }
+            done = subprocess.run(["bash", "-e", "-c", self.SCRIPT], env=env, capture_output=True, text=True)
+            sent = (tmp / "args").exists()
+            args = (tmp / "args").read_text().splitlines() if sent else None
+            body = (tmp / "body").read_text() if sent else None
+            return done, args, body
+
+    def test_posts_the_version_release_link_and_commit_to_the_webhook(self):
+        done, args, body = self.announce()
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(args[-1], self.WEBHOOK, "the webhook URL reaches curl intact")
+        self.assertIn("=https", args, "plain HTTP is refused")
+        self.assertIn("-f", "".join(a for a in args if a.startswith("-") and not a.startswith("--")))
+        text = json.loads(body)["text"]
+        self.assertIn("*speq v1.2.3*", text)
+        self.assertIn("<https://github.com/dayatech-labs/speq-cli/releases/tag/v1.2.3|Release notes>", text)
+        self.assertIn("commit 0123456\n", text)
+
+    def test_quotes_and_newlines_stay_valid_json(self):
+        done, _, body = self.announce(tag='v1"\n\\x')
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn('*speq v1"\n\\x*', json.loads(body)["text"])
+
+    def test_a_missing_webhook_warns_and_sends_nothing(self):
+        done, args, _ = self.announce(webhook="")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIsNone(args)
+        self.assertIn("::warning::GOOGLE_CHAT_WEBHOOK_URL is not set", done.stdout)
+
+    def test_a_rejected_post_fails_the_step(self):
+        done, _, _ = self.announce(curl_exit=22)
+        self.assertNotEqual(done.returncode, 0)
+
+    def test_announces_only_after_the_published_release_installs(self):
+        notify = self.TEXT.split("\n  notify:\n", 1)[1]
+        self.assertRegex(notify, r"(?m)^    needs: \[plan, verify-install\]$")
+        self.assertNotRegex(notify, r"(?m)^    if:", "a condition such as always() would announce a failed release")
+        for name, text in Workflows.WORKFLOWS.items():
+            rest = text.replace(notify, "") if name == "release.yml" else text
+            self.assertNotIn("GOOGLE_CHAT_WEBHOOK_URL }}", rest, f"{name} reads the webhook outside `notify`")
 
 
 @unittest.skipUnless(shutil.which("pwsh"), "pwsh is not installed")
