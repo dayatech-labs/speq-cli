@@ -28,18 +28,22 @@ download anonymously). To suppress a release for a code change, use a non-releas
 ## What the workflow does
 
 1. **plan** — runs the release-script tests, computes `release`/`version`/`tag`; stops here when nothing is releasable or the
-   tag already exists. Releases are serialised (`concurrency: release`) so two quick pushes never collide.
+   tag already exists. Releases are serialised (`concurrency: release`) so two quick pushes never collide. Then
+   `scripts/release_notes.py` lists the commits since the last tag (merges left out), grouped into breaking changes,
+   features, fixes, performance, refactoring, and other changes, newest first, each with its commit link and author:
+   `release-notes.md` (the release body) and `chat-card.json` (the Google Chat card), in the `release-notes` artifact.
 2. **verify** — fmt, clippy, deny, installer lint.
 3. **build** (macOS ARM64, macOS Intel, Linux x86_64 musl, Windows x86_64 MSVC) — stamps the version, `cargo test`, release build
    with `SPEQ_COMMIT=<sha>`, smoke test `speq --version` (checks version, commit, target), package.
 4. **publish** — `SHA256SUMS`, `manifest.json`, rendered Homebrew/Scoop/WinGet files, `install.sh`, `install.ps1`; creates a
-   **draft** release, uploads everything, then publishes (`--latest`). The tag is created at that last step on the built commit,
+   **draft** release with `release-notes.md` as its body, uploads everything, then publishes (`--latest`). The tag is created at that last step on the built commit,
    so a failed build leaves no tag, and users never see a partial release.
 5. **verify-install** — installs the published release with the real installers on Linux, macOS (both archs), and Windows, then
    runs `--version`, `help`, `upgrade --check`.
-6. **notify** — only when every install check passed: posts the tag, the release link, and the commit to Google Chat
-   through the `GOOGLE_CHAT_WEBHOOK_URL` repository secret. Without the secret the step only warns; a rejected post
-   fails the job (the release itself is already published).
+6. **notify** — only when every install check passed: posts `chat-card.json` (a cards v2 message: the same groups, at most
+   30 commits, plus *Release notes* and *Compare* buttons) to Google Chat through the `GOOGLE_CHAT_WEBHOOK_URL`
+   repository secret. Without the secret the step only warns; a rejected card fails the job and prints Chat's error
+   (the release itself is already published).
 
 Set up the webhook (Google Chat space → *Apps & integrations* → *Webhooks*); the URL is the credential, so keep it a
 secret, never in the workflow:

@@ -16,7 +16,7 @@ import subprocess
 import sys
 
 FIRST_VERSION = (0, 1, 0)
-SUBJECT = re.compile(r"^(?P<type>[a-z]+)(?:\([^)]*\))?(?P<bang>!)?:\s+\S")
+SUBJECT = re.compile(r"^(?P<type>[a-z]+)(?:\((?P<scope>[^)]*)\))?(?P<bang>!)?:\s+\S")
 PATCH_TYPES = {"fix", "perf", "refactor"}
 
 
@@ -29,15 +29,24 @@ def last_tag(repo):
     return max(tags, key=lambda t: tuple(map(int, t[1:].split(".")))) if tags else None
 
 
+def parse(subject, body=""):
+    """(type, scope, summary, breaking) of a conventional-commit subject, or None when it has no type."""
+    match = SUBJECT.match(subject)
+    if not match:
+        return None
+    breaking = bool(match.group("bang") or re.search(r"^BREAKING[ -]CHANGE:", body, re.M))
+    return match.group("type"), match.group("scope"), subject[match.end() - 1 :], breaking
+
+
 def classify(commits):
     """commits: list of (subject, body). Returns 'major' | 'minor' | 'patch' | None."""
     level = None
     for subject, body in commits:
-        match = SUBJECT.match(subject)
-        if not match:
+        parsed = parse(subject, body)
+        if not parsed:
             continue
-        kind = match.group("type")
-        if match.group("bang") or re.search(r"^BREAKING[ -]CHANGE:", body, re.M):
+        kind, _, _, breaking = parsed
+        if breaking:
             return "major"
         if kind == "feat":
             level = "minor"

@@ -19,6 +19,7 @@ import unittest
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import next_version  # noqa: E402
+import release_notes  # noqa: E402
 
 
 def git(repo, *args):
@@ -364,60 +365,143 @@ class ReleaseSigning(unittest.TestCase):
                 self.assertFalse((tmp / "dist" / "manifest.json.sig").exists())
 
 
-@unittest.skipUnless(shutil.which("bash") and shutil.which("jq"), "needs bash and jq")
+class ReleaseNotes(unittest.TestCase):
+    """release_notes.py: the GitHub Release body and the Google Chat card, from the commits of the release."""
+
+    URL = "https://github.com/dayatech-labs/speq-cli"
+
+    def render(self, *steps, tag="v1.3.0"):
+        repo = repo_with(*steps)
+        out = pathlib.Path(repo) / "notes"
+        done = subprocess.run(
+            [sys.executable, str(HERE / "release_notes.py"), tag, self.URL, str(out), "--repo", repo], capture_output=True, text=True
+        )
+        self.assertEqual(done.returncode, 0, done.stderr)
+        sha = {s: h for h, s in (line.split(" ", 1) for line in next_version.git(repo, "log", "--format=%H %s").splitlines())}
+        return (out / "release-notes.md").read_text(), json.loads((out / "chat-card.json").read_text()), sha
+
+    def card_text(self, card):
+        sections = card["cardsV2"][0]["card"]["sections"]
+        return {s.get("header"): " ".join(w["textParagraph"]["text"] for w in s["widgets"] if "textParagraph" in w) for s in sections}
+
+    def test_notes_group_only_the_new_commits_by_type_and_link_each(self):
+        notes, _, sha = self.render(
+            ("commit", "feat: before the tag"),
+            ("tag", "v1.2.0"),
+            ("commit", "fix(api): one"),
+            ("commit", "docs: readme"),
+            ("commit", "feat(cli): two"),
+            ("commit", "update stuff"),
+            ("commit", "feat: three"),
+            ("commit", "refactor!: drop flag"),
+        )
+        self.assertNotIn("before the tag", notes)
+        headings = re.findall(r"(?m)^## (.*)$", notes)
+        self.assertEqual(headings, ["Breaking changes", "Features", "Fixes", "Other changes"])
+        features = notes.split("## Features\n\n", 1)[1].split("\n\n", 1)[0].splitlines()
+        three, two = sha["feat: three"], sha["feat(cli): two"]
+        self.assertEqual(
+            features,
+            [f"- three ([{three[:7]}]({self.URL}/commit/{three})) by t", f"- **cli:** two ([{two[:7]}]({self.URL}/commit/{two})) by t"],
+            "newest first, scope in bold",
+        )
+        self.assertIn("- drop flag (", notes.split("## Breaking changes", 1)[1])
+        other = notes.split("## Other changes", 1)[1]
+        self.assertIn("- update stuff (", other)
+        self.assertIn("- docs: readme (", other, "types that are not a section keep their prefix")
+        self.assertTrue(notes.endswith(f"**Full Changelog**: {self.URL}/compare/v1.2.0...v1.3.0\n"))
+
+    def test_a_breaking_change_footer_moves_a_commit_to_breaking(self):
+        notes, _, _ = self.render(("commit", "feat: x"), ("tag", "v1.2.0"), ("commit", "fix: old api\n\nBREAKING CHANGE: gone"))
+        self.assertEqual(re.findall(r"(?m)^## (.*)$", notes), ["Breaking changes"])
+
+    def test_the_first_release_lists_every_commit_and_links_the_history(self):
+        notes, card, _ = self.render(("commit", "feat: first"), ("commit", "fix: second"), tag="v0.1.0")
+        self.assertIn("- first (", notes)
+        self.assertIn("- second (", notes)
+        self.assertTrue(notes.endswith(f"**Full Changelog**: {self.URL}/commits/v0.1.0\n"))
+        self.assertTrue(card["cardsV2"][0]["card"]["header"]["subtitle"].startswith("2 commits first release"))
+
+    def test_card_has_the_same_groups_with_links_and_buttons(self):
+        _, card, sha = self.render(("commit", "feat: x"), ("tag", "v1.2.0"), ("commit", "fix(api): one"), ("commit", "feat: two"))
+        body = card["cardsV2"][0]
+        self.assertEqual(body["cardId"], "speq-release-v1.3.0")
+        self.assertEqual(body["card"]["header"]["title"], "speq v1.3.0 released")
+        self.assertTrue(body["card"]["header"]["subtitle"].startswith("2 commits since v1.2.0"))
+        text = self.card_text(card)
+        self.assertEqual(list(text), ["Features (1)", "Fixes (1)", None])
+        one = sha["fix(api): one"]
+        self.assertIn(f'<b>api:</b> one · <a href="{self.URL}/commit/{one}">{one[:7]}</a>', text["Fixes (1)"])
+        buttons = body["card"]["sections"][-1]["widgets"][-1]["buttonList"]["buttons"]
+        self.assertEqual(
+            [(b["text"], b["onClick"]["openLink"]["url"]) for b in buttons],
+            [("Release notes", f"{self.URL}/releases/tag/v1.3.0"), ("Compare", f"{self.URL}/compare/v1.2.0...v1.3.0")],
+        )
+
+    def test_card_escapes_html_in_subjects(self):
+        _, card, _ = self.render(("commit", "fix(<a>): keep <b>x</b> & \"y\""), tag="v0.1.0")
+        text = self.card_text(card)["Fixes (1)"]
+        self.assertIn("<b>&lt;a&gt;:</b> keep &lt;b&gt;x&lt;/b&gt; &amp; ", text)
+        self.assertNotIn("<b>x</b>", text)
+
+    def test_card_stops_at_the_limit_and_counts_the_rest(self):
+        limit = release_notes.CARD_COMMITS
+        _, card, _ = self.render(*[("commit", f"fix: f{i}") for i in range(limit - 2)], *[("commit", f"docs: d{i}") for i in range(5)], tag="v0.1.0")
+        text = self.card_text(card)
+        self.assertEqual(text[f"Fixes ({limit - 2})"].count("•"), limit - 2)
+        self.assertEqual(text["Other changes (5)"].count("•"), 2)
+        self.assertIn("…and 3 more in the release notes.", text[None])
+        self.assertEqual(json.dumps(card, ensure_ascii=False).count("•"), limit)
+
+    def test_wrong_arguments_print_the_usage(self):
+        done = subprocess.run([sys.executable, str(HERE / "release_notes.py"), "v1.0.0"], capture_output=True, text=True)
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn("Usage: release_notes.py", done.stderr)
+
+
+@unittest.skipUnless(shutil.which("bash"), "needs bash")
 class ReleaseAnnouncement(unittest.TestCase):
-    """Runs the workflow's own Google Chat step, with a fake `curl` that records what it would send."""
+    """Runs the workflow's own Google Chat step, with a fake `curl` that records what it is asked to send."""
 
     TEXT = (HERE.parent / ".github/workflows/release.yml").read_text()
     SCRIPT = step_script(TEXT, "Announce the release in Google Chat")
     WEBHOOK = "https://chat.googleapis.com/v1/spaces/AAA/messages?key=k&token=t"
 
-    def announce(self, webhook=WEBHOOK, curl_exit=0, tag="v1.2.3"):
+    def announce(self, webhook=WEBHOOK, curl_exit=0, response=None):
         with tempfile.TemporaryDirectory() as tmp:
             tmp = pathlib.Path(tmp)
             fake = tmp / "bin" / "curl"
             fake.parent.mkdir()
-            fake.write_text(f'#!/bin/sh\nprintf "%s\\n" "$@" > "{tmp}/args"\ncat > "{tmp}/body"\nexit {curl_exit}\n')
+            # Writes `response` where `-o` points, as curl --fail-with-body does with an error body.
+            write = f"printf '%s' '{response}' > chat-response.json\n" if response else ""
+            fake.write_text(f'#!/bin/sh\nprintf "%s\\n" "$@" > "{tmp}/args"\n{write}exit {curl_exit}\n')
             fake.chmod(0o755)
-            env = {
-                **os.environ,
-                "PATH": f"{fake.parent}{os.pathsep}{os.environ['PATH']}",
-                "WEBHOOK_URL": webhook,
-                "TAG": tag,
-                "RELEASE_URL": f"https://github.com/dayatech-labs/speq-cli/releases/tag/{tag}",
-                "GITHUB_SHA": "0123456789abcdef0123456789abcdef01234567",
-            }
-            done = subprocess.run(["bash", "-e", "-c", self.SCRIPT], env=env, capture_output=True, text=True)
-            sent = (tmp / "args").exists()
-            args = (tmp / "args").read_text().splitlines() if sent else None
-            body = (tmp / "body").read_text() if sent else None
-            return done, args, body
+            env = {**os.environ, "PATH": f"{fake.parent}{os.pathsep}{os.environ['PATH']}", "WEBHOOK_URL": webhook}
+            done = subprocess.run(["bash", "-e", "-c", self.SCRIPT], cwd=tmp, env=env, capture_output=True, text=True)
+            args = (tmp / "args").read_text().splitlines() if (tmp / "args").exists() else None
+            return done, args
 
-    def test_posts_the_version_release_link_and_commit_to_the_webhook(self):
-        done, args, body = self.announce()
+    def test_posts_the_card_from_the_release_notes_to_the_webhook(self):
+        done, args = self.announce()
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual(args[-1], self.WEBHOOK, "the webhook URL reaches curl intact")
-        self.assertIn("=https", args, "plain HTTP is refused")
-        self.assertIn("-f", "".join(a for a in args if a.startswith("-") and not a.startswith("--")))
-        text = json.loads(body)["text"]
-        self.assertIn("*speq v1.2.3*", text)
-        self.assertIn("<https://github.com/dayatech-labs/speq-cli/releases/tag/v1.2.3|Release notes>", text)
-        self.assertIn("commit 0123456\n", text)
-
-    def test_quotes_and_newlines_stay_valid_json(self):
-        done, _, body = self.announce(tag='v1"\n\\x')
-        self.assertEqual(done.returncode, 0, done.stderr)
-        self.assertIn('*speq v1"\n\\x*', json.loads(body)["text"])
+        self.assertEqual(args[args.index("--data-binary") + 1], "@notes/chat-card.json")
+        self.assertEqual(args[args.index("--proto") + 1], "=https", "plain HTTP is refused")
+        self.assertIn("--fail-with-body", args)
+        self.assertEqual(done.stdout, "", "a successful response is not printed")
 
     def test_a_missing_webhook_warns_and_sends_nothing(self):
-        done, args, _ = self.announce(webhook="")
+        done, args = self.announce(webhook="")
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertIsNone(args)
         self.assertIn("::warning::GOOGLE_CHAT_WEBHOOK_URL is not set", done.stdout)
 
-    def test_a_rejected_post_fails_the_step(self):
-        done, _, _ = self.announce(curl_exit=22)
+    def test_a_rejected_card_fails_the_step_and_shows_why(self):
+        done, _ = self.announce(curl_exit=22, response='{"error": "Invalid JSON payload"}')
         self.assertNotEqual(done.returncode, 0)
+        self.assertIn("Invalid JSON payload", done.stdout)
+        done, _ = self.announce(curl_exit=6)
+        self.assertNotEqual(done.returncode, 0, "no response at all still fails")
 
     def test_announces_only_after_the_published_release_installs(self):
         notify = self.TEXT.split("\n  notify:\n", 1)[1]
@@ -426,6 +510,18 @@ class ReleaseAnnouncement(unittest.TestCase):
         for name, text in Workflows.WORKFLOWS.items():
             rest = text.replace(notify, "") if name == "release.yml" else text
             self.assertNotIn("GOOGLE_CHAT_WEBHOOK_URL }}", rest, f"{name} reads the webhook outside `notify`")
+
+    def test_publish_and_notify_use_the_notes_from_plan(self):
+        plan = self.TEXT.split("\n  plan:\n", 1)[1].split("\n  verify:\n", 1)[0]
+        publish = self.TEXT.split("\n  publish:\n", 1)[1].split("\n  verify-install:\n", 1)[0]
+        notify = self.TEXT.split("\n  notify:\n", 1)[1]
+        self.assertIn("python3 scripts/release_notes.py", plan)
+        self.assertRegex(plan, r"name: release-notes\n\s+path: notes/\*")
+        self.assertIn("--notes-file notes/release-notes.md", publish)
+        self.assertNotIn("--generate-notes", publish)
+        for job in (publish, notify):
+            self.assertRegex(job, r"name: release-notes\n\s+path: notes\n")
+        self.assertNotIn("dist/notes", publish, "the notes are not uploaded as a release asset")
 
 
 @unittest.skipUnless(shutil.which("pwsh"), "pwsh is not installed")

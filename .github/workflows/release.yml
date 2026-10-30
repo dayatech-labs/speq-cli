@@ -46,6 +46,16 @@ jobs:
           if grep -q '^tag=' "$GITHUB_OUTPUT" && git rev-parse -q --verify "refs/tags/$(sed -n 's/^tag=//p' "$GITHUB_OUTPUT")" >/dev/null; then
             echo "tag already exists; refusing to release twice"; exit 1
           fi
+      # The commits of this release, for the GitHub Release body (publish) and the Google Chat card (notify).
+      - name: Release notes
+        if: steps.next.outputs.release == 'true'
+        run: python3 scripts/release_notes.py "${{ steps.next.outputs.tag }}" "${{ github.server_url }}/${{ github.repository }}" notes
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: steps.next.outputs.release == 'true'
+        with:
+          name: release-notes
+          path: notes/*
+          if-no-files-found: error
 
   verify:
     needs: plan
@@ -64,7 +74,7 @@ jobs:
         run: |
           sh -n scripts/install.sh
           shellcheck -S warning scripts/install.sh
-          python3 -m py_compile scripts/release_manifest.py scripts/render_packaging.py scripts/next_version.py scripts/stamp_version.py
+          python3 -m py_compile scripts/release_manifest.py scripts/render_packaging.py scripts/next_version.py scripts/release_notes.py scripts/stamp_version.py
 
   build:
     needs: [plan, verify]
@@ -147,6 +157,11 @@ jobs:
           pattern: dist-*
           merge-multiple: true
           path: dist
+      # Outside dist/: the notes are the release body, not an asset.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-notes
+          path: notes
       - name: Checksums, manifest, installers, package-manager files
         run: |
           version="${{ needs.plan.outputs.version }}"
@@ -177,7 +192,7 @@ jobs:
         run: |
           tag="${{ needs.plan.outputs.tag }}"
           # The tag does not exist yet: publishing the release creates it on the built commit.
-          gh release create "$tag" --draft --target "$GITHUB_SHA" --title "speq $tag" --generate-notes
+          gh release create "$tag" --draft --target "$GITHUB_SHA" --title "speq $tag" --notes-file notes/release-notes.md
           gh release upload "$tag" dist/* --clobber
           gh release edit "$tag" --draft=false --latest
 
@@ -223,14 +238,15 @@ jobs:
     needs: [plan, verify-install]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-notes
+          path: notes
+      # Chat's error body says which part of the card it rejected; a successful response is not printed.
       - name: Announce the release in Google Chat
         env:
           WEBHOOK_URL: ${{ secrets.GOOGLE_CHAT_WEBHOOK_URL }}
-          TAG: ${{ needs.plan.outputs.tag }}
-          RELEASE_URL: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ needs.plan.outputs.tag }}
         run: |
           [ -n "$WEBHOOK_URL" ] || { echo "::warning::GOOGLE_CHAT_WEBHOOK_URL is not set; no release announcement"; exit 0; }
-          text=$(printf '*speq %s* is released and installs on Linux, macOS and Windows.\n<%s|Release notes> · commit %s\nUpgrade: `speq upgrade`' \
-            "$TAG" "$RELEASE_URL" "${GITHUB_SHA:0:7}")
-          jq -n --arg text "$text" '{text: $text}' |
-            curl --proto '=https' -fsS --retry 3 -o /dev/null -H 'Content-Type: application/json; charset=UTF-8' --data-binary @- "$WEBHOOK_URL"
+          curl --proto '=https' -sS --fail-with-body --retry 3 -o chat-response.json -H 'Content-Type: application/json; charset=UTF-8' \
+            --data-binary @notes/chat-card.json "$WEBHOOK_URL" || { cat chat-response.json 2>/dev/null; exit 1; }

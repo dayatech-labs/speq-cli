@@ -55,7 +55,7 @@ jobs:
         with:
           persist-credentials: false
       - run: sh -n scripts/install.sh && shellcheck -S warning scripts/install.sh
-      - run: python3 -m py_compile scripts/release_manifest.py scripts/render_packaging.py scripts/next_version.py scripts/stamp_version.py
+      - run: python3 -m py_compile scripts/release_manifest.py scripts/render_packaging.py scripts/next_version.py scripts/release_notes.py scripts/stamp_version.py
       - run: python3 scripts/test_release_scripts.py
       - name: Release manifest and packaging render from sample binaries
         run: |
