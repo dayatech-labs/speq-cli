@@ -1,4 +1,5 @@
 //! Speq CLI library: everything the `speq` binary does, testable without a terminal.
+pub mod agent_instructions;
 pub mod api;
 pub mod cli;
 pub mod clone;

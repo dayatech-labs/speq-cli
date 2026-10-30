@@ -22,6 +22,8 @@ pub struct Env {
     pub dirs: AppDirs,
     /// The agents' personal skills folders, which `speq skills install` writes to.
     pub skills_dirs: Vec<PathBuf>,
+    /// The agents' personal instruction files (`CLAUDE.md`, `AGENTS.md`) that hold the speq block.
+    pub instruction_files: Vec<PathBuf>,
     pub creds: Arc<dyn CredentialStore>,
     pub open_browser: bool,
 }
@@ -33,6 +35,7 @@ impl Env {
             client: Client::new(api_url.clone())?,
             dirs: AppDirs::discover()?,
             skills_dirs: crate::skills::default_dirs()?,
+            instruction_files: crate::agent_instructions::default_files()?,
             creds: store(),
             api_url,
             open_browser,

@@ -186,6 +186,15 @@ impl Human for UninstallReport {
             let names: Vec<String> = names.into_iter().collect();
             facts.push(("skills", format!("removed ({})", names.join(", "))));
         }
+        if !self.removed_instructions.is_empty() {
+            facts.push((
+                "instructions",
+                format!(
+                    "speq block removed ({})",
+                    self.removed_instructions.join(", ")
+                ),
+            ));
+        }
         s.facts(&facts)
             .text("Specs repositories were left untouched; `speq deinit` removes one.");
         s.section(
@@ -304,6 +313,11 @@ impl Human for SkillsReport {
     fn human(&self, theme: &Theme) -> String {
         let mut facts = vec![("skills", self.skills.join(", "))];
         facts.extend(self.dirs.iter().map(|d| ("folder", d.clone())));
+        facts.extend(
+            self.instructions
+                .iter()
+                .map(|f| ("instructions", f.clone())),
+        );
         let mut s = Screen::new(theme);
         s.title(Tone::Ok, "Installed the Speq skills for AI coding agents")
             .facts(&facts)

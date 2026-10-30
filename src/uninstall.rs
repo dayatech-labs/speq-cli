@@ -1,4 +1,5 @@
-//! `speq uninstall`: remove this machine's Speq state, the agent skills, and, when the official installer placed it,
+//! `speq uninstall`: remove this machine's Speq state, the agent skills and their instruction block, and, when the
+//! official installer placed it,
 //! the binary and its Git helpers. Specs repositories are never touched, and the server-side session is not ended
 //! (`speq logout --all`). The command revokes the Dayaboard API key before this runs.
 use crate::env::Env;
@@ -19,6 +20,8 @@ pub struct UninstallReport {
     pub removed_binary: Option<String>,
     /// The agent skill folders that `speq skills install` had written.
     pub removed_skills: Vec<String>,
+    /// The `CLAUDE.md` and `AGENTS.md` files the speq block was removed from.
+    pub removed_instructions: Vec<String>,
     /// What is left for the user to do by hand.
     pub manual_steps: Vec<String>,
 }
@@ -56,6 +59,13 @@ pub fn uninstall(env: &Env, exe: &Path, install: &Install) -> Result<UninstallRe
         ));
         Vec::new()
     });
+    let removed_instructions = crate::agent_instructions::remove(&env.instruction_files)
+        .unwrap_or_else(|e| {
+            manual_steps.push(format!(
+                "the speq block could not be removed from the agent instructions ({e}); delete the lines from `<!-- speq:begin` to `<!-- speq:end -->` by hand"
+            ));
+            Vec::new()
+        });
 
     let removed_binary = match install {
         Install::Official => {
@@ -95,6 +105,7 @@ pub fn uninstall(env: &Env, exe: &Path, install: &Install) -> Result<UninstallRe
         data_dir: env.dirs.root().display().to_string(),
         removed_binary,
         removed_skills,
+        removed_instructions,
         manual_steps,
     })
 }

@@ -96,6 +96,10 @@ write permissions (read live from `speq list --json`). Ask your agent to use it 
 * review an existing document, or check whether a story is ready for engineering;
 * set up the first documents of a new product, or move existing `docs/` from an implementation repository into Speq.
 
+It also keeps `development_status.md` in the specs root current: every story of every epic, old and new, with its
+status worked out from the `status` of its tasks (a story is `DONE` once all its tasks are), and a `last-update` time.
+The agent rebuilds it whenever a story or task is added, removed, or changes status.
+
 `speq-dayaboard` turns an epic, its stories, and their tasks into Dayaboard tickets (Epic, Story, Task) through
 `speq dayaboard`, with the Dayaboard API key `speq login` stored. It finds tickets that already exist, asks for the
 estimates the specs leave open, and creates nothing before you confirm the plan. Each document then carries its ticket
@@ -107,7 +111,21 @@ No skill commits or pushes unless you ask. The installers run `speq skills insta
 `~/.agents/skills/` (Codex, Cursor, Copilot, Gemini CLI, OpenCode) and `~/.claude/skills/` (Claude Code; or
 `$CLAUDE_CONFIG_DIR/skills/`), and `speq upgrade` refreshes them, so the skills always match the CLI version. After
 installing with Homebrew, Scoop, WinGet, or by hand, run `speq skills install` yourself. Other skills in those folders
-are never touched; the `speq-review` skill of earlier versions is removed.
+are never touched; the `speq-review` skill of earlier versions is removed. `speq skills install` also keeps a short
+block, between `<!-- speq:begin` and `<!-- speq:end -->`, in the global instruction file of each agent installed on
+the machine, so the agent refreshes `development_status.md` in every session, not only when a skill is loaded:
+
+| Agent | File |
+| --- | --- |
+| Claude Code | `~/.claude/CLAUDE.md` (or `$CLAUDE_CONFIG_DIR/CLAUDE.md`) |
+| Codex | `~/.codex/AGENTS.md` (or `$CODEX_HOME/AGENTS.md`) |
+| Gemini CLI | `~/.gemini/GEMINI.md` |
+| OpenCode | `~/.config/opencode/AGENTS.md` (or `$XDG_CONFIG_HOME/opencode/AGENTS.md`) |
+| Copilot CLI | `~/.copilot/copilot-instructions.md` (or `$COPILOT_HOME/copilot-instructions.md`) |
+
+An agent whose folder does not exist gets no file. Cursor keeps global rules in Settings > Rules, not in a file: paste
+the block there by hand. The rest of those files is never changed, a newer `speq skills install` replaces the block,
+and `speq uninstall` removes only the block.
 
 ## Quick start
 
@@ -140,7 +158,7 @@ A step-by-step guide with every supported command, the everyday flow, and what t
 | `deinit [--yes]` | delete the specs repository (or a workspace of the older speq) to start over. Asks first on a terminal and names what would be lost: uncommitted changes, unpushed commits, stashes. The login and the `.gitignore` entry stay |
 | `context <epic>[/<story>[/<task>]]` | deterministic list of context files, from the working tree: `llms.txt`, root `README.md` and `architecture.md`, the epic's briefs, `prd.md`, `architecture.md`, then for `<epic>` every story (by folder name) with its tasks; for `<epic>/<story>` (`st-NNN-name` folder) the story's `README.md`, `acceptance-criteria.md`, `DESIGN.md`, `layout.html`, and tasks; for `<epic>/<story>/<task>` (task file name, `.md` optional) the same story files and only that task. Only files that exist; paths relative to where you are |
 | `push --squash [args]` | fold the commits not yet on the remote into one, then `git push [args]` (opt-in; see below) |
-| `skills install` | write the `speq-cli` and `speq-write` skills for AI coding agents |
+| `skills install` | write the `speq-cli`, `speq-dayaboard`, and `speq-write` skills for AI coding agents, and the speq block in their `CLAUDE.md` / `AGENTS.md` |
 | `upgrade` / `uninstall` | check for / install a newer `speq` (and refresh the skills); remove local data, the skills, and an official install |
 | **anything else** | Git: `speq <command> <args>` runs `git <command> <args>` in the specs repository you are in, or in `./specs` (from the implementation repository), with Git's exit code |
 
@@ -176,7 +194,7 @@ Only these paths are documents you can push (the API enforces the same rules; an
 read-only through Speq and is refused before anything is sent):
 
 ```text
-llms.txt, README.md, architecture.md
+llms.txt, development_status.md, README.md, architecture.md
 design/**.md and design/**.html
 epics/<epic>/prd.md, architecture.md
 epics/<epic>/briefs/br-NNN-<name>.md

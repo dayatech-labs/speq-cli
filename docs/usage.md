@@ -37,9 +37,9 @@ next step), and `--json` gives machine-readable output.
 | `speq deinit [--yes]` | Delete the specs repository (or a workspace of the older speq) to start over. Before deleting, speq names what would be lost: uncommitted changes, unpushed commits, and stashes |
 | `speq context <epic>[/<story>[/<task>]]` | The files a coding agent should read for one epic, story, or task, one path per line, relative to where you are. Examples: `speq context epic-payment`, `speq context epic-payment/st-001-create-payment`, `speq context epic-payment/st-001-create-payment/be-001-api` |
 | `speq dayaboard <GET\|POST\|PATCH\|PUT> <path> [--data <json\|@file\|->] [--idempotency-key <uuid>]` | Call the Dayaboard API (tickets) with the Dayaboard key `speq login` stored, and print its JSON answer. Only paths under `/api/v1/workflow/` and `/api/docs/`; no DELETE. Exit code 3 means run `speq login` again. Reference: https://dayaboard.odyssey.co.id/llms-full.txt |
-| `speq skills install` | Write the `speq-cli`, `speq-dayaboard`, and `speq-write` skills for AI coding agents to `~/.agents/skills` and `~/.claude/skills` (or `$CLAUDE_CONFIG_DIR/skills`). The installers and `speq upgrade` do this for you |
+| `speq skills install` | Write the `speq-cli`, `speq-dayaboard`, and `speq-write` skills for AI coding agents to `~/.agents/skills` and `~/.claude/skills` (or `$CLAUDE_CONFIG_DIR/skills`), and keep the speq block (refresh `development_status.md` after any story or task change) in the global instruction file of each installed agent: `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.gemini/GEMINI.md`, `~/.config/opencode/AGENTS.md`, `~/.copilot/copilot-instructions.md`. The installers and `speq upgrade` do this for you |
 | `speq upgrade [--check] [--yes] [--version X.Y.Z]` | Check for or install a newer `speq`, and refresh the skills |
-| `speq uninstall [--yes]` | Remove speq's local data and the skills, and the binary when the official installer put it there. Specs repositories are not touched |
+| `speq uninstall [--yes]` | Remove speq's local data, the skills and their block in `CLAUDE.md` / `AGENTS.md`, and the binary when the official installer put it there. Specs repositories are not touched |
 | `speq help [command]`, `speq --version` | Help and version |
 
 Global options for the commands above:
@@ -110,7 +110,7 @@ A single problem rejects the whole push, and nothing is written to the remote.
 - **No force pushes**, branch deletes, or tags.
 - **At most 20 commits per push.** For more, use `speq push --squash`.
 - **Author and committer must be your Speq account email.**
-- **Documents only:** `llms.txt`, `README.md`, `architecture.md`, `design/**` (`.md`/`.html`), and the documents under
+- **Documents only:** `llms.txt`, `development_status.md`, `README.md`, `architecture.md`, `design/**` (`.md`/`.html`), and the documents under
   `epics/` (`prd.md`, `architecture.md`, `briefs/`, `decisions/`, `stories/`). Files must be plain UTF-8 text, not
   symlinks and not executable.
 - **Within your role.** For example, analysts write PRDs and stories, engineers write architecture and tasks. A merge

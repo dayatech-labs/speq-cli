@@ -13,7 +13,7 @@ Dipakai dalam tiga keadaan. Review menghasilkan laporan temuan dan tidak menguba
 **Semua dokumen**
 
 - Path dan nama file sesuai `conventions.md`.
-- Frontmatter hanya memakai key yang diizinkan `conventions.md` §Frontmatter: `version` (brief, PRD), `briefs` (PRD), `ticket-id` (PRD, README story, task), `status` (task: `TODO`, `IN-PROGRESS`, `BLOCKED`, `DONE`, huruf besar; `DONE` hanya bila task sudah diimplementasi). Key lain dihapus; `ticket-id` yang sudah ada dipertahankan.
+- Frontmatter hanya memakai key yang diizinkan `conventions.md` §Frontmatter: `version` (brief, PRD), `briefs` (PRD), `ticket-id` (PRD, README story, task), `status` (task: `TODO`, `IN-PROGRESS`, `BLOCKED`, `DONE`, huruf besar; `DONE` hanya bila task sudah diimplementasi), `last-update` (`development_status.md`). Key lain dihapus; `ticket-id` yang sudah ada dipertahankan.
 - Tautan relatif mengarah ke file yang ada.
 - Setiap aturan, angka, nama, dan tanggal punya sumber (brief, PRD, BR, atau pertanyaan terbuka). Yang tidak bersumber dan belum diputuskan menjadi pertanyaan.
 - Tidak ada sisa template: `<...>`, `TBD`, `TODO`, atau komentar HTML.
@@ -30,6 +30,7 @@ Dipakai dalam tiga keadaan. Review menghasilkan laporan temuan dan tidak menguba
 | Task | Menyebut AC. Satu lapisan. Muat dalam satu PR. "Selesai bila" dapat diperiksa. Tidak menambah aturan bisnis. Dependensi merujuk ID yang ada. Nama tabel berprefix `master_` atau `trans_`. Tabel baru memuat enam kolom audit di migrasi yang sama |
 | Architecture | Jawaban tech discovery disertai bukti. Klaim tanpa bukti ditandai. Keputusan merujuk DR. Nama tabel baru berprefix `master_` atau `trans_` dan entitasnya terdaftar di pengelompokan prefix. Tabel baru memuat enam kolom audit di migrasi yang sama |
 | Decision Record | Konteks, opsi, keputusan, dan dampak ada. Nama dan role pengambil keputusan ditulis |
+| Development status | Setiap folder story di setiap epic tercantum, dan tidak ada story yang sudah dihapus. Setiap file task tercantum satu baris, dengan judul dan tautan yang benar. Status story dan status task cocok dengan `status` di file task saat ini, menurut aturan `references/development-status.md`. Angka ringkasan (epic, story per status, task DONE) cocok dengan isi file. `last-update` diperbarui setiap kali story atau task berubah |
 
 **Gaya tulisan** (cukup yang mengganggu pemahaman)
 

@@ -41,7 +41,10 @@ fn skills_install_writes_the_skills_for_every_agent_without_login() {
             .args(["--json", "skills", "install"])
             .env("HOME", home.path())
             .env("USERPROFILE", home.path())
-            .env_remove("CLAUDE_CONFIG_DIR");
+            .env_remove("CLAUDE_CONFIG_DIR")
+            .env_remove("CODEX_HOME")
+            .env_remove("XDG_CONFIG_HOME")
+            .env_remove("COPILOT_HOME");
         if let Some(dir) = claude_config {
             command.env("CLAUDE_CONFIG_DIR", dir);
         }
@@ -55,6 +58,8 @@ fn skills_install_writes_the_skills_for_every_agent_without_login() {
         serde_json::from_slice::<serde_json::Value>(&out.stdout).expect("json report")
     };
 
+    // Gemini CLI is installed on this machine; Codex, OpenCode and Copilot CLI are not.
+    std::fs::create_dir_all(home.path().join(".gemini")).expect("gemini folder");
     let body = install(None);
     assert_eq!(
         body["skills"],
@@ -69,6 +74,26 @@ fn skills_install_writes_the_skills_for_every_agent_without_login() {
         }
     }
 
+    let claude_md = home.path().join(".claude").join("CLAUDE.md");
+    let gemini_md = home.path().join(".gemini").join("GEMINI.md");
+    assert_eq!(
+        body["instructions"],
+        serde_json::json!([
+            claude_md.display().to_string(),
+            gemini_md.display().to_string()
+        ])
+    );
+    for file in [&claude_md, &gemini_md] {
+        let rules = std::fs::read_to_string(file).expect("instruction file");
+        assert!(rules.contains("development_status.md"), "{rules}");
+    }
+    for folder in [".codex", ".config", ".copilot"] {
+        assert!(
+            !home.path().join(folder).exists(),
+            "{folder}: an agent that is not installed gets no instruction file"
+        );
+    }
+
     let custom = home.path().join("claude-config");
     install(Some(&custom));
     for skill in ["speq-cli", "speq-dayaboard", "speq-write"] {
@@ -77,6 +102,7 @@ fn skills_install_writes_the_skills_for_every_agent_without_login() {
             "{skill}"
         );
     }
+    assert!(custom.join("CLAUDE.md").is_file());
 }
 
 #[test]

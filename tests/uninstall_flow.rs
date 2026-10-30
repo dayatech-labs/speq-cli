@@ -127,10 +127,13 @@ async fn an_official_uninstall_also_removes_the_git_helpers() {
 }
 
 #[tokio::test]
-async fn the_agent_skills_are_removed_from_every_folder_and_other_skills_are_kept() {
+async fn the_agent_skills_and_their_instruction_block_are_removed_and_the_rest_is_kept() {
     let api = FakeApi::start();
     let device = Device::new(&api);
-    speq::skills::install(&device.env.skills_dirs).unwrap();
+    let claude_md = &device.env.instruction_files[0];
+    std::fs::create_dir_all(claude_md.parent().unwrap()).unwrap();
+    std::fs::write(claude_md, "# My rules\n").unwrap();
+    speq::skills::install(&device.env.skills_dirs, &device.env.instruction_files).unwrap();
     let other = device.env.skills_dirs[1].join("my-skill/SKILL.md");
     std::fs::create_dir_all(other.parent().unwrap()).unwrap();
     std::fs::write(&other, "mine").unwrap();
@@ -150,6 +153,15 @@ async fn the_agent_skills_are_removed_from_every_folder_and_other_skills_are_kep
         }
     }
     assert!(other.exists());
+    assert_eq!(
+        report.removed_instructions,
+        vec![claude_md.display().to_string()]
+    );
+    assert_eq!(
+        std::fs::read_to_string(claude_md).unwrap(),
+        "# My rules\n",
+        "only the speq block leaves CLAUDE.md"
+    );
 }
 
 #[tokio::test]

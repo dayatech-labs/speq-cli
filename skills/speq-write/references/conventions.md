@@ -7,6 +7,7 @@ Berlaku untuk setiap dokumen di repository specs hasil `speq clone` (dari reposi
 ```text
 README.md                          # analyst: gambaran produk dan indeks epic
 llms.txt                           # semua role: indeks dokumen
+development_status.md              # semua role: status pengembangan setiap story, dihitung dari task
 architecture.md                    # engineer: arsitektur lintas epic
 design/DESIGN.md                   # ui_ux: aturan desain produk
 design/components/<nama>.html      # ui_ux: prototipe komponen bersama
@@ -25,7 +26,7 @@ epics/<epic>/
 
 Aturan nama:
 
-- Nama folder dan file memakai huruf kecil, angka, dan `-` saja. Pengecualian: `README.md` dan `DESIGN.md` ditulis kapital.
+- Nama folder dan file memakai huruf kecil, angka, dan `-` saja. Pengecualian: `README.md` dan `DESIGN.md` ditulis kapital, dan `development_status.md` memakai `_`.
 - Nomor memakai tiga digit (`001`, `002`, ..., `010`). Nomor tidak pernah dipakai ulang, juga setelah dokumennya dihapus. Nomor baru = nomor tertinggi yang ada + 1.
 - Nama setelah nomor paling panjang 50 karakter untuk folder story dan 80 karakter untuk file brief, decision, dan task.
 - Jenis task ditulis 2–8 huruf kecil: `be` (backend), `fe` (frontend), `qa` (data uji dan verifikasi), atau jenis lain yang dipakai tim. Nomor task dihitung per jenis di dalam satu story.
@@ -102,7 +103,7 @@ Hal yang belum diputuskan sumber (angka, nama, aturan, pemilik, tanggal) tidak b
 
 ## Frontmatter
 
-Hanya empat key yang boleh ada. Jangan menambahkan key lain di dokumen mana pun.
+Hanya lima key yang boleh ada. Jangan menambahkan key lain di dokumen mana pun.
 
 | Key | Dokumen | Arti |
 | --- | --- | --- |
@@ -110,6 +111,7 @@ Hanya empat key yang boleh ada. Jangan menambahkan key lain di dokumen mana pun.
 | `briefs` | PRD | Brief yang menjadi acuan saat PRD terakhir ditinjau. Dibaca Web app Speq. |
 | `ticket-id` | PRD, README story, task | Key tiket Dayaboard dokumen itu, misalnya `DEV-42`. |
 | `status` | task | Kemajuan task: `TODO`, `IN-PROGRESS`, `BLOCKED`, atau `DONE` (huruf besar semua). |
+| `last-update` | `development_status.md` | Waktu file terakhir disusun ulang, UTC ISO 8601 (`2026-10-30T08:15:00Z`). Lihat `references/development-status.md`. |
 
 Dokumen lain (acceptance criteria, architecture, decision, DESIGN, README produk) tidak memakai frontmatter sama sekali. README story hanya memakai frontmatter bila sudah punya tiket. Task selalu memakainya, karena setiap task punya `status`.
 
@@ -213,7 +215,7 @@ Izin bawaan (create dan update; delete dan restore mengikuti update):
 
 | Role | Boleh menulis |
 | --- | --- |
-| semua role | `llms.txt` |
+| semua role | `llms.txt`, `development_status.md` |
 | `po` | `epics/*/briefs/**` |
 | `analyst` | `README.md`, `epics/*/prd.md`, `epics/*/stories/*/README.md`, `epics/*/stories/*/acceptance-criteria.md`, `epics/*/decisions/**` |
 | `qa` | `epics/*/stories/*/acceptance-criteria.md`, `epics/*/decisions/**` |
@@ -260,7 +262,7 @@ Bila tidak jelas apakah sebuah data termasuk "menentukan logika" atau "konten ti
 | Product & requirements | `README.md`, PRD, story, acceptance criteria |
 | Business briefs | Brief epic |
 | Design | `design/DESIGN.md`, komponen, desain story |
-| Architecture & implementation | Arsitektur produk/epic dan task |
+| Architecture & implementation | Arsitektur produk/epic, task, dan `development_status.md` |
 | Decisions | Decision Record |
 
 Contoh baris: `  - [mcat st-003 — Pengerjaan section sesi 1](epics/mcat/stories/st-003-pengerjaan-section/README.md): soal per section dengan timer.`

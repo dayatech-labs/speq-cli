@@ -1069,6 +1069,10 @@ impl Device {
                 claude.path().join(".agents/skills"),
                 claude.path().join(".claude/skills"),
             ],
+            instruction_files: vec![
+                claude.path().join(".claude/CLAUDE.md"),
+                claude.path().join(".codex/AGENTS.md"),
+            ],
             creds: creds.clone(),
             api_url,
             open_browser: false,
@@ -1087,6 +1091,7 @@ impl Device {
             client: speq::api::Client::new(self.env.api_url.clone()).expect("client"),
             dirs: AppDirs::at(self.data.path()),
             skills_dirs: self.env.skills_dirs.clone(),
+            instruction_files: self.env.instruction_files.clone(),
             creds: self.creds.clone(),
             api_url: self.env.api_url.clone(),
             open_browser: false,

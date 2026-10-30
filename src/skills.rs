@@ -1,6 +1,7 @@
 //! Agent Skills (`SKILL.md`, agentskills.io) embedded in the binary, so the installed skills always match this CLI
 //! version. `speq skills install` writes them to `~/.agents/skills/` (Codex, Cursor, Copilot, Gemini CLI, OpenCode)
-//! and `~/.claude/skills/` (Claude Code; `$CLAUDE_CONFIG_DIR/skills/` when set).
+//! and `~/.claude/skills/` (Claude Code; `$CLAUDE_CONFIG_DIR/skills/` when set), then keeps the speq block in the
+//! agents' instruction files (`crate::agent_instructions`).
 use crate::error::{Error, IoContext, Result};
 use crate::fsx::{self, Visibility};
 use crate::paths::join_canonical;
@@ -27,6 +28,7 @@ pub const SKILLS: &[(&str, &str)] = skill_files![
     "speq-write/references/brief.md",
     "speq-write/references/conventions.md",
     "speq-write/references/decision.md",
+    "speq-write/references/development-status.md",
     "speq-write/references/import.md",
     "speq-write/references/new-product.md",
     "speq-write/references/prd.md",
@@ -45,6 +47,8 @@ const VERSION_PLACEHOLDER: &str = "__SPEQ_VERSION__";
 pub struct SkillsReport {
     pub dirs: Vec<String>,
     pub skills: Vec<String>,
+    /// The `CLAUDE.md` and `AGENTS.md` files that now hold the speq block.
+    pub instructions: Vec<String>,
 }
 
 /// Top-level skill folders, which `speq` owns entirely.
@@ -73,8 +77,9 @@ pub fn default_dirs() -> Result<Vec<PathBuf>> {
 }
 
 /// Replace the speq skill folders in every `dirs` entry with the embedded copy, so files dropped in a newer version
-/// (and retired skills) do not linger.
-pub fn install(dirs: &[PathBuf]) -> Result<SkillsReport> {
+/// (and retired skills) do not linger, then write the speq block into `instruction_files`. The skills come first, so
+/// Claude Code's folder exists when its `CLAUDE.md` is considered.
+pub fn install(dirs: &[PathBuf], instruction_files: &[PathBuf]) -> Result<SkillsReport> {
     remove(dirs)?;
     for dir in dirs {
         for (path, content) in SKILLS {
@@ -85,9 +90,11 @@ pub fn install(dirs: &[PathBuf]) -> Result<SkillsReport> {
             )?;
         }
     }
+    let instructions = crate::agent_instructions::install(instruction_files)?;
     Ok(SkillsReport {
         dirs: dirs.iter().map(|d| d.display().to_string()).collect(),
         skills: names().into_iter().map(String::from).collect(),
+        instructions,
     })
 }
 
@@ -150,7 +157,8 @@ mod tests {
 
     #[test]
     fn install_writes_every_skill_into_each_folder_and_drops_stale_and_retired_files() {
-        let (_root, dirs) = two_dirs();
+        let (root, dirs) = two_dirs();
+        let claude_md = root.path().join(".claude/CLAUDE.md");
         let stale = dirs[0].join("speq-write/references/old.md");
         let retired = dirs[1].join("speq-review/SKILL.md");
         for file in [&stale, &retired] {
@@ -158,7 +166,7 @@ mod tests {
             std::fs::write(file, "old").unwrap();
         }
 
-        let report = install(&dirs).unwrap();
+        let report = install(&dirs, std::slice::from_ref(&claude_md)).unwrap();
 
         assert_eq!(
             report.skills,
@@ -176,12 +184,18 @@ mod tests {
             "files left by an older version are removed"
         );
         assert!(!retired.exists(), "retired skills are removed");
+        assert_eq!(report.instructions, vec![claude_md.display().to_string()]);
+        assert_eq!(
+            std::fs::read_to_string(&claude_md).unwrap(),
+            crate::agent_instructions::BLOCK,
+            "the skills folder is written first, so Claude Code's folder exists for its CLAUDE.md"
+        );
     }
 
     #[test]
     fn every_installed_skill_names_the_cli_version_that_wrote_it() {
         let (_root, dirs) = two_dirs();
-        install(&dirs).unwrap();
+        install(&dirs, &[]).unwrap();
         for name in names() {
             let skill = std::fs::read_to_string(dirs[0].join(name).join("SKILL.md")).unwrap();
             assert!(
@@ -249,7 +263,7 @@ mod tests {
     #[test]
     fn remove_deletes_only_speq_skills_in_every_folder() {
         let (_root, dirs) = two_dirs();
-        install(&dirs).unwrap();
+        install(&dirs, &[]).unwrap();
         let retired = dirs[0].join("speq-review/SKILL.md");
         std::fs::create_dir_all(retired.parent().unwrap()).unwrap();
         std::fs::write(&retired, "old").unwrap();

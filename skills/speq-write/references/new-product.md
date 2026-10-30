@@ -38,11 +38,12 @@ Mulai setelah `speq clone` berhasil. Minta deskripsi produk ke user bila belum a
 | --- | --- |
 | `README.md` | Gambaran produk dalam satu paragraf, tabel epic (Epic, Cakupan, Brief aktif), struktur folder, ringkasan ID, dan tabel izin per role. Salin dari `conventions.md`, jangan mengarang aturan baru |
 | `llms.txt` | Judul produk, ringkasan satu kalimat dalam blockquote, lalu section sesuai `conventions.md` §`llms.txt`. Isi hanya dengan dokumen yang sudah ada |
+| `development_status.md` | Disusun menurut `references/development-status.md`: `last-update` dan satu section per epic, berisi `Belum ada story.` selama epic belum punya story |
 | `architecture.md` | Kerangka `references/architecture.md` untuk tingkat produk: Konteks, Komponen, Data, Keputusan, Risiko. Section yang belum diketahui diisi `Belum diisi engineer.` |
 | `design/DESIGN.md` | Kerangka aturan desain: prinsip, warna, tipografi, komponen bersama, aksesibilitas. Section yang belum diketahui diisi `Belum diisi ui_ux.` |
 | `epics/<epic>/briefs/br-001-<judul>.md` | Hanya bila user memberi catatan brief; ikuti `references/brief.md` dengan `version: 1` |
 
-Tidak ada frontmatter selain `version` di brief. `README.md` dari `gh repo create --add-readme` diganti seluruhnya.
+Tidak ada frontmatter selain `version` di brief dan `last-update` di `development_status.md`. `README.md` dari `gh repo create --add-readme` diganti seluruhnya.
 
 Push:
 

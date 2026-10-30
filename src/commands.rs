@@ -270,7 +270,10 @@ pub async fn run(cli: Cli, env: &Env) -> Result<u8> {
         }
         Command::Dayaboard(args) => dayaboard_command(env, args).await,
         Command::Skills(args) => match args.action {
-            SkillsAction::Install => Ok(emit(json, &skills::install(&env.skills_dirs)?)),
+            SkillsAction::Install => Ok(emit(
+                json,
+                &skills::install(&env.skills_dirs, &env.instruction_files)?,
+            )),
         },
         Command::Upgrade(args) => upgrade_command(json, args).await,
         Command::Uninstall(args) => uninstall_command(json, env, args).await,

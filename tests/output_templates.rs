@@ -163,15 +163,17 @@ fn uninstall_is_clean_only_when_nothing_is_left_to_do() {
             "/home/ana/.claude/skills/speq-review",
             "/home/ana/.claude/skills/speq-write",
         ]),
+        removed_instructions: strings(&["/home/ana/.claude/CLAUDE.md"]),
         manual_steps: vec![],
     };
     assert_eq!(
         plain(&report),
-        "✔ Removed speq's local data\n\n  credentials  removed\n  cached data  removed (/home/ana/.local/share/speq)\n  binary       removed (/home/ana/.local/bin/speq)\n  skills       removed (speq-review, speq-write)\n\n  Specs repositories were left untouched; `speq deinit` removes one."
+        "✔ Removed speq's local data\n\n  credentials   removed\n  cached data   removed (/home/ana/.local/share/speq)\n  binary        removed (/home/ana/.local/bin/speq)\n  skills        removed (speq-review, speq-write)\n  instructions  speq block removed (/home/ana/.claude/CLAUDE.md)\n\n  Specs repositories were left untouched; `speq deinit` removes one."
     );
 
     report.removed_binary = None;
     report.removed_skills.clear();
+    report.removed_instructions.clear();
     report.manual_steps = strings(&["Run `brew uninstall speq`"]);
     let out = plain(&report);
     assert!(
@@ -180,6 +182,7 @@ fn uninstall_is_clean_only_when_nothing_is_left_to_do() {
     );
     assert!(!out.contains("binary"), "{out}");
     assert!(!out.contains("skills"), "{out}");
+    assert!(!out.contains("instructions"), "{out}");
     assert!(
         out.ends_with("  To do by hand (1)\n    → Run `brew uninstall speq`"),
         "{out}"
@@ -266,10 +269,11 @@ fn skills_install_names_the_skills_every_folder_and_how_to_use_them() {
     let report = SkillsReport {
         dirs: strings(&["/home/ana/.agents/skills", "/home/ana/.claude/skills"]),
         skills: strings(&["speq-cli", "speq-write"]),
+        instructions: strings(&["/home/ana/.claude/CLAUDE.md", "/home/ana/.codex/AGENTS.md"]),
     };
     assert_eq!(
         plain(&report),
-        "✔ Installed the Speq skills for AI coding agents\n\n  skills  speq-cli, speq-write\n  folder  /home/ana/.agents/skills\n  folder  /home/ana/.claude/skills\n\n  → Start a new session of your coding agent (Claude Code, Codex, Cursor, Copilot, Gemini CLI, OpenCode), then ask it to use speq-cli or speq-write."
+        "✔ Installed the Speq skills for AI coding agents\n\n  skills        speq-cli, speq-write\n  folder        /home/ana/.agents/skills\n  folder        /home/ana/.claude/skills\n  instructions  /home/ana/.claude/CLAUDE.md\n  instructions  /home/ana/.codex/AGENTS.md\n\n  → Start a new session of your coding agent (Claude Code, Codex, Cursor, Copilot, Gemini CLI, OpenCode), then ask it to use speq-cli or speq-write."
     );
 }
 

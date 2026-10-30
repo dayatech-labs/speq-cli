@@ -23,6 +23,7 @@ const DESIGN_EXTENSIONS: [&str; 2] = [".md", ".html"];
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DocumentKind {
     Llms,
+    DevelopmentStatus,
     RootReadme,
     ProductArchitecture,
     Design,
@@ -131,6 +132,7 @@ pub fn document_kind(path: &str) -> Option<DocumentKind> {
     }
     match path {
         "llms.txt" => return Some(DocumentKind::Llms),
+        "development_status.md" => return Some(DocumentKind::DevelopmentStatus),
         "README.md" => return Some(DocumentKind::RootReadme),
         "architecture.md" => return Some(DocumentKind::ProductArchitecture),
         _ => {}
@@ -224,6 +226,7 @@ mod tests {
         use DocumentKind::*;
         for (path, kind) in [
             ("llms.txt", Llms),
+            ("development_status.md", DevelopmentStatus),
             ("README.md", RootReadme),
             ("architecture.md", ProductArchitecture),
             ("design/DESIGN.md", Design),
@@ -303,6 +306,10 @@ mod tests {
             "Architecture.md",
             "docs/architecture.md",
             "llms.md",
+            "Development_status.md",
+            "development-status.md",
+            "docs/development_status.md",
+            "epics/epic-payment/development_status.md",
             "layout.html",
             // briefs: prefix, digits (3+), name, extension, depth
             "epics/epic-payment/briefs/br-01-x.md",
