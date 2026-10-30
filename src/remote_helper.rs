@@ -175,7 +175,7 @@ pub fn collect_commits(git: &Git, local: &str, remote_head: &str) -> Result<Vec<
         for change in parse_diff_tree(&diff)? {
             if !is_canonical_document(&change.path) {
                 return Err(Error::invalid(format!(
-                    "{} is not a Speq document path; only llms.txt, development_status.md, README.md, architecture.md, design/ and epics/ documents can be pushed",
+                    "{} is not a Speq document path; only llms.txt, development-status.md, README.md, architecture.md, design/ and epics/ documents can be pushed",
                     change.path
                 )));
             }

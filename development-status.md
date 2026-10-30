@@ -8,6 +8,13 @@ Status pengembangan setiap story, dihitung dari `status` task-nya. Disusun ulang
 
 **Ringkasan:** 4 epic · 8 story: 1 DONE, 2 IN-PROGRESS, 1 BLOCKED, 2 TODO, 2 NO-TASK · task DONE 6/14
 
+| Epic | PRD | Story DONE | Task DONE |
+| --- | --- | --- | --- |
+| [landing-page](#landing-page) | [prd.md](epics/landing-page/prd.md) | 0/2 | 1/4 |
+| [mcat](#mcat) | [prd.md](epics/mcat/prd.md) | 1/5 | 5/8 |
+| [onboarding](#onboarding) | [prd.md](epics/onboarding/prd.md) | 0/1 | 0/2 |
+| [payment](#payment) | — | 0/0 | 0/0 |
+
 ## landing-page
 
 | Story | Status story | Task DONE | Task | Status task |

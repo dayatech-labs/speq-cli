@@ -1,6 +1,6 @@
 //! A short block of standing instructions that `speq skills install` keeps in the agents' personal instruction files
 //! (see [`default_files`]). Cursor keeps its global rules in its settings, not in a file, so it gets none. Skills load only when a request matches them; this block reminds the agent in every
-//! session to refresh `development_status.md` whenever a story or task changes. Only the text between the markers is
+//! session to refresh `development-status.md` whenever a story or task changes. Only the text between the markers is
 //! ours: the rest of the file is never changed, and `speq uninstall` removes just the block.
 use crate::error::{Error, IoContext, Result};
 use crate::fsx::{self, Visibility};
@@ -14,7 +14,7 @@ const END: &str = "<!-- speq:end -->";
 pub const BLOCK: &str = "<!-- speq:begin (written by `speq skills install` and removed by `speq uninstall`; edits inside are overwritten) -->
 ## Speq specs: development status
 
-In a Speq specs repository (its root holds `llms.txt` and `epics/`; from an implementation repository usually `./specs`), `development_status.md` in that root lists every story of every epic and how far its development is, worked out from the `status` of the story's tasks. Whenever you add, rename, or remove a story or a task, or change a task's `status` (also when you finish implementing a task), refresh `development_status.md` in the same change, as the `speq-write` skill describes in `references/development-status.md`.
+In a Speq specs repository (its root holds `llms.txt` and `epics/`; from an implementation repository usually `./specs`), `development-status.md` in that root lists every story of every epic and how far its development is, worked out from the `status` of the story's tasks. Whenever you add, rename, or remove a story or a task, or change a task's `status` (also when you finish implementing a task), refresh `development-status.md` in the same change, as the `speq-write` skill describes in `references/development-status.md`.
 <!-- speq:end -->
 ";
 
@@ -180,7 +180,7 @@ mod tests {
         assert!(BLOCK.starts_with(BEGIN));
         assert!(BLOCK.ends_with(&format!("{END}\n")));
         for needle in [
-            "development_status.md",
+            "development-status.md",
             "speq-write",
             "references/development-status.md",
             "`status`",

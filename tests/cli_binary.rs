@@ -85,7 +85,7 @@ fn skills_install_writes_the_skills_for_every_agent_without_login() {
     );
     for file in [&claude_md, &gemini_md] {
         let rules = std::fs::read_to_string(file).expect("instruction file");
-        assert!(rules.contains("development_status.md"), "{rules}");
+        assert!(rules.contains("development-status.md"), "{rules}");
     }
     for folder in [".codex", ".config", ".copilot"] {
         assert!(

@@ -96,8 +96,9 @@ write permissions (read live from `speq list --json`). Ask your agent to use it 
 * review an existing document, or check whether a story is ready for engineering;
 * set up the first documents of a new product, or move existing `docs/` from an implementation repository into Speq.
 
-It also keeps `development_status.md` in the specs root current: every story of every epic, old and new, with its
-status worked out from the `status` of its tasks (a story is `DONE` once all its tasks are), and a `last-update` time.
+It also keeps `development-status.md` in the specs root current: every story of every epic, old and new, with its
+status worked out from the `status` of its tasks (a story is `DONE` once all its tasks are), a table of epics linking to
+each epic's section and its `prd.md`, and a `last-update` time.
 The agent rebuilds it whenever a story or task is added, removed, or changes status.
 
 `speq-dayaboard` turns an epic, its stories, and their tasks into Dayaboard tickets (Epic, Story, Task) through
@@ -113,7 +114,7 @@ No skill commits or pushes unless you ask. The installers run `speq skills insta
 installing with Homebrew, Scoop, WinGet, or by hand, run `speq skills install` yourself. Other skills in those folders
 are never touched; the `speq-review` skill of earlier versions is removed. `speq skills install` also keeps a short
 block, between `<!-- speq:begin` and `<!-- speq:end -->`, in the global instruction file of each agent installed on
-the machine, so the agent refreshes `development_status.md` in every session, not only when a skill is loaded:
+the machine, so the agent refreshes `development-status.md` in every session, not only when a skill is loaded:
 
 | Agent | File |
 | --- | --- |
@@ -194,7 +195,7 @@ Only these paths are documents you can push (the API enforces the same rules; an
 read-only through Speq and is refused before anything is sent):
 
 ```text
-llms.txt, development_status.md, README.md, architecture.md
+llms.txt, development-status.md, README.md, architecture.md
 design/**.md and design/**.html
 epics/<epic>/prd.md, architecture.md
 epics/<epic>/briefs/br-NNN-<name>.md
