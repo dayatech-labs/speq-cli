@@ -36,8 +36,9 @@ next step), and `--json` gives machine-readable output.
 | `speq clone <repo> [dir]` | Clone a specs repository as a Git repository wired to Speq. `<repo>` can be `owner/repo`, the repo name, or the project name when it is unique in `speq list`. Default `dir`: `specs` when run inside a Git repository (it is then added to that repository's `.gitignore`), else the repo name |
 | `speq deinit [--yes]` | Delete the specs repository (or a workspace of the older speq) to start over. Before deleting, speq names what would be lost: uncommitted changes, unpushed commits, and stashes |
 | `speq context <epic>[/<story>[/<task>]]` | The files a coding agent should read for one epic, story, or task, one path per line, relative to where you are. Examples: `speq context epic-payment`, `speq context epic-payment/st-001-create-payment`, `speq context epic-payment/st-001-create-payment/be-001-api` |
+| `speq impact <epic>/<story> AC-NN` / `speq impact <epic> BR-NN [--code <dir>]...` | What changing one acceptance criterion or business rule reaches: where it is written, the documents citing it, the criteria it covers, the tasks naming them with `status` and `ticket-id`, and the code lines claiming them. Read-only. Examples: `speq impact epic-payment/st-001-create-payment AC-04`, `speq impact epic-payment BR-03 --code ../payment-backend` |
 | `speq dayaboard <GET\|POST\|PATCH\|PUT> <path> [--data <json\|@file\|->] [--idempotency-key <uuid>]` | Call the Dayaboard API (tickets) with the Dayaboard key `speq login` stored, and print its JSON answer. Only paths under `/api/v1/workflow/` and `/api/docs/`; no DELETE. Exit code 3 means run `speq login` again. Reference: https://dayaboard.odyssey.co.id/llms-full.txt |
-| `speq skills install` | Write the `speq-cli`, `speq-dayaboard`, and `speq-write` skills for AI coding agents to `~/.agents/skills` and `~/.claude/skills` (or `$CLAUDE_CONFIG_DIR/skills`), and keep the speq block (refresh `development-status.md` after any story or task change) in the global instruction file of each installed agent: `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.gemini/GEMINI.md`, `~/.config/opencode/AGENTS.md`, `~/.copilot/copilot-instructions.md`. The installers and `speq upgrade` do this for you |
+| `speq skills install` | Write the `speq-cli`, `speq-dayaboard`, `speq-impact`, `speq-interview`, and `speq-write` skills for AI coding agents to `~/.agents/skills` and `~/.claude/skills` (or `$CLAUDE_CONFIG_DIR/skills`), and keep the speq block (refresh `development-status.md` after any story or task change) in the global instruction file of each installed agent: `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.gemini/GEMINI.md`, `~/.config/opencode/AGENTS.md`, `~/.copilot/copilot-instructions.md`. The installers and `speq upgrade` do this for you |
 | `speq upgrade [--check] [--yes] [--version X.Y.Z]` | Check for or install a newer `speq`, and refresh the skills |
 | `speq uninstall [--yes]` | Remove speq's local data, the skills and their block in `CLAUDE.md` / `AGENTS.md`, and the binary when the official installer put it there. Specs repositories are not touched |
 | `speq help [command]`, `speq --version` | Help and version |
@@ -184,6 +185,25 @@ Every target starts with `llms.txt`, the root `README.md` and `architecture.md`,
 | `epic-payment` | every story of the epic, by folder name, each with its `README.md`, `acceptance-criteria.md`, `DESIGN.md`, `layout.html`, and tasks |
 | `epic-payment/st-001-create-payment` | that story's `README.md`, `acceptance-criteria.md`, `DESIGN.md`, `layout.html`, and tasks |
 | `epic-payment/st-001-create-payment/be-001-api` | that story's `README.md`, `acceptance-criteria.md`, `DESIGN.md`, `layout.html`, and only `tasks/be-001-api.md` (`.md` in the target is optional) |
+
+### Before changing a criterion or a rule
+
+```bash
+speq impact epic-payment BR-03 --code ../payment-backend --code ../payment-frontend
+```
+
+It lists where `BR-03` is written in the PRD, the epic's documents that cite it, every acceptance criterion whose
+section names it, the tasks naming those criteria with their `status` and `ticket-id`, and the code lines that name the
+story and the criterion together, such as a test titled `(st-001 AC-04)`. A `DONE` task is flagged: its code was built
+against the old text, so reopen it before the change. Criteria no code line names are listed at the end. Without
+`--code`, speq searches the repository around `./specs`. Nothing is changed.
+
+`speq push` runs the same check on what it sends. When a commit changes or removes a criterion, or a business rule
+of a PRD, that a `DONE` task of the same epic still names (a rule also through the criteria that name it), it prints
+those tasks and their tickets before pushing. The push still goes ahead.
+
+A code line that names a story without its epic, such as `(st-008 AC-05)`, is listed apart when another epic also
+has an `st-008`: it may be that epic's test. Name the epic in the test title (`pay st-008 AC-05`) to settle it.
 
 ### Running speq through an AI coding agent
 

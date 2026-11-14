@@ -16,13 +16,22 @@ fn speq(args: &[&str]) -> (i32, String, String) {
     )
 }
 
-const COMMANDS: [&str; 9] = [
+const SKILLS: [&str; 5] = [
+    "speq-cli",
+    "speq-dayaboard",
+    "speq-impact",
+    "speq-interview",
+    "speq-write",
+];
+
+const COMMANDS: [&str; 10] = [
     "login",
     "logout",
     "list",
     "clone",
     "deinit",
     "context",
+    "impact",
     "skills",
     "upgrade",
     "uninstall",
@@ -63,10 +72,16 @@ fn skills_install_writes_the_skills_for_every_agent_without_login() {
     let body = install(None);
     assert_eq!(
         body["skills"],
-        serde_json::json!(["speq-cli", "speq-dayaboard", "speq-write"])
+        serde_json::json!([
+            "speq-cli",
+            "speq-dayaboard",
+            "speq-impact",
+            "speq-interview",
+            "speq-write"
+        ])
     );
     for dir in [".agents/skills", ".claude/skills"] {
-        for skill in ["speq-cli", "speq-dayaboard", "speq-write"] {
+        for skill in SKILLS {
             assert!(
                 home.path().join(dir).join(skill).join("SKILL.md").is_file(),
                 "{dir}/{skill}"
@@ -96,7 +111,7 @@ fn skills_install_writes_the_skills_for_every_agent_without_login() {
 
     let custom = home.path().join("claude-config");
     install(Some(&custom));
-    for skill in ["speq-cli", "speq-dayaboard", "speq-write"] {
+    for skill in SKILLS {
         assert!(
             custom.join("skills").join(skill).join("SKILL.md").is_file(),
             "{skill}"
@@ -173,6 +188,7 @@ fn usage_errors_of_speq_commands_exit_2() {
     assert_eq!(speq(&["clone"]).0, 2);
     assert_eq!(speq(&["upgrade", "--force"]).0, 2);
     assert_eq!(speq(&["context"]).0, 2);
+    assert_eq!(speq(&["impact", "epic-payment"]).0, 2);
     assert_eq!(speq(&["login", "extra"]).0, 2);
 }
 

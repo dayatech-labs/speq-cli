@@ -5,6 +5,7 @@ use crate::context::ContextReport;
 use crate::dayaboard::{Connection, Revocation};
 use crate::deinit::DeinitReport;
 use crate::error::{Error, exit};
+use crate::impact::{ImpactReport, Line as ImpactLine};
 use crate::session::{LoginReport, LogoutReport};
 use crate::skills::SkillsReport;
 use crate::template::{Item, Screen, Theme, Tone};
@@ -239,9 +240,13 @@ impl Human for ListReport {
     }
 }
 
-pub fn login_prompt(url: &str, browser_failed: bool, expires_minutes: u64) -> String {
-    let theme = Theme::stderr();
-    let mut s = Screen::new(&theme);
+pub fn login_prompt(
+    theme: &Theme,
+    url: &str,
+    browser_failed: bool,
+    expires_minutes: u64,
+) -> String {
+    let mut s = Screen::new(theme);
     s.title(Tone::Info, "Approve this device in your browser")
         .text(&format!("  {url}"));
     if browser_failed {
@@ -286,6 +291,72 @@ impl Human for CloneReport {
 impl Human for ContextReport {
     fn human(&self, _theme: &Theme) -> String {
         self.paths.join("\n")
+    }
+}
+
+/// Plain sections, like `speq context`: read by people and by agents that did not ask for `--json`.
+impl Human for ImpactReport {
+    fn human(&self, _theme: &Theme) -> String {
+        let lines = |title: &str, lines: &[ImpactLine]| {
+            let mut s = format!("{title}\n");
+            for l in lines {
+                s.push_str(&format!("  {}:{}  {}\n", l.path, l.line, l.text));
+            }
+            if lines.is_empty() {
+                s.push_str("  (none)\n");
+            }
+            s
+        };
+        let mut out = format!("Impact of {} in {}\n\n", self.id, self.scope);
+        out.push_str(&lines("Written in", &self.sources));
+        out.push_str(&lines("Cited by", &self.mentions));
+        out.push_str(&format!(
+            "Criteria\n  {}\n",
+            if self.criteria.is_empty() {
+                "(none)".to_string()
+            } else {
+                self.criteria.join(", ")
+            }
+        ));
+        out.push_str("Tasks\n");
+        for t in &self.tasks {
+            out.push_str(&format!(
+                "  {:<11} {:<10} {}  ({}){}\n",
+                t.status.as_deref().unwrap_or("no status"),
+                t.ticket_id.as_deref().unwrap_or("no ticket"),
+                t.path,
+                t.names.join(", "),
+                if t.reopen {
+                    "  reopen before the change"
+                } else {
+                    ""
+                }
+            ));
+        }
+        if self.tasks.is_empty() {
+            out.push_str("  (none)\n");
+        }
+        if self.code_dirs.is_empty() {
+            out.push_str("Code\n  not searched: pass --code <repository>\n");
+        } else {
+            out.push_str(&lines(
+                &format!("Code (in {})", self.code_dirs.join(", ")),
+                &self.code,
+            ));
+            if !self.code_no_epic.is_empty() {
+                out.push_str(&lines(
+                    "Code naming no epic (another epic has a story with the same number: check each)",
+                    &self.code_no_epic,
+                ));
+            }
+            if !self.unclaimed.is_empty() {
+                out.push_str(&format!(
+                    "  no code line names: {}\n",
+                    self.unclaimed.join(", ")
+                ));
+            }
+        }
+        out
     }
 }
 

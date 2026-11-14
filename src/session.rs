@@ -155,6 +155,7 @@ impl<'a> Session<'a> {
         eprintln!(
             "{}",
             crate::output::login_prompt(
+                &crate::template::Theme::stderr(),
                 url.as_str(),
                 browser_failed,
                 LOGIN_DEADLINE.as_secs() / 60

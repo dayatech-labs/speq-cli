@@ -143,12 +143,18 @@ async fn the_agent_skills_and_their_instruction_block_are_removed_and_the_rest_i
 
     assert_eq!(
         report.removed_skills.len(),
-        6,
-        "three skills in two folders: {:?}",
+        10,
+        "five skills in two folders: {:?}",
         report.removed_skills
     );
     for dir in &device.env.skills_dirs {
-        for skill in ["speq-cli", "speq-dayaboard", "speq-write"] {
+        for skill in [
+            "speq-cli",
+            "speq-dayaboard",
+            "speq-impact",
+            "speq-interview",
+            "speq-write",
+        ] {
             assert!(!dir.join(skill).exists(), "{skill}");
         }
     }

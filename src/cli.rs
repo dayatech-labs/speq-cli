@@ -130,6 +130,12 @@ pub enum Command {
     )]
     Context(ContextArgs),
 
+    /// Show what a change to an acceptance criterion or business rule reaches: documents, tasks, tickets, tests
+    #[command(
+        after_help = "Arguments:\n  <TARGET>  `<epic>/<story>` for an acceptance criterion, `<epic>` for a business rule of the epic's PRD\n  <ID>      `AC-NN` or `BR-NN`\n\nExamples:\n  speq impact epic-payment/st-001-create-payment AC-04\n  speq impact epic-payment BR-03\n  speq impact epic-payment BR-03 --code ../payment-backend --code ../payment-frontend\n  speq impact epic-payment BR-03 --json\n\nRead-only, from the working tree (no network). Lists where the ID is written, the other documents of the epic that\ncite it, the criteria it covers (a rule: every AC that names it), the tasks that name those criteria with their\nstatus and ticket (DONE tasks must be reopened before the change), and the code lines that name the story and the\ncriterion together, such as a test titled `(st-001 AC-04)`. Code is searched in each --code repository, or else in\nthe repository around ./specs; criteria no code line names are listed as unclaimed. A line naming no epic, such as\n`(st-001 AC-04)`, is listed apart when another epic also has an st-001.\n\n`speq push` warns, without stopping, when the commits it sends change criteria or rules a DONE task of the epic\nstill names.\n\n"
+    )]
+    Impact(ImpactArgs),
+
     /// Call the Dayaboard API (tickets) with this device's Dayaboard key
     #[command(
         after_help = "Examples:\n  speq dayaboard GET /api/v1/workflow/projects\n  speq dayaboard POST /api/v1/workflow/issues --data @story.json --idempotency-key <uuid>\n  speq dayaboard PATCH /api/v1/workflow/issues/DEV-12 --data '{\"status\":\"Done\"}'\n\nUses the Dayaboard API key `speq login` stored; the key is never printed. Only paths under /api/v1/workflow/ and\n/api/docs/ are allowed, and there is no DELETE (Dayaboard does deletions in its Web app). Dayaboard's JSON answer is\nprinted to stdout, also for errors, which then exit with the matching code. No key, an expired one, or one Dayaboard\nrejects exits with code 3: run `speq login` again. API reference: https://dayaboard.odyssey.co.id/llms-full.txt\n\n"
@@ -138,7 +144,7 @@ pub enum Command {
 
     /// Install the Speq skills for AI coding agents: using the CLI, and drafting and reviewing spec documents
     #[command(
-        after_help = "Examples:\n  speq skills install\n  speq skills install --json\n\nWrites the speq-cli skill (using speq: pull, branches, push, conflicts, rejected pushes, story context) and the\nspeq-write skill (drafting and reviewing spec documents), in Agent Skills format, to ~/.agents/skills, read by\nCodex, Cursor, Copilot, Gemini CLI and OpenCode, and to ~/.claude/skills (or $CLAUDE_CONFIG_DIR/skills) for\nClaude Code. Older copies are replaced; other skills there are never touched. Then keeps a short speq block\n(refresh development-status.md after any story or task change) between `<!-- speq:begin` and `<!-- speq:end -->` in the\nglobal instruction file of each agent whose folder exists: ~/.claude/CLAUDE.md ($CLAUDE_CONFIG_DIR),\n~/.codex/AGENTS.md ($CODEX_HOME), ~/.gemini/GEMINI.md, ~/.config/opencode/AGENTS.md ($XDG_CONFIG_HOME) and\n~/.copilot/copilot-instructions.md ($COPILOT_HOME); the rest of those files is never changed. The installers and `speq upgrade` run this for\nyou; run it yourself after installing speq with a package manager. `speq uninstall` removes the skills and the\nblock. Needs no login.\n\n"
+        after_help = "Examples:\n  speq skills install\n  speq skills install --json\n\nWrites the speq-cli skill (using speq: pull, branches, push, conflicts, rejected pushes, story context), the\nspeq-write skill (drafting and reviewing spec documents), speq-dayaboard (tickets), speq-impact (what changing a\ncriterion or rule reaches), and speq-interview (raw request to brief), in Agent Skills format, to ~/.agents/skills, read by\nCodex, Cursor, Copilot, Gemini CLI and OpenCode, and to ~/.claude/skills (or $CLAUDE_CONFIG_DIR/skills) for\nClaude Code. Older copies are replaced; other skills there are never touched. Then keeps a short speq block\n(refresh development-status.md after any story or task change) between `<!-- speq:begin` and `<!-- speq:end -->` in the\nglobal instruction file of each agent whose folder exists: ~/.claude/CLAUDE.md ($CLAUDE_CONFIG_DIR),\n~/.codex/AGENTS.md ($CODEX_HOME), ~/.gemini/GEMINI.md, ~/.config/opencode/AGENTS.md ($XDG_CONFIG_HOME) and\n~/.copilot/copilot-instructions.md ($COPILOT_HOME); the rest of those files is never changed. The installers and `speq upgrade` run this for\nyou; run it yourself after installing speq with a package manager. `speq uninstall` removes the skills and the\nblock. Needs no login.\n\n"
     )]
     Skills(SkillsArgs),
 
@@ -164,6 +170,7 @@ impl Command {
             Command::Clone(_) => "clone",
             Command::Deinit(_) => "deinit",
             Command::Context(_) => "context",
+            Command::Impact(_) => "impact",
             Command::Dayaboard(_) => "dayaboard",
             Command::Skills(_) => "skills",
             Command::Upgrade(_) => "upgrade",
@@ -205,6 +212,17 @@ pub struct DeinitArgs {
 pub struct ContextArgs {
     /// `<epic>`, `<epic>/<story>` or `<epic>/<story>/<task>`, for example `epic-payment/st-001-create-payment`
     pub target: String,
+}
+
+#[derive(Args, Debug)]
+pub struct ImpactArgs {
+    /// `<epic>/<story>` for `AC-NN`, `<epic>` for `BR-NN`
+    pub target: String,
+    /// `AC-NN` or `BR-NN`
+    pub id: String,
+    /// Code repository to search for tests that claim the criteria (repeatable; default: the one around ./specs)
+    #[arg(long, value_name = "DIR")]
+    pub code: Vec<String>,
 }
 
 #[derive(Args, Debug)]

@@ -293,10 +293,20 @@ fn no_report_leaks_escape_codes_into_a_plain_theme() {
 #[test]
 fn the_login_prompt_shows_the_url_and_only_mentions_the_browser_when_it_failed() {
     assert_eq!(
-        login_prompt("https://speq.example/approve?c=1", false, 10),
+        login_prompt(
+            &Theme::new(false),
+            "https://speq.example/approve?c=1",
+            false,
+            10
+        ),
         "ℹ Approve this device in your browser\n\n    https://speq.example/approve?c=1\n\n  Waiting for approval; the request expires in 10 minutes..."
     );
-    let failed = login_prompt("https://speq.example/approve?c=1", true, 10);
+    let failed = login_prompt(
+        &Theme::new(false),
+        "https://speq.example/approve?c=1",
+        true,
+        10,
+    );
     assert!(
         failed.contains("\n  ! Could not open a browser automatically; open the URL above.\n"),
         "{failed}"

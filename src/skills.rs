@@ -22,6 +22,8 @@ pub const SKILLS: &[(&str, &str)] = skill_files![
     "speq-cli/references/rejections.md",
     "speq-dayaboard/SKILL.md",
     "speq-dayaboard/references/api.md",
+    "speq-impact/SKILL.md",
+    "speq-interview/SKILL.md",
     "speq-write/SKILL.md",
     "speq-write/references/acceptance-criteria.md",
     "speq-write/references/architecture.md",
@@ -170,7 +172,13 @@ mod tests {
 
         assert_eq!(
             report.skills,
-            vec!["speq-cli", "speq-dayaboard", "speq-write"]
+            vec![
+                "speq-cli",
+                "speq-dayaboard",
+                "speq-impact",
+                "speq-interview",
+                "speq-write"
+            ]
         );
         assert_eq!(report.dirs.len(), 2);
         for dir in &dirs {
@@ -275,12 +283,14 @@ mod tests {
 
         assert_eq!(
             removed.len(),
-            7,
-            "three skills in two folders, plus the retired one"
+            11,
+            "five skills in two folders, plus the retired one"
         );
         for dir in &dirs {
             assert!(!dir.join("speq-cli").exists());
             assert!(!dir.join("speq-dayaboard").exists());
+            assert!(!dir.join("speq-impact").exists());
+            assert!(!dir.join("speq-interview").exists());
             assert!(!dir.join("speq-write").exists());
             assert!(!dir.join("speq-review").exists());
         }

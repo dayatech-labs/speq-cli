@@ -27,6 +27,7 @@ A Speq document turns the documents upstream of it into the next one in the team
 
 | Request | Role that writes it | Read first | Write | Reference |
 | --- | --- | --- | --- | --- |
+| Raw request from a PO or client (chat, `.docx`, `.xlsx`) with open gaps | `po` | the request | nothing yet: interview first with the `speq-interview` skill, then write the brief from its answers | `references/brief.md` |
 | Tidy raw notes into a brief | `po` | the notes, existing `briefs/` | `epics/<epic>/briefs/br-NNN-<judul>.md` | `references/brief.md` |
 | Brief → PRD | `analyst` | every brief of the epic, tech discovery in `architecture.md`, current `prd.md` | `epics/<epic>/prd.md` | `references/prd.md` |
 | PRD → stories | `analyst` | `prd.md` §5–7, briefs | `stories/st-NNN-<nama>/README.md`, one per story in PRD §5 | `references/story.md` |
@@ -43,6 +44,8 @@ Before writing a file, check its path against the user's permissions from step 1
 
 - **Allowed:** write it.
 - **Not allowed:** do not write it. Tell the user which role writes it. Write it only if the user asks for a draft for that role; then leave it uncommitted and say who must push it.
+
+Before changing an existing `AC-NN` or `BR-NN` (its wording, its number or limit, or removing it), run the `speq-impact` skill on it and show the user its report: which tasks are `DONE` and must be reopened, and which tests claim it. Change it only after the user agrees. A typo fix that keeps the meaning needs no report.
 
 When the user asks for the whole chain, write it in order: PRD, then stories, then AC, then tasks. Stop after the PRD and again after the stories, and show the scope (story list, blocking questions) before continuing. Later documents inherit every scope mistake.
 
@@ -87,6 +90,7 @@ Run the checklist in `references/review.md` §Daftar periksa per dokumen on ever
 | Only the changed rows of `development-status.md` edited, or a story marked `DONE` there from Dayaboard or by guess | Rebuild the whole file from the task files; a story is `DONE` only when all its tasks are `DONE` |
 | `briefs: [mcat-br-001]` in a PRD | `briefs: br-001@3`, built as in `conventions.md` §Frontmatter |
 | Editing a brief or PRD without raising `version` | Old value + 1 on every content change |
+| Rewriting an AC or BR that `DONE` tasks implement, without checking | `speq-impact` first; reopen those tasks only when the user agrees |
 | A plausible number fills a gap ("maksimal 3 kali", "5 detik") | An open question, plus `menunggu: <ringkasan>` where it is needed |
 | AC says "berjalan dengan baik" or "sesuai desain" | Given/When/Then with an observable result, plus failure cases |
 | One task covers backend and frontend | Split by layer: one task is one PR, about two days of work |

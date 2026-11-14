@@ -8,7 +8,7 @@ metadata:
 
 # Using the speq CLI
 
-`speq` makes a product's specs repository an ordinary Git repository. Its own commands are `login`, `logout`, `list`, `clone`, `deinit`, `context`, `dayaboard`, `skills`, `upgrade`, and `uninstall`; every other command is Git: `speq <command> <args>` runs `git <command> <args>` with Git's output and exit code. Two things differ from plain Git:
+`speq` makes a product's specs repository an ordinary Git repository. Its own commands are `login`, `logout`, `list`, `clone`, `deinit`, `context`, `impact`, `dayaboard`, `skills`, `upgrade`, and `uninstall`; every other command is Git: `speq <command> <args>` runs `git <command> <args>` with Git's output and exit code. Two things differ from plain Git:
 
 - The user signs in with a Speq account. There are no GitHub credentials, and the remote has only `main`.
 - The Speq API checks every push (role, author, document paths) before it lands on `main`. Accepted commits keep their SHA.
@@ -81,6 +81,8 @@ speq branch -d docs/refund-rule             #    delete the finished branch
 | `! [remote rejected] main -> main (<reason>)` | The API refused the whole push; nothing was written | Find the reason in `references/rejections.md` |
 | `the Speq remote only has main` | The push targets another branch or a tag | Push from a branch created from `origin/main`, or `speq push origin <branch>:main` |
 
+Before it sends anything, `speq push` compares the acceptance criteria and PRD business rules in the commits with `origin/main`. When a changed or removed criterion or rule is still named by a task marked `DONE` in any story of the epic (a rule also through the criteria that name it), it prints `speq: this push changes acceptance criteria or business rules that tasks marked DONE still name:` with each task and ticket. The push still goes ahead. Tell the user which tasks it names, and offer the `speq-impact` skill to decide which to reopen.
+
 Rules every push must meet: only to `main`, fast-forward only, no force push, no branch delete, no tag, at most 20 commits (more: `speq push --squash`, only with the user's consent because it rewrites local history), author and committer equal to the user's Speq email, only document paths (`llms.txt`, `README.md`, `architecture.md`, `design/**`, and `prd.md`, `architecture.md`, `briefs/`, `decisions/`, `stories/` under `epics/`) as plain UTF-8 files, and only paths the user's role may write (`speq list --json` shows the roles and capabilities).
 
 ## 5. Context for implementing an epic, story, or task
@@ -141,6 +143,7 @@ speq dayaboard PATCH /api/v1/workflow/issues/<id> \
 | Change the last commit that is not pushed yet | `speq commit --amend` |
 | Undo a pushed commit (ask first) | `speq revert <commit>`, then push |
 | Put aside unfinished changes | `speq stash` / `speq stash pop` |
+| What changing `AC-NN` or `BR-NN` would reach: documents, tasks, tickets, tests | `speq impact <epic>/<story> AC-NN` or `speq impact <epic> BR-NN` (the `speq-impact` skill reads the report) |
 | Check for a newer speq / install it | `speq upgrade --check` / `speq upgrade` (also refreshes the skills) |
 | Reinstall the agent skills | `speq skills install` |
 | Start over from the remote (ask first) | `speq push` what should be kept, `speq deinit` (names what would be lost, then asks), `speq clone <repo>` |

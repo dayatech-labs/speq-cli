@@ -17,6 +17,7 @@ pub mod fsx;
 pub mod git;
 pub mod git_auth;
 pub mod hashing;
+pub mod impact;
 pub mod links;
 pub mod output;
 pub mod paths;

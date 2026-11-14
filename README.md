@@ -81,7 +81,7 @@ shell profile (Unix) or the user PATH entry (Windows) is left for you to remove;
 
 ### Skills for AI coding agents
 
-The binary ships three [Agent Skills](https://agentskills.io) skills.
+The binary ships five [Agent Skills](https://agentskills.io) skills.
 
 `speq-cli` knows how to run speq on a specs repository: always `speq`, never `git`, from the implementation
 repository; one short-lived local branch per piece of work, created from `origin/main`; the push rules; resolving a
@@ -108,7 +108,15 @@ key in the front matter (`ticket-id: DEV-42`), and each ticket names its documen
 a later update changes only what changed in the spec. Its API reference is
 https://dayaboard.odyssey.co.id/llms-full.txt.
 
-No skill commits or pushes unless you ask. The installers run `speq skills install`, which writes all three to
+`speq-impact` runs before an acceptance criterion or business rule changes. It reads `speq impact` and reports
+the documents that state and cite the ID, the tasks that implement it (`DONE` ones to reopen) with their tickets, and
+the tests that claim it. It edits nothing.
+
+`speq-interview` takes a raw request from a product owner or client (chat, `.docx`, `.xlsx`), skips what the specs
+already answer, and interviews you with multiple-choice questions on the problem, roles and access, screen states,
+and business rules. It then hands the answers to `speq-write` for the brief or PRD.
+
+No skill commits or pushes unless you ask. The installers run `speq skills install`, which writes all five to
 `~/.agents/skills/` (Codex, Cursor, Copilot, Gemini CLI, OpenCode) and `~/.claude/skills/` (Claude Code; or
 `$CLAUDE_CONFIG_DIR/skills/`), and `speq upgrade` refreshes them, so the skills always match the CLI version. After
 installing with Homebrew, Scoop, WinGet, or by hand, run `speq skills install` yourself. Other skills in those folders
@@ -158,8 +166,10 @@ A step-by-step guide with every supported command, the everyday flow, and what t
 | `clone <repo> [dir]` | a Git repository of the specs, wired to the Speq API. `dir` defaults to `specs` inside a Git repository (and is added to its `.gitignore`), else to the repository name |
 | `deinit [--yes]` | delete the specs repository (or a workspace of the older speq) to start over. Asks first on a terminal and names what would be lost: uncommitted changes, unpushed commits, stashes. The login and the `.gitignore` entry stay |
 | `context <epic>[/<story>[/<task>]]` | deterministic list of context files, from the working tree: `llms.txt`, root `README.md` and `architecture.md`, the epic's briefs, `prd.md`, `architecture.md`, then for `<epic>` every story (by folder name) with its tasks; for `<epic>/<story>` (`st-NNN-name` folder) the story's `README.md`, `acceptance-criteria.md`, `DESIGN.md`, `layout.html`, and tasks; for `<epic>/<story>/<task>` (task file name, `.md` optional) the same story files and only that task. Only files that exist; paths relative to where you are |
+| `impact <epic>/<story> AC-NN` / `impact <epic> BR-NN [--code DIR]...` | read-only, from the working tree: where the ID is written, the epic's documents that cite it, the criteria it covers, the tasks naming them with `status` and `ticket-id` (`DONE` ones flagged to reopen), and the code lines that name the story and criterion together, such as `(st-001 AC-04)`, in each `--code` repository or the one around `./specs`, plus the criteria no code line names |
+| `push` | Git's push. Before it, speq warns, without stopping, when the commits change an acceptance criterion or a PRD business rule a `DONE` task still names |
 | `push --squash [args]` | fold the commits not yet on the remote into one, then `git push [args]` (opt-in; see below) |
-| `skills install` | write the `speq-cli`, `speq-dayaboard`, and `speq-write` skills for AI coding agents, and the speq block in their `CLAUDE.md` / `AGENTS.md` |
+| `skills install` | write the `speq-cli`, `speq-dayaboard`, `speq-impact`, `speq-interview`, and `speq-write` skills for AI coding agents, and the speq block in their `CLAUDE.md` / `AGENTS.md` |
 | `upgrade` / `uninstall` | check for / install a newer `speq` (and refresh the skills); remove local data, the skills, and an official install |
 | **anything else** | Git: `speq <command> <args>` runs `git <command> <args>` in the specs repository you are in, or in `./specs` (from the implementation repository), with Git's exit code |
 

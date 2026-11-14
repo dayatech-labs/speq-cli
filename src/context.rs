@@ -68,7 +68,7 @@ impl<'a> Target<'a> {
 
 /// Canonical documents in the working tree, tracked or new (ignored files excluded). Symlinks are never listed:
 /// a coding agent is pointed only at regular files inside the repository.
-fn documents(git: &Git, root: &Path) -> Result<BTreeSet<String>> {
+pub(crate) fn documents(git: &Git, root: &Path) -> Result<BTreeSet<String>> {
     let output = git.output(
         Some(root),
         [
@@ -134,7 +134,7 @@ fn stories<'f>(files: &'f BTreeSet<String>, epic_dir: &str) -> BTreeSet<&'f str>
 }
 
 /// `path` (inside the repository) as the user should type it from `cwd`.
-fn shown(repo_root: &Path, cwd: &Path, path: &str) -> String {
+pub(crate) fn shown(repo_root: &Path, cwd: &Path, path: &str) -> String {
     let canonical = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
     let full: PathBuf = canonical(repo_root).join(path);
     match full.strip_prefix(canonical(cwd)) {

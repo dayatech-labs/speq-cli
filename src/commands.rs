@@ -7,6 +7,7 @@ use crate::deinit;
 use crate::env::Env;
 use crate::error::{Error, Result};
 use crate::git::Git;
+use crate::impact;
 use crate::links;
 use crate::output::emit;
 use crate::repo::{self, SpecsRepo};
@@ -21,13 +22,14 @@ use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
 
 /// Commands speq answers itself; any other command is Git's.
-pub const SPEQ_COMMANDS: [&str; 10] = [
+pub const SPEQ_COMMANDS: [&str; 11] = [
     "login",
     "logout",
     "list",
     "clone",
     "deinit",
     "context",
+    "impact",
     "dayaboard",
     "skills",
     "upgrade",
@@ -124,6 +126,13 @@ fn warn_about_origin(git: &Git, repo: &SpecsRepo) {
     }
 }
 
+/// Before a push: names the `DONE` tasks whose acceptance criteria the pushed commits change. Never stops the push.
+fn warn_about_done_tasks(git: &Git, dir: Option<&Path>) {
+    if let Some(warning) = impact::push_warning(git, dir) {
+        eprintln!("{warning}");
+    }
+}
+
 /// Runs a Git route and returns Git's exit code.
 pub fn run_git(route: Route, specs_dir: &str) -> Result<u8> {
     let git = Git::locate(helper_dir())?;
@@ -133,7 +142,11 @@ pub fn run_git(route: Route, specs_dir: &str) -> Result<u8> {
         Route::Git(args) => {
             let repo = SpecsRepo::discover(&git, &cwd, specs_dir)?;
             repo.ensure_credential_path(&git);
-            let code = git.passthrough(repo.git_dir_for(&cwd).as_deref(), args);
+            let dir = repo.git_dir_for(&cwd);
+            if args.first().is_some_and(|a| a == "push") {
+                warn_about_done_tasks(&git, dir.as_deref());
+            }
+            let code = git.passthrough(dir.as_deref(), args);
             warn_about_origin(&git, &repo);
             code
         }
@@ -145,6 +158,7 @@ pub fn run_git(route: Route, specs_dir: &str) -> Result<u8> {
             if squashed > 1 {
                 eprintln!("speq: squashed {squashed} commits into one");
             }
+            warn_about_done_tasks(&git, dir.as_deref());
             let code = git.passthrough(dir.as_deref(), args);
             warn_about_origin(&git, &repo);
             code
@@ -267,6 +281,21 @@ pub async fn run(cli: Cli, env: &Env) -> Result<u8> {
                 json,
                 &context::context(&git, &root, project_id, &cwd, &args.target)?,
             ))
+        }
+        Command::Impact(args) => {
+            let git = Git::locate(None)?;
+            let cwd = current_dir()?;
+            let (root, project_id) = SpecsRepo::docs_root(&git, &cwd, &specs_dir)?;
+            let report = impact::impact(
+                &git,
+                &root,
+                project_id,
+                &cwd,
+                &args.target,
+                &args.id,
+                &args.code,
+            )?;
+            Ok(emit(json, &report))
         }
         Command::Dayaboard(args) => dayaboard_command(env, args).await,
         Command::Skills(args) => match args.action {
@@ -469,6 +498,7 @@ mod tests {
             &["--json", "list"],
             &["--api-url", "http://localhost:8787", "clone", "x"],
             &["--api-url=http://localhost:8787", "context", "a/b"],
+            &["impact", "a", "BR-01"],
             &["help"],
             &["help", "clone"],
             &["--help"],
