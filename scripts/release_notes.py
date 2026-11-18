@@ -97,7 +97,7 @@ def card(found, url, previous, tag):
     sections.append({"widgets": footer})
     since = f"since {previous}" if previous else "first release"
     count = f"{len(found)} commit{'s' if len(found) != 1 else ''}"
-    header = {"title": f"speq {tag} released", "subtitle": f"{count} {since} · installs verified on Linux, macOS, Windows"}
+    header = {"title": f"Speq CLI {tag} Released", "subtitle": f"{count} {since} · installs verified on Linux, macOS, Windows"}
     return {"cardsV2": [{"cardId": f"speq-release-{tag}", "card": {"header": header, "sections": sections}}]}
 
 

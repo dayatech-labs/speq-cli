@@ -426,7 +426,7 @@ class ReleaseNotes(unittest.TestCase):
         _, card, sha = self.render(("commit", "feat: x"), ("tag", "v1.2.0"), ("commit", "fix(api): one"), ("commit", "feat: two"))
         body = card["cardsV2"][0]
         self.assertEqual(body["cardId"], "speq-release-v1.3.0")
-        self.assertEqual(body["card"]["header"]["title"], "speq v1.3.0 released")
+        self.assertEqual(body["card"]["header"]["title"], "Speq CLI v1.3.0 Released")
         self.assertTrue(body["card"]["header"]["subtitle"].startswith("2 commits since v1.2.0"))
         text = self.card_text(card)
         self.assertEqual(list(text), ["Features (1)", "Fixes (1)", None])
