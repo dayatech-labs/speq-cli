@@ -1,4 +1,6 @@
-# Pushes the API rejects
+# Pushes the API rejects (repositories cloned with an earlier speq)
+
+This page is for a repository whose `origin` push URL starts with `speq::` (no `speq.repository` in its Git config): its pushes go through the Speq API. A repository cloned by the current speq pushes straight to GitHub, which answers with its own messages (`Permission denied`, `Authentication failed`, `protected branch hook declined`): ask the user to run `gh auth login` and to ask a project admin for write access, and never try other credentials or remotes. To move an earlier clone to GitHub, the user pushes what they want to keep, then `speq deinit` and `speq clone` again, with their consent.
 
 Git prints `! [remote rejected] main -> main (<reason>)`, and the `speq: ...` lines above it give the details. One problem rejects the whole push, and nothing is written to the remote. Fix the cause in the unpushed commits, then push again.
 
@@ -21,7 +23,7 @@ Every Git command through speq then ends with a warning and the exact commands t
 
 ```text
 speq: origin no longer points to this Speq project, so fetch, pull, and push may fail. Restore it with:
-  speq remote set-url --push origin speq::https://speq-api.example.com/v1/projects/<id>
+  speq remote set-url origin https://github.com/acme/payment-specs.git
 ```
 
-Run them as printed. Pointing `origin` elsewhere never gets around the push rules.
+Run them as printed (in an earlier clone they name the Speq API's endpoint and a `speq::` push URL instead).

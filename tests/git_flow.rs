@@ -22,7 +22,7 @@ fn commit(m: &Machine, specs: &Path, path: &str, content: &str, message: &str) {
 }
 
 #[tokio::test]
-async fn clone_makes_a_git_repository_wired_to_speq_and_ignored_by_the_app() {
+async fn clone_makes_a_git_repository_wired_to_github_and_ignored_by_the_app() {
     let m = Machine::new().await;
     let app = m.dir("app");
     assert!(
@@ -49,24 +49,32 @@ async fn clone_makes_a_git_repository_wired_to_speq_and_ignored_by_the_app() {
     assert_eq!(head(&m, &specs), m.api.head());
 
     let config = |key: &str| m.run(&specs, &["config", "--get-all", key]).ok().stdout;
-    assert_eq!(
-        config("remote.origin.pushurl").trim(),
-        format!("speq::{}/v1/projects/{PROJECT}", m.api.url)
-    );
+    // Git talks to GitHub itself: one URL, no push URL, and no credential helper of speq's.
     assert_eq!(
         config("remote.origin.url").trim(),
-        format!("{}/v1/projects/{PROJECT}/git", m.api.url)
+        "https://github.com/acme/payment-specs.git"
     );
     assert_eq!(
-        config(&format!("credential.{}.helper", m.api.url)),
-        "\nspeq\n"
+        m.run(&specs, &["config", "--get", "remote.origin.pushurl"])
+            .code,
+        1
     );
+    assert_eq!(config("speq.repository").trim(), "acme/payment-specs");
+    // The project stays known to speq for `context`, `impact`, and `dayaboard`.
+    assert_eq!(
+        config("speq.address").trim(),
+        format!("{}/v1/projects/{PROJECT}", m.api.url)
+    );
+    let raw_config = std::fs::read_to_string(specs.join(".git/config")).unwrap();
+    assert!(!raw_config.contains("credential"), "{raw_config}");
+    assert!(!raw_config.contains("speq::"), "{raw_config}");
     assert_eq!(config("user.email").trim(), "user_a@example.com");
     assert_eq!(config("core.autocrlf").trim(), "false");
     assert_eq!(config("pull.rebase").trim(), "true");
     // The token stays in the credential store: Git's config never holds it.
-    let raw_config = std::fs::read_to_string(specs.join(".git/config")).unwrap();
     assert!(!raw_config.contains("at_"), "{raw_config}");
+    // Fetching never touched the Speq API's Git endpoint.
+    assert!(m.api.with(|s| s.git_credentials.is_empty()));
 
     let ignore = std::fs::read_to_string(app.join(".gitignore")).unwrap();
     assert!(ignore.lines().any(|l| l == "specs/"), "{ignore}");
@@ -79,6 +87,38 @@ async fn clone_makes_a_git_repository_wired_to_speq_and_ignored_by_the_app() {
         .unwrap();
     assert!(outer.status.success());
     assert_eq!(String::from_utf8_lossy(&outer.stdout), "?? .gitignore\n");
+}
+
+#[tokio::test]
+async fn a_clone_that_github_refuses_explains_the_access_it_needs_and_leaves_nothing() {
+    let m = Machine::new().await;
+    // A binding whose repository this machine cannot read (the fake GitHub has no such URL).
+    m.api.with(|s| {
+        s.projects.get_mut(PROJECT).unwrap().repo = Some("acme/private-specs".into());
+    });
+    let work = m.dir("work");
+    let refused = m.run(&work, &["clone", "acme/private-specs", "specs"]);
+    assert_eq!(refused.code, 1, "{}", refused.stderr);
+    assert!(
+        refused.stderr.contains("github.com/acme/private-specs"),
+        "{}",
+        refused.stderr
+    );
+    assert!(
+        refused.stderr.contains("gh auth login"),
+        "{}",
+        refused.stderr
+    );
+    // A member who was invited to the repository may simply not have accepted yet: say so.
+    assert!(
+        refused.stderr.contains("accept the invitation"),
+        "{}",
+        refused.stderr
+    );
+    assert!(
+        !work.join("specs").exists(),
+        "a failed clone leaves nothing behind"
+    );
 }
 
 #[tokio::test]
@@ -161,7 +201,7 @@ fn plain_git(m: &Machine, dir: &Path, args: &[&str]) -> std::process::Output {
 #[tokio::test]
 async fn git_fetches_with_a_short_lived_project_token_never_the_cli_token() {
     let m = Machine::new().await;
-    let (_app, specs) = m.clone_into_app();
+    let (_app, specs) = m.clone_via_api_into_app();
     m.api.external_change(PRD, Some("# PRD\n\nRefunds.\n"));
     m.run(&specs, &["pull"]).ok();
     assert_eq!(
@@ -182,7 +222,7 @@ async fn git_fetches_with_a_short_lived_project_token_never_the_cli_token() {
 #[tokio::test]
 async fn a_repository_cloned_before_fetch_tokens_is_updated_by_the_next_speq_command() {
     let m = Machine::new().await;
-    let (_app, specs) = m.clone_into_app();
+    let (_app, specs) = m.clone_via_api_into_app();
     let key = format!("credential.{}.useHttpPath", m.api.url);
     assert!(
         plain_git(&m, &specs, &["config", "--unset", &key])
@@ -211,32 +251,34 @@ async fn a_repository_cloned_before_fetch_tokens_is_updated_by_the_next_speq_com
 }
 
 #[tokio::test]
-async fn an_unsafe_repository_name_from_the_api_never_names_the_clone_folder() {
-    let m = Machine::new().await;
-    // Set before the binary's first command, which loads the snapshot fresh.
-    let name = r"acme/..\..\escape";
-    m.api.with(|s| {
-        s.projects.get_mut(PROJECT).unwrap().repo = Some(name.into());
-    });
-    let work = m.dir("work");
-    let out = m.run(&work, &["clone", name]).ok();
-    assert!(out.stdout.contains("./specs"), "{}", out.stdout);
-    assert!(work.join("specs/.git").is_dir());
-    let entries: Vec<_> = std::fs::read_dir(&work)
-        .unwrap()
-        .map(|e| e.unwrap().file_name())
-        .collect();
-    assert_eq!(
-        entries,
-        ["specs"],
-        "nothing else is created in or next to the folder"
-    );
+async fn an_unsafe_repository_name_from_the_api_is_never_cloned() {
+    // The name would reach a URL, a Git config value, and a path segment: it is refused whole. Each name gets its own
+    // machine, because the first command loads the snapshot and keeps it for a while.
+    for name in [r"acme/..\..\escape", "acme/..", "acme/pay ment", "no-owner"] {
+        let m = Machine::new().await;
+        m.api.with(|s| {
+            s.projects.get_mut(PROJECT).unwrap().repo = Some(name.into());
+        });
+        let work = m.dir("work");
+        let refused = m.run(&work, &["clone", name]);
+        assert_eq!(refused.code, 7, "{name:?}: {}", refused.stderr);
+        assert!(
+            refused.stderr.contains("cannot be cloned from GitHub"),
+            "{}",
+            refused.stderr
+        );
+        assert_eq!(
+            std::fs::read_dir(&work).unwrap().count(),
+            0,
+            "{name:?}: nothing is created in or next to the folder"
+        );
+    }
 }
 
 #[tokio::test]
 async fn edit_commit_push_lands_on_the_remote_with_the_same_sha() {
     let m = Machine::new().await;
-    let (app, specs) = m.clone_into_app();
+    let (app, specs) = m.clone_via_api_into_app();
     let before = m.api.head();
 
     // Typed from the implementation repository: speq runs Git in ./specs.
@@ -274,7 +316,7 @@ async fn edit_commit_push_lands_on_the_remote_with_the_same_sha() {
 #[tokio::test]
 async fn a_push_behind_the_remote_is_rejected_then_pull_rebases_and_push_succeeds() {
     let m = Machine::new().await;
-    let (_app, specs) = m.clone_into_app();
+    let (_app, specs) = m.clone_via_api_into_app();
     commit(&m, &specs, PRD, "# PRD mine\n", "docs: mine");
     let theirs = m.api.external_change("llms.txt", Some("# llms (theirs)\n"));
 
@@ -310,7 +352,7 @@ async fn a_push_behind_the_remote_is_rejected_then_pull_rebases_and_push_succeed
 #[tokio::test]
 async fn a_race_lost_after_listing_comes_back_as_fetch_first() {
     let m = Machine::new().await;
-    let (_app, specs) = m.clone_into_app();
+    let (_app, specs) = m.clone_via_api_into_app();
     commit(&m, &specs, PRD, "# PRD mine\n", "docs: mine");
     m.api
         .with(|s| s.external_before_push = Some(("llms.txt".into(), "# raced\n".into())));
@@ -328,7 +370,7 @@ async fn a_race_lost_after_listing_comes_back_as_fetch_first() {
 #[tokio::test]
 async fn conflicting_edits_stop_the_pull_and_are_resolved_like_git() {
     let m = Machine::new().await;
-    let (app, specs) = m.clone_into_app();
+    let (app, specs) = m.clone_via_api_into_app();
     commit(&m, &specs, PRD, "# PRD\n\nMine.\n", "docs: mine");
     m.api.external_change(PRD, Some("# PRD\n\nTheirs.\n"));
 
@@ -358,7 +400,7 @@ async fn conflicting_edits_stop_the_pull_and_are_resolved_like_git() {
 #[tokio::test]
 async fn a_merge_is_pushed_with_its_remote_parent_as_base() {
     let m = Machine::new().await;
-    let (_app, specs) = m.clone_into_app();
+    let (_app, specs) = m.clone_via_api_into_app();
     commit(&m, &specs, PRD, "# PRD mine\n", "docs: mine");
     let theirs = m.api.external_change("llms.txt", Some("# llms (theirs)\n"));
 
@@ -384,7 +426,7 @@ async fn a_merge_is_pushed_with_its_remote_parent_as_base() {
 async fn a_denied_path_rejects_the_whole_push_after_a_warning() {
     let m = Machine::new().await;
     m.api.with(|s| s.forbid_paths = vec![PRD.into()]);
-    let (_app, specs) = m.clone_into_app();
+    let (_app, specs) = m.clone_via_api_into_app();
     let before = m.api.head();
     commit(&m, &specs, PRD, "# PRD by me\n", "docs: not mine to change");
     let snapshots = m.api.count("GET /v1/projects");
@@ -418,7 +460,7 @@ async fn a_denied_path_rejects_the_whole_push_after_a_warning() {
 #[tokio::test]
 async fn too_many_commits_point_to_squash_and_squash_pushes_one_commit() {
     let m = Machine::new().await;
-    let (_app, specs) = m.clone_into_app();
+    let (_app, specs) = m.clone_via_api_into_app();
     let before = m.api.head();
     for i in 0..21 {
         commit(
@@ -466,7 +508,7 @@ async fn too_many_commits_point_to_squash_and_squash_pushes_one_commit() {
 #[tokio::test]
 async fn squash_refuses_when_it_could_lose_work() {
     let m = Machine::new().await;
-    let (_app, specs) = m.clone_into_app();
+    let (_app, specs) = m.clone_via_api_into_app();
     commit(&m, &specs, PRD, "# a\n", "docs: a");
     commit(&m, &specs, PRD, "# b\n", "docs: b");
     let tip = head(&m, &specs);
@@ -490,7 +532,7 @@ async fn squash_refuses_when_it_could_lose_work() {
 #[tokio::test]
 async fn force_pushes_other_branches_and_deletes_are_refused() {
     let m = Machine::new().await;
-    let (_app, specs) = m.clone_into_app();
+    let (_app, specs) = m.clone_via_api_into_app();
     commit(&m, &specs, PRD, "# one\n", "docs: one");
     m.run(&specs, &["push"]).ok();
     let remote = m.api.head();
@@ -530,7 +572,7 @@ async fn force_pushes_other_branches_and_deletes_are_refused() {
 #[tokio::test]
 async fn commits_by_another_identity_are_refused_with_how_to_fix() {
     let m = Machine::new().await;
-    let (_app, specs) = m.clone_into_app();
+    let (_app, specs) = m.clone_via_api_into_app();
     m.write(&specs.join(PRD), "# PRD\n\nby someone else\n");
     m.run(
         &specs,
@@ -573,7 +615,7 @@ async fn commits_by_another_identity_are_refused_with_how_to_fix() {
 #[tokio::test]
 async fn files_that_are_not_documents_are_refused_before_sending() {
     let m = Machine::new().await;
-    let (_app, specs) = m.clone_into_app();
+    let (_app, specs) = m.clone_via_api_into_app();
     commit(&m, &specs, ".github/CODEOWNERS", "* @me\n", "chore: owners");
     let refused = m.run(&specs, &["push"]);
     assert_ne!(refused.code, 0);
@@ -591,7 +633,7 @@ async fn files_that_are_not_documents_are_refused_before_sending() {
 #[tokio::test]
 async fn symlinks_are_refused_before_sending() {
     let m = Machine::new().await;
-    let (_app, specs) = m.clone_into_app();
+    let (_app, specs) = m.clone_via_api_into_app();
     std::os::unix::fs::symlink(
         "prd.md",
         specs.join("epics/epic-payment/architecture.md.tmp"),
@@ -616,7 +658,7 @@ async fn symlinks_are_refused_before_sending() {
 #[tokio::test]
 async fn git_runs_in_the_specs_repository_from_wherever_you_are() {
     let m = Machine::new().await;
-    let (app, specs) = m.clone_into_app();
+    let (app, specs) = m.clone_via_api_into_app();
     let top = |dir: &Path| {
         m.run(dir, &["rev-parse", "--show-toplevel"])
             .ok()
@@ -659,7 +701,7 @@ async fn workspaces_of_the_older_speq_are_explained() {
 #[tokio::test]
 async fn context_of_a_story_lists_documents_relative_to_where_you_are() {
     let m = Machine::new().await;
-    let (app, specs) = m.clone_into_app();
+    let (app, specs) = m.clone_via_api_into_app();
     m.write(
         &specs.join("epics/epic-payment/stories/st-001-create-payment/layout.html"),
         "<main></main>\n",
@@ -702,7 +744,7 @@ async fn context_of_a_story_lists_documents_relative_to_where_you_are() {
 #[tokio::test]
 async fn context_of_an_epic_lists_every_story_with_its_tasks() {
     let m = Machine::new().await;
-    let (app, specs) = m.clone_into_app();
+    let (app, specs) = m.clone_via_api_into_app();
     let epic = specs.join("epics/epic-payment");
     m.write(
         &epic.join("stories/st-002-refund/acceptance-criteria.md"),
@@ -756,7 +798,7 @@ async fn context_of_an_epic_lists_every_story_with_its_tasks() {
 #[tokio::test]
 async fn context_of_a_task_lists_its_story_and_only_that_task() {
     let m = Machine::new().await;
-    let (app, specs) = m.clone_into_app();
+    let (app, specs) = m.clone_via_api_into_app();
     let story = specs.join("epics/epic-payment/stories/st-001-create-payment");
     m.write(&story.join("DESIGN.md"), "# Design\n");
     m.write(&story.join("tasks/fe-002-form.md"), "# Form\n");
@@ -811,7 +853,7 @@ async fn context_of_a_task_lists_its_story_and_only_that_task() {
 #[tokio::test]
 async fn the_credential_helper_answers_only_for_the_speq_origin() {
     let m = Machine::new().await;
-    m.clone_into_app();
+    m.clone_via_api_into_app();
     let helper = Path::new(env!("CARGO_BIN_EXE_speq")).with_file_name(if cfg!(windows) {
         "git-credential-speq.exe"
     } else {
@@ -866,7 +908,7 @@ async fn the_credential_helper_answers_only_for_the_speq_origin() {
 #[tokio::test]
 async fn deinit_deletes_the_specs_repository_and_clone_starts_again() {
     let m = Machine::new().await;
-    let (app, specs) = m.clone_into_app();
+    let (app, specs) = m.clone_via_api_into_app();
 
     // No terminal and no --yes: refused, nothing deleted.
     let asked = m.run(&app, &["deinit"]);
@@ -909,7 +951,7 @@ async fn deinit_deletes_the_specs_repository_and_clone_starts_again() {
 #[tokio::test]
 async fn deinit_reports_the_work_it_throws_away() {
     let m = Machine::new().await;
-    let (app, specs) = m.clone_into_app();
+    let (app, specs) = m.clone_via_api_into_app();
     commit(&m, &specs, PRD, "# PRD local\n", "docs: never pushed");
     m.run(&specs, &["switch", "-q", "-c", "draft"]).ok();
     commit(&m, &specs, "llms.txt", "# draft\n", "docs: draft only");
@@ -933,7 +975,7 @@ async fn deinit_reports_the_work_it_throws_away() {
 #[tokio::test]
 async fn deinit_from_inside_the_folder_steps_out_and_says_so() {
     let m = Machine::new().await;
-    let (_app, specs) = m.clone_into_app();
+    let (_app, specs) = m.clone_via_api_into_app();
     let out = m
         .run(&specs.join("epics/epic-payment"), &["deinit", "--yes"])
         .ok()
@@ -1006,7 +1048,7 @@ fn run_printed_repair(m: &Machine, specs: &Path, stderr: &str) {
 #[tokio::test]
 async fn a_changed_origin_is_explained_and_the_printed_commands_restore_it() {
     let m = Machine::new().await;
-    let (app, specs) = m.clone_into_app();
+    let (app, specs) = m.clone_via_api_into_app();
     let address = format!("{}/v1/projects/{PROJECT}", m.api.url);
     assert_eq!(
         m.run(&specs, &["config", "speq.address"])
@@ -1070,7 +1112,7 @@ async fn a_changed_origin_is_explained_and_the_printed_commands_restore_it() {
 #[tokio::test]
 async fn a_removed_origin_can_be_added_back_with_the_printed_commands() {
     let m = Machine::new().await;
-    let (app, specs) = m.clone_into_app();
+    let (app, specs) = m.clone_via_api_into_app();
 
     let removed = m.run(&app, &["remote", "remove", "origin"]).ok();
     assert!(
@@ -1106,7 +1148,7 @@ async fn a_removed_origin_can_be_added_back_with_the_printed_commands() {
 #[tokio::test]
 async fn deinit_still_works_without_origin() {
     let m = Machine::new().await;
-    let (app, specs) = m.clone_into_app();
+    let (app, specs) = m.clone_via_api_into_app();
     m.run(&app, &["remote", "remove", "origin"]).ok();
     m.run(&app, &["deinit", "--yes"]).ok();
     assert!(!specs.exists());
@@ -1115,10 +1157,166 @@ async fn deinit_still_works_without_origin() {
 #[tokio::test]
 async fn a_repository_cloned_before_speq_address_is_still_recognised() {
     let m = Machine::new().await;
-    let (app, specs) = m.clone_into_app();
+    let (app, specs) = m.clone_via_api_into_app();
     m.run(&specs, &["config", "--unset", "speq.address"]).ok();
     let out = m.run(&app, &["status"]).ok();
     assert!(!out.stderr.contains(ORIGIN_WARNING), "{}", out.stderr);
+}
+
+#[tokio::test]
+async fn a_direct_clone_pushes_straight_to_github_with_the_same_sha() {
+    let m = Machine::new().await;
+    let (app, specs) = m.clone_into_app();
+    let before = m.api.head();
+
+    // Typed from the implementation repository: speq runs Git in ./specs.
+    m.write(&specs.join(PRD), "# PRD\n\nRefunds within 30 days.\n");
+    m.run(&app, &["commit", "-q", "-am", "docs: add the refund rule"])
+        .ok();
+    let pushed = m.run(&app, &["push"]).ok();
+    assert!(!pushed.stderr.contains(ORIGIN_WARNING), "{}", pushed.stderr);
+
+    assert_eq!(
+        m.api.head(),
+        head(&m, &specs),
+        "main is the very commit made here"
+    );
+    assert_ne!(m.api.head(), before);
+    assert_eq!(
+        m.api.file(PRD).as_deref(),
+        Some("# PRD\n\nRefunds within 30 days.\n")
+    );
+    // The Speq API took no part: no push, no Git token, no CLI token.
+    assert!(m.api.with(|s| s.pushes.is_empty()));
+    assert!(m.api.with(|s| s.git_credentials.is_empty()));
+    let status = m.run(&specs, &["status", "-sb"]).ok().stdout;
+    assert!(status.starts_with("## main...origin/main\n"), "{status}");
+}
+
+#[tokio::test]
+async fn a_direct_push_behind_the_remote_is_rejected_then_pull_rebases_and_push_succeeds() {
+    let m = Machine::new().await;
+    let (_app, specs) = m.clone_into_app();
+    commit(&m, &specs, PRD, "# PRD mine\n", "docs: mine");
+    let theirs = m.api.external_change("llms.txt", Some("# llms (theirs)\n"));
+
+    let rejected = m.run(&specs, &["push"]);
+    assert_ne!(rejected.code, 0);
+    assert!(
+        rejected.stderr.contains("fetch first") || rejected.stderr.contains("rejected"),
+        "{}",
+        rejected.stderr
+    );
+
+    m.run(&specs, &["pull"]).ok();
+    m.run(&specs, &["push"]).ok();
+    assert_eq!(m.api.head(), head(&m, &specs));
+    assert_eq!(m.api.log()[1], theirs, "rebased: history stays linear");
+    assert_eq!(m.api.file("llms.txt").as_deref(), Some("# llms (theirs)\n"));
+    assert_eq!(m.api.file(PRD).as_deref(), Some("# PRD mine\n"));
+}
+
+#[tokio::test]
+async fn a_direct_repository_no_longer_asks_for_the_speq_credential_helper() {
+    let m = Machine::new().await;
+    let (app, specs) = m.clone_into_app();
+    m.api
+        .external_change(PRD, Some("# PRD\n\nChanged on the web.\n"));
+
+    // A direct repository is left as it is: no useHttpPath, no helper, and Git still fetches.
+    let pulled = m.run(&app, &["pull", "-q"]).ok();
+    assert!(!pulled.stderr.contains(ORIGIN_WARNING), "{}", pulled.stderr);
+    let key = format!("credential.{}.useHttpPath", m.api.url);
+    assert_eq!(m.run(&specs, &["config", "--get", &key]).code, 1);
+    assert_eq!(
+        std::fs::read_to_string(specs.join(PRD)).unwrap(),
+        "# PRD\n\nChanged on the web.\n"
+    );
+}
+
+#[tokio::test]
+async fn a_changed_direct_origin_is_explained_and_the_printed_commands_restore_it() {
+    let m = Machine::new().await;
+    let (app, specs) = m.clone_into_app();
+    const GITHUB: &str = "https://github.com/acme/payment-specs.git";
+    assert!(
+        !m.run(&app, &["status"])
+            .ok()
+            .stderr
+            .contains(ORIGIN_WARNING)
+    );
+
+    // Pointed at the Speq API's old read-only endpoint, with a push URL on top: both are wrong.
+    let api_fetch = format!("{}/v1/projects/{PROJECT}/git", m.api.url);
+    let changed = m
+        .run(&specs, &["remote", "set-url", "origin", &api_fetch])
+        .ok();
+    assert!(
+        changed.stderr.contains(ORIGIN_WARNING),
+        "{}",
+        changed.stderr
+    );
+    assert!(
+        changed
+            .stderr
+            .contains(&format!("  speq remote set-url origin {GITHUB}\n")),
+        "{}",
+        changed.stderr
+    );
+    assert!(!changed.stderr.contains("--push"), "{}", changed.stderr);
+    let with_push = m
+        .run(
+            &specs,
+            &[
+                "remote",
+                "set-url",
+                "--push",
+                "origin",
+                "http://127.0.0.1:1/x.git",
+            ],
+        )
+        .ok();
+    assert!(
+        with_push
+            .stderr
+            .contains("  speq config --unset-all remote.origin.pushurl\n"),
+        "{}",
+        with_push.stderr
+    );
+
+    run_printed_repair(&m, &specs, &with_push.stderr);
+    run_printed_repair(&m, &specs, &changed.stderr);
+    let status = m.run(&app, &["status"]).ok();
+    assert!(!status.stderr.contains(ORIGIN_WARNING), "{}", status.stderr);
+}
+
+#[tokio::test]
+async fn a_removed_direct_origin_is_added_back_without_a_push_url() {
+    let m = Machine::new().await;
+    let (app, specs) = m.clone_into_app();
+
+    let removed = m.run(&app, &["remote", "remove", "origin"]).ok();
+    assert!(
+        removed.stderr.contains(
+            "  speq remote add -t main origin https://github.com/acme/payment-specs.git\n"
+        ),
+        "{}",
+        removed.stderr
+    );
+    assert!(!removed.stderr.contains("--push"), "{}", removed.stderr);
+
+    m.api
+        .external_change(PRD, Some("# PRD\n\nChanged on the web.\n"));
+    run_printed_repair(&m, &specs, &removed.stderr);
+    let status = m.run(&specs, &["status", "-sb"]).ok();
+    assert!(
+        status
+            .stdout
+            .starts_with("## main...origin/main [behind 1]\n"),
+        "{}",
+        status.stdout
+    );
+    assert!(!status.stderr.contains(ORIGIN_WARNING), "{}", status.stderr);
 }
 
 fn git_init(m: &Machine, dir: &Path) {

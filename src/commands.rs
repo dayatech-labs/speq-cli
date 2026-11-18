@@ -8,6 +8,7 @@ use crate::env::Env;
 use crate::error::{Error, Result};
 use crate::git::Git;
 use crate::impact;
+use crate::info;
 use crate::links;
 use crate::output::emit;
 use crate::repo::{self, SpecsRepo};
@@ -22,10 +23,11 @@ use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
 
 /// Commands speq answers itself; any other command is Git's.
-pub const SPEQ_COMMANDS: [&str; 11] = [
+pub const SPEQ_COMMANDS: [&str; 12] = [
     "login",
     "logout",
     "list",
+    "info",
     "clone",
     "deinit",
     "context",
@@ -227,6 +229,14 @@ fn confirm(prompt: &str) -> Result<bool> {
     ))
 }
 
+/// The project of the specs repository around the current folder, if there is one. Never fails: `speq info` is for
+/// anywhere, and only uses this to mark the repository you are in.
+fn current_project_id(specs_dir: &str) -> Option<String> {
+    let git = Git::locate(None).ok()?;
+    let cwd = current_dir().ok()?;
+    SpecsRepo::docs_root(&git, &cwd, specs_dir).ok()?.1
+}
+
 pub async fn run(cli: Cli, env: &Env) -> Result<u8> {
     let json = cli.json;
     let specs_dir = repo::specs_dir(cli.specs_dir.as_deref());
@@ -234,6 +244,10 @@ pub async fn run(cli: Cli, env: &Env) -> Result<u8> {
         Command::Login(_) => Ok(emit(json, &Session::new(env).login().await?)),
         Command::Logout(args) => Ok(emit(json, &Session::new(env).logout(args.all).await?)),
         Command::List => Ok(emit(json, &clone::list(env).await?)),
+        Command::Info => Ok(emit(
+            json,
+            &info::info(env, current_project_id(&specs_dir)).await?,
+        )),
         Command::Clone(args) => {
             let git = Git::locate(helper_dir())?;
             let options = CloneOptions {
@@ -496,6 +510,8 @@ mod tests {
             &[][..],
             &["login"],
             &["--json", "list"],
+            &["info"],
+            &["--json", "info"],
             &["--api-url", "http://localhost:8787", "clone", "x"],
             &["--api-url=http://localhost:8787", "context", "a/b"],
             &["impact", "a", "BR-01"],

@@ -3,14 +3,18 @@
 `speq` lets you work on your product's specs with the Git commands you already know. `speq clone` makes an ordinary
 Git repository of the specs (in `specs/` of your implementation repository); after that `speq status`, `speq add`,
 `speq commit`, `speq pull`, `speq push`, `speq log`, ... are Git itself, run in that repository. Fetches and pushes go
-through the Speq API with your Speq login: you need no GitHub account and no GitHub credentials, and every push is
-checked against your role. A pushed commit keeps its SHA, so your history and GitHub's are the same commits.
+straight to the project's GitHub repository over HTTPS, with your own GitHub credentials (`gh auth login` or Git
+Credential Manager): your GitHub account needs access to the repository (a project admin invites you), and GitHub decides
+who may push. Speq's role and path checks are not applied to these pushes for now; the Web app still applies them to its
+edits. Your commits keep their SHAs: history is Git's own. You sign
+in to Speq (`speq login`) to list and clone repositories, and for `context`, `impact`, and `dayaboard`.
 
 ## Install
 
 No Rust toolchain is needed. The installers put `speq` in a per-user folder (no `sudo`/admin), verify the
 download against `SHA256SUMS`, and are safe to re-run. Next to `speq` they place `git-remote-speq` and
-`git-credential-speq` (links on macOS/Linux, copies on Windows): the same binary, which Git runs under those names.
+`git-credential-speq` (links on macOS/Linux, copies on Windows): the same binary, which Git runs under those names. Only
+repositories cloned with an earlier speq need them (see [Repositories cloned with an earlier speq](#repositories-cloned-with-an-earlier-speq)).
 
 speq runs Git for you, so it needs **Git 2.28 or newer**. When Git is missing the installer offers to install it, and
 always asks first. On macOS it uses `brew install git`, or `xcode-select --install`, which opens Apple's dialog. On Linux
@@ -141,6 +145,7 @@ and `speq uninstall` removes only the block.
 ```bash
 speq login                              # approve this device in your browser
 speq list                               # repositories you may use
+speq info                               # who you are signed in as, Dayaboard, and your roles
 cd my-frontend-repo
 speq clone payment-specs                # ./specs, ignored by this repository's .gitignore
 # ... edit files under specs/ ...
@@ -163,11 +168,11 @@ A step-by-step guide with every supported command, the everyday flow, and what t
 | --- | --- |
 | `login` / `logout [--all]` | PKCE device login; logout deletes the local token and cache. A token cannot be revoked on its own: `--all` ends every session of your account (all devices and the Web app) |
 | `list` | repositories you can use, from the local capability cache while it is valid |
-| `clone <repo> [dir]` | a Git repository of the specs, wired to the Speq API. `dir` defaults to `specs` inside a Git repository (and is added to its `.gitignore`), else to the repository name |
+| `clone <repo> [dir]` | a Git repository of the specs, cloned from the project's GitHub repository (needs your GitHub access). `dir` defaults to `specs` inside a Git repository (and is added to its `.gitignore`), else to the repository name |
 | `deinit [--yes]` | delete the specs repository (or a workspace of the older speq) to start over. Asks first on a terminal and names what would be lost: uncommitted changes, unpushed commits, stashes. The login and the `.gitignore` entry stay |
 | `context <epic>[/<story>[/<task>]]` | deterministic list of context files, from the working tree: `llms.txt`, root `README.md` and `architecture.md`, the epic's briefs, `prd.md`, `architecture.md`, then for `<epic>` every story (by folder name) with its tasks; for `<epic>/<story>` (`st-NNN-name` folder) the story's `README.md`, `acceptance-criteria.md`, `DESIGN.md`, `layout.html`, and tasks; for `<epic>/<story>/<task>` (task file name, `.md` optional) the same story files and only that task. Only files that exist; paths relative to where you are |
 | `impact <epic>/<story> AC-NN` / `impact <epic> BR-NN [--code DIR]...` | read-only, from the working tree: where the ID is written, the epic's documents that cite it, the criteria it covers, the tasks naming them with `status` and `ticket-id` (`DONE` ones flagged to reopen), and the code lines that name the story and criterion together, such as `(st-001 AC-04)`, in each `--code` repository or the one around `./specs`, plus the criteria no code line names |
-| `push` | Git's push. Before it, speq warns, without stopping, when the commits change an acceptance criterion or a PRD business rule a `DONE` task still names |
+| `push` | Git's push to GitHub. Before it, speq warns, without stopping, when the commits change an acceptance criterion or a PRD business rule a `DONE` task still names |
 | `push --squash [args]` | fold the commits not yet on the remote into one, then `git push [args]` (opt-in; see below) |
 | `skills install` | write the `speq-cli`, `speq-dayaboard`, `speq-impact`, `speq-interview`, and `speq-write` skills for AI coding agents, and the speq block in their `CLAUDE.md` / `AGENTS.md` |
 | `upgrade` / `uninstall` | check for / install a newer `speq` (and refresh the skills); remove local data, the skills, and an official install |
@@ -181,28 +186,31 @@ and every Git command exits with Git's code.
 ### What `speq clone` sets up
 
 ```text
-speq.address             <api>/v1/projects/<id>              marks the folder as this project's specs repository
-remote.origin.url        <api>/v1/projects/<id>/git          fetch: the API's read-only Git endpoint
-remote.origin.pushurl    speq::<api>/v1/projects/<id>        push: git-remote-speq → POST /git/push
-credential.<api>.helper  speq                                git-credential-speq hands Git a fetch token
-credential.<api>.useHttpPath=true                            Git tells the helper which project it fetches
-user.name / user.email   your Speq account                   pushes must be authored and committed as you
-core.autocrlf=false                                          documents keep their bytes (and blob SHAs)
-core.symlinks=false                                          a link on the remote is checked out as a plain file
-pull.rebase=true, rebase.autoStash=true                      pulls rebase, so pushes rarely carry merges
-merge.conflictStyle=diff3                                    conflicts show the base version too
+speq.address             <api>/v1/projects/<id>                  marks the folder as this project's specs repository
+speq.repository          <owner>/<repo>                          the project's GitHub repository
+remote.origin.url        https://github.com/<owner>/<repo>.git   fetch and push, with your own GitHub credentials
+user.name / user.email   your Speq account                       commits are authored as you
+core.autocrlf=false                                              documents keep their bytes (and blob SHAs)
+core.symlinks=false                                              a link on the remote is checked out as a plain file
+pull.rebase=true, rebase.autoStash=true                          pulls rebase, so pushes rarely carry merges
+merge.conflictStyle=diff3                                        conflicts show the base version too
 ```
+
+speq sets no credential helper: Git signs in to GitHub the way it does for any repository, with what you already
+use (`gh auth login`, Git Credential Manager, the macOS keychain, or an SSH-to-HTTPS token). speq never reads or
+stores GitHub credentials. When the first fetch fails, `speq clone` says so, leaves nothing behind, and names what is
+missing: access to the repository for your GitHub account (a project admin adds you, and you accept the GitHub invitation)
+and a Git sign-in to GitHub.
 
 Only `main` is fetched. If `origin` is changed or removed, speq still recognises the folder by `speq.address` and,
 after every Git command, prints the commands that point `origin` back (see [docs/usage.md](docs/usage.md)). Because it
-is plain Git, editors and other Git tools work too, such as VS Code's Source Control
-and Sync. They run `git` directly, so they need `git-remote-speq` and `git-credential-speq` on your `PATH`, which the
-installers take care of.
+is plain Git, editors and other Git tools work too, such as VS Code's Source Control and Sync.
 
 ### Specs layout
 
-Only these paths are documents you can push (the API enforces the same rules; anything else in the repository is
-read-only through Speq and is refused before anything is sent):
+These paths are the documents of a specs repository: what the Speq Web app and API accept and show. A direct push to
+GitHub is not checked against this list or against roles, so keep to it; anything else in the repository is read-only in
+the Web app:
 
 ```text
 llms.txt, development-status.md, README.md, architecture.md
@@ -217,6 +225,34 @@ epics/<epic>/stories/st-NNN-<name>/tasks/<type>-NNN-<name>.md      (type: 2-8 lo
 Documents must be UTF-8 text in regular files (no symlinks or executable bits).
 
 ## How pushing works
+
+`speq push` is `git push` to the project's GitHub repository. Nothing passes through the Speq API:
+
+* **GitHub decides who may push.** Your GitHub account needs write access to the repository; without it GitHub answers
+  with its own `Permission denied` or `Authentication failed`.
+* **Fast-forward of `main`.** If someone pushed first you get Git's own `fetch first` / `non-fast-forward` rejection:
+  `speq pull`, then `speq push` again. Push a local branch with `speq push origin <branch>:main`.
+* **Your commits are pushed as they are**, with the SHAs you made.
+* **Not checked by speq for now:** your role per document path (the Web app enforces it: everyone except the Product
+  Owner may change every document, and the Product Owner writes the briefs), author and committer equal to your Speq email, document
+  paths only, the 20-commit limit, and the ban on force pushes, deletes, and tags. Turn on branch protection for `main`
+  on GitHub (no force pushes, no deletion) so GitHub refuses the destructive ones. Before a push speq only warns,
+  without stopping, when the commits change an acceptance criterion or a PRD business rule that a `DONE` task still
+  names. The Web app and the API still check roles for edits made there, and the API's webhook keeps its view of `main`
+  current after your push.
+
+`speq push --squash` is opt-in. It refuses while anything is staged, and when your branch does not contain the latest
+`origin/main` (so it can never undo someone else's work). Otherwise it replaces the commits not yet on the remote
+with one commit (`Squash N commits` plus every subject) and pushes. It rewrites your local history like GitHub's
+"Squash and merge"; the branch is left unchanged if the commit cannot be made.
+
+### Repositories cloned with an earlier speq
+
+A repository made by an earlier speq has no `speq.repository`. Its `origin` fetches from the Speq API's read-only Git
+endpoint (`<api>/v1/projects/<id>/git`) and pushes through `git-remote-speq` (push URL `speq::<api>/v1/projects/<id>`,
+with `git-credential-speq` as credential helper), and it keeps working as it did. **This way is being retired:** new clones
+never use it, and a later speq will stop supporting it, so move such a repository to GitHub directly (see the end of this
+section). Those pushes work like this:
 
 `speq push` is `git push`. Git asks `git-remote-speq` for the remote head and hands it the commits to send; the helper
 sends each one as its raw object plus its changes. The API checks the whole push before writing anything, then
@@ -233,12 +269,9 @@ re-creates every commit on GitHub field for field, which gives it the same SHA, 
   and tags are refused;
 * at most **20 commits** per push. More than that is refused with a hint to run `speq push --squash`.
 
-`speq push --squash` is opt-in. It refuses while anything is staged, and when your branch does not contain the latest
-`origin/main` (so it can never undo someone else's work). Otherwise it replaces the commits not yet on the remote
-with one commit (`Squash N commits` plus every subject) and pushes. It rewrites your local history like GitHub's
-"Squash and merge"; the branch is left unchanged if the commit cannot be made.
-
 A push whose response was lost can simply be run again: the API recognises commits it already has.
+
+To move such a repository to GitHub directly, push what you want to keep, `speq deinit`, then `speq clone` again.
 
 ## Conflicts
 
@@ -271,7 +304,10 @@ work as in any Git repository. Prefer merges? `speq config pull.rebase false`; m
   on once without keeping it. It expires with the token, is sent only to the Dayaboard origin that issued it, and is
   revoked when this device logs out, signs in again, or uninstalls. If Dayaboard cannot be connected, login still
   succeeds with a warning.
-* The token never enters Git's configuration, and Git never gets it. `git-credential-speq` trades it for a Git fetch
+* **GitHub credentials stay with Git.** A repository cloned by this version has no credential helper of speq's: Git signs
+  in to GitHub with the helper or key you already use, and speq neither reads nor stores those credentials. The Speq
+  access token is never given to Git or sent to GitHub.
+* In a repository cloned with an earlier speq, the token never enters Git's configuration, and Git never gets it. `git-credential-speq` trades it for a Git fetch
   token (`POST git/token`) and gives Git only that: valid for 10 minutes, only for fetching the one project Git
   names, and ended by `logout --all` too. Any program you run could ask the helper, so it never hands out the
   token that pushes and signs you out everywhere, and it answers only for the API origin that issued the token (the
@@ -307,6 +343,8 @@ Any other command is Git's and exits with Git's code.
 | Symptom | Cause and fix |
 | --- | --- |
 | `speq: command not found` after install | open a new terminal, or `export PATH="$HOME/.local/bin:$PATH"` (Windows: new terminal) |
+| `git fetch from github.com/<owner>/<repo> failed` when cloning | your GitHub account has no access to the repository, or Git is not signed in to GitHub: ask a project admin to add you with write access, and run `gh auth login` (or sign in through Git Credential Manager); then `speq clone` again |
+| `Permission denied` or `Authentication failed` from GitHub when pushing | same cause: write access and a Git sign-in to GitHub are both needed |
 | `Git is required` (exit 1) | install Git 2.28+ (the hint names the command), or re-run the installer |
 | `Not a Speq specs repository` (exit 7) | run the command inside the folder `speq clone` made, or from the repository that contains it as `specs/`; else `speq clone <repo>` |
 | `... is a workspace of an older speq` | this folder was set up by the pre-Git speq: push what you still need with that version, run `speq deinit` (removes `.speq/` and the specs folder), then `speq clone <repo>` |
@@ -317,9 +355,12 @@ Any other command is Git's and exits with Git's code.
 | push rejected `commits must be authored as ...` | `speq config user.email <your Speq email>` and `speq commit --amend --no-edit --reset-author`; for every unpushed commit `speq rebase origin/main --exec "git commit --amend --no-edit --reset-author"` |
 | push rejected `too many commits` | `speq push --squash`, or push in steps with `speq push origin <commit>:main` |
 | `git: 'remote-speq' is not a git command` when pushing from an editor | `git-remote-speq` is not on that program's `PATH`: re-run the installer, or push with `speq push` |
-| `429`/rate-limited (exit 4), or `github_write_budget` | wait a minute and retry |
+| `429`/rate-limited (exit 4), or `github_write_budget` | wait a minute and retry (the Speq API only; direct pushes use GitHub's own limits) |
 | `upgrade` says it was "not installed by the official installer" | reinstall with the installer, or use your package manager |
 | `uninstall` reports the credential "could not be fully removed" | the OS credential store was unreachable; delete the `speq` entry there by hand (the token expires on its own) |
+
+The rows about roles, the author email, too many commits, `remote-speq`, and `not logged in ... from Git` only concern
+repositories cloned with an earlier speq, whose pushes go through the Speq API.
 
 ## Development
 

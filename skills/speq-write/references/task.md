@@ -2,7 +2,7 @@
 
 Path: `epics/<epic>/stories/st-NNN-<nama>/tasks/<jenis>-NNN-<judul>.md`, satu file per task. Task menjelaskan **cara** menyelesaikan story yang sudah ada. Frontmatter task berisi `status` dan, setelah task punya tiket Dayaboard, `ticket-id` (`conventions.md` §Frontmatter).
 
-Secara bawaan hanya role `engineer` yang dapat push task. Bila user bukan engineer, tanyakan dulu apakah ia ingin draf lokal untuk diserahkan ke engineer.
+Secara bawaan semua role selain `po` dapat push task. Bila user adalah `po`, tanyakan dulu apakah ia ingin draf lokal untuk diserahkan ke engineer.
 
 ## Sebelum memecah task
 

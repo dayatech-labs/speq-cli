@@ -1,11 +1,12 @@
-//! `speq list` and `speq clone`.
+//! `speq list` and `speq clone`. A clone is wired straight to the project's GitHub repository: Git fetches and pushes
+//! over HTTPS with the user's own GitHub credentials. (Earlier versions went through the Speq API, which checked every
+//! push against the user's role; see [`crate::repo`] for the repositories that still do.)
 use crate::api::{Me, ProjectSummary};
 use crate::env::Env;
 use crate::error::{Error, IoContext, Result};
 use crate::fsx::{self, Visibility};
 use crate::git::Git;
-use crate::links;
-use crate::repo::{self, TRANSPORT};
+use crate::repo;
 use crate::session::Session;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -169,6 +170,7 @@ fn prepare(
     target: &Path,
     api_url: &Url,
     project_id: &str,
+    repository: &str,
     me: &Me,
 ) -> Result<Option<String>> {
     let init = git.output(
@@ -184,7 +186,6 @@ fn prepare(
     if !init.status.success() {
         return Err(Error::Other(crate::git::git_failure(&init)));
     }
-    let origin = api_url.as_str().trim_end_matches('/');
     let name = me
         .name
         .clone()
@@ -195,18 +196,11 @@ fn prepare(
         target,
         &[repo::ADDRESS_KEY, &repo::address(api_url, project_id)],
     )?;
+    config(git, target, &[repo::REPOSITORY_KEY, repository])?;
     config(
         git,
         target,
-        &["remote.origin.url", &repo::fetch_url(api_url, project_id)],
-    )?;
-    config(
-        git,
-        target,
-        &[
-            "remote.origin.pushurl",
-            &format!("{TRANSPORT}{}", repo::address(api_url, project_id)),
-        ],
+        &["remote.origin.url", &repo::github_url(repository)],
     )?;
     config(
         git,
@@ -216,11 +210,6 @@ fn prepare(
             "+refs/heads/main:refs/remotes/origin/main",
         ],
     )?;
-    // An empty helper first resets the list, so a system helper (osxkeychain, manager) never stores the token.
-    let helper = format!("credential.{origin}.helper");
-    config(git, target, &["--add", &helper, ""])?;
-    config(git, target, &["--add", &helper, "speq"])?;
-    config(git, target, &[&repo::credential_path_key(api_url), "true"])?;
     config(git, target, &["user.name", &name])?;
     config(git, target, &["user.email", &me.email])?;
     for (key, value) in REPOSITORY_CONFIG {
@@ -229,7 +218,7 @@ fn prepare(
     config(git, target, &["branch.main.remote", "origin"])?;
     config(git, target, &["branch.main.merge", "refs/heads/main"])?;
 
-    // Attached to the terminal: Git's progress, and the credential helper's message when the session is gone.
+    // Attached to the terminal: Git's progress, and its prompt for GitHub credentials when it has none.
     let fetched = git
         .command(Some(target))
         .args(["fetch", "--quiet", "origin"])
@@ -237,9 +226,12 @@ fn prepare(
         .status()
         .map_err(|e| Error::Other(format!("cannot run Git: {e}")))?;
     if !fetched.success() {
-        return Err(Error::Other(
-            "`git fetch` from the Speq API failed (Git's message is above)".into(),
-        ));
+        return Err(Error::Other(format!(
+            "`git fetch` from github.com/{repository} failed (Git's message is above). Your GitHub account needs \
+             access to that repository: ask a project admin to add you to the project, accept the invitation GitHub \
+             sends you (it expires after 7 days; the admin can send it again), and sign in to GitHub from Git, for \
+             example with `gh auth login` or Git Credential Manager"
+        )));
     }
     if !git.succeeds(
         Some(target),
@@ -283,6 +275,13 @@ pub async fn clone(
     let project = resolve_repo(&snapshot.projects, options.repo)?.clone();
     let me = env.client.me(&auth.token).await?;
     let repository = project.repository_full_name.clone().unwrap_or_default();
+    // The API's name goes into a URL and a Git config value: only a plain `owner/repo` is accepted.
+    if !repo::valid_repository(&repository) {
+        return Err(Error::invalid(format!(
+            "the repository name the API sent for {:?} cannot be cloned from GitHub; ask a platform admin to check its binding",
+            project.display_name
+        )));
+    }
 
     let outer = enclosing_work_tree(git, cwd)?;
     let dir = match options.dir {
@@ -304,20 +303,14 @@ pub async fn clone(
         )));
     }
 
-    let exe = std::env::current_exe().ctx("locate the speq executable")?;
-    let missing = links::ensure(&exe);
-    if !missing.is_empty() {
-        return Err(Error::invalid(format!(
-            "Git needs {} next to speq; reinstall speq or ask your package manager to add them",
-            missing
-                .iter()
-                .map(|p| p.display().to_string())
-                .collect::<Vec<_>>()
-                .join(" and ")
-        )));
-    }
-
-    let head = match prepare(git, &target, &env.api_url, &project.project_id, &me) {
+    let head = match prepare(
+        git,
+        &target,
+        &env.api_url,
+        &project.project_id,
+        &repository,
+        &me,
+    ) {
         Ok(head) => head,
         Err(error) => {
             // Like `git clone`: a failed clone leaves nothing behind.

@@ -1,6 +1,6 @@
 # Architecture dan tech discovery (engineer)
 
-Path: `epics/<epic>/architecture.md` (arsitektur epic) atau `architecture.md` di root (lintas epic). Tidak memakai frontmatter. Hanya role `engineer` yang dapat push file ini.
+Path: `epics/<epic>/architecture.md` (arsitektur epic) atau `architecture.md` di root (lintas epic). Tidak memakai frontmatter. Biasanya role `engineer` yang menulis file ini; semua role selain `po` boleh mengubahnya.
 
 Ada dua tahap:
 

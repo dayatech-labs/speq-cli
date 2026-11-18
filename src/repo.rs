@@ -1,7 +1,9 @@
-//! The specs repository: an ordinary Git repository made by `speq clone`. It fetches from the API's read-only Git
-//! endpoint and pushes through `git-remote-speq` (push URL `speq::<api>/v1/projects/<id>`). What marks it is
-//! `speq.address`, not `origin`: a user may change or remove `origin` like in any Git repository, and speq must still
-//! recognise the folder to say how to put `origin` back.
+//! The specs repository: an ordinary Git repository made by `speq clone`. Since the direct mode its `origin` is the
+//! project's GitHub repository (`https://github.com/<owner>/<repo>.git`, recorded in `speq.repository`) and Git
+//! fetches and pushes with the user's own GitHub credentials. A repository cloned earlier has no `speq.repository`:
+//! it fetches from the API's read-only Git endpoint and pushes through `git-remote-speq` (push URL
+//! `speq::<api>/v1/projects/<id>`). What marks it is `speq.address`, not `origin`: a user may change or remove
+//! `origin` like in any Git repository, and speq must still recognise the folder to say how to put `origin` back.
 use crate::api::parse_api_url;
 use crate::error::{Error, Result};
 use crate::git::Git;
@@ -31,6 +33,9 @@ fn pick_dir(flag: Option<&str>, env: Option<&str>) -> String {
 }
 /// Git config key holding the repository's [`address`], written by `speq clone`.
 pub const ADDRESS_KEY: &str = "speq.address";
+/// Git config key holding the GitHub `owner/repo` the repository fetches from and pushes to directly. Absent in a
+/// repository that still goes through the Speq API.
+pub const REPOSITORY_KEY: &str = "speq.repository";
 /// Where the older, pre-Git speq kept a workspace's state.
 pub const LEGACY_DIR: &str = ".speq";
 
@@ -59,6 +64,25 @@ pub struct SpecsRepo {
     pub root: PathBuf,
     pub api_url: Url,
     pub project_id: String,
+    /// The GitHub `owner/repo` of a direct repository; None when it goes through the Speq API.
+    pub repository: Option<String>,
+}
+
+/// A GitHub `owner/repo` that is safe inside a URL and a Git config value: two plain segments, never `.` or `..`.
+pub fn valid_repository(name: &str) -> bool {
+    let plain = |part: &str| {
+        !matches!(part, "" | "." | "..")
+            && part
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+    };
+    name.split_once('/')
+        .is_some_and(|(owner, repo)| plain(owner) && plain(repo))
+}
+
+/// Where a direct repository fetches from and pushes to.
+pub fn github_url(repository: &str) -> String {
+    format!("https://github.com/{repository}.git")
 }
 
 /// `credential.<api>.useHttpPath`: Git then sends `git-credential-speq` the fetch URL's path, which names the
@@ -133,10 +157,12 @@ impl SpecsRepo {
             }
         }
         let (api_url, project_id) = parse_address(&address)?;
+        let repository = Some(get(REPOSITORY_KEY)?).filter(|name| valid_repository(name));
         Ok(Some(SpecsRepo {
             root,
             api_url,
             project_id,
+            repository,
         }))
     }
 
@@ -186,8 +212,12 @@ impl SpecsRepo {
     }
 
     /// Sets [`credential_path_key`] in a repository cloned before Git fetch tokens. Best effort, like
-    /// [`SpecsRepo::origin_repair`]: without it only Git fetches fail, with a message that leads back here.
+    /// [`SpecsRepo::origin_repair`]: without it only Git fetches fail, with a message that leads back here. A
+    /// direct repository has no credential helper of speq's, so it has nothing to set.
     pub fn ensure_credential_path(&self, git: &Git) {
+        if self.repository.is_some() {
+            return;
+        }
         let key = credential_path_key(&self.api_url);
         if matches!(
             git.succeeds(Some(&self.root), ["config", "--get", &key]),
@@ -219,10 +249,20 @@ impl SpecsRepo {
                 _ => {}
             }
         }
+        let (fetch, push) = match &self.repository {
+            Some(repository) => (github_url(repository), None),
+            None => (
+                fetch_url(&self.api_url, &self.project_id),
+                Some(format!(
+                    "{TRANSPORT}{}",
+                    address(&self.api_url, &self.project_id)
+                )),
+            ),
+        };
         repair_commands(
             !stdout.is_empty(),
-            &fetch_url(&self.api_url, &self.project_id),
-            &format!("{TRANSPORT}{}", address(&self.api_url, &self.project_id)),
+            &fetch,
+            push.as_deref(),
             &urls,
             &push_urls,
         )
@@ -240,33 +280,41 @@ impl SpecsRepo {
 }
 
 /// The speq commands that make `origin` fetch from `fetch` and push to `push` again, given whether `origin` exists
-/// and its current URLs.
+/// and its current URLs. `push` is None when Git pushes to the fetch URL (a direct repository): any push URL is then
+/// extra.
 fn repair_commands(
     exists: bool,
     fetch: &str,
-    push: &str,
+    push: Option<&str>,
     urls: &[String],
     push_urls: &[String],
 ) -> Option<Vec<String>> {
     if !exists {
-        return Some(vec![
-            format!("speq remote add -t main origin {fetch}"),
-            format!("speq remote set-url --push origin {push}"),
-            "speq fetch origin".to_string(),
-            "speq branch -u origin/main main".to_string(),
-        ]);
+        let mut commands = vec![format!("speq remote add -t main origin {fetch}")];
+        if let Some(push) = push {
+            commands.push(format!("speq remote set-url --push origin {push}"));
+        }
+        commands.push("speq fetch origin".to_string());
+        commands.push("speq branch -u origin/main main".to_string());
+        return Some(commands);
     }
     let mut commands = Vec::new();
     for (current, key, flag, url) in [
-        (urls, "url", "", fetch),
+        (urls, "url", "", Some(fetch)),
         (push_urls, "pushurl", "--push ", push),
     ] {
-        if *current != [url] {
-            // `remote set-url` cannot replace several values at once, and every extra push URL would get the push.
-            if current.len() > 1 {
+        match url {
+            Some(url) if *current != [url] => {
+                // `remote set-url` cannot replace several values at once, and every extra push URL would get the push.
+                if current.len() > 1 {
+                    commands.push(format!("speq config --unset-all remote.origin.{key}"));
+                }
+                commands.push(format!("speq remote set-url {flag}origin {url}"));
+            }
+            None if !current.is_empty() => {
                 commands.push(format!("speq config --unset-all remote.origin.{key}"));
             }
-            commands.push(format!("speq remote set-url {flag}origin {url}"));
+            _ => {}
         }
     }
     (!commands.is_empty()).then_some(commands)
@@ -327,7 +375,7 @@ mod tests {
         const PUSH: &str = "speq::https://speq.example.com/v1/projects/p";
         let v = |urls: &[&str]| urls.iter().map(|u| u.to_string()).collect::<Vec<_>>();
         let repair = |exists, urls: &[&str], push: &[&str]| {
-            repair_commands(exists, FETCH, PUSH, &v(urls), &v(push))
+            repair_commands(exists, FETCH, Some(PUSH), &v(urls), &v(push))
         };
 
         assert_eq!(repair(true, &[FETCH], &[PUSH]), None);
@@ -382,5 +430,62 @@ mod tests {
                 "speq branch -u origin/main main".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn a_direct_repository_has_one_url_and_no_push_url() {
+        const GITHUB: &str = "https://github.com/acme/payment-specs.git";
+        const OLD_FETCH: &str = "https://speq.example.com/v1/projects/p/git";
+        const OLD_PUSH: &str = "speq::https://speq.example.com/v1/projects/p";
+        let v = |urls: &[&str]| urls.iter().map(|u| u.to_string()).collect::<Vec<_>>();
+        let repair = |exists, urls: &[&str], push: &[&str]| {
+            repair_commands(exists, GITHUB, None, &v(urls), &v(push))
+        };
+
+        assert_eq!(github_url("acme/payment-specs"), GITHUB);
+        assert_eq!(repair(true, &[GITHUB], &[]), None);
+        // Pointed at the Speq API again by mistake: both URLs are wrong, and the push URL has no place at all.
+        assert_eq!(
+            repair(true, &[OLD_FETCH], &[OLD_PUSH]).unwrap(),
+            [
+                format!("speq remote set-url origin {GITHUB}"),
+                "speq config --unset-all remote.origin.pushurl".to_string(),
+            ]
+        );
+        assert_eq!(
+            repair(true, &[GITHUB], &[OLD_PUSH]).unwrap(),
+            ["speq config --unset-all remote.origin.pushurl".to_string()]
+        );
+        assert_eq!(
+            repair(false, &[], &[]).unwrap(),
+            [
+                format!("speq remote add -t main origin {GITHUB}"),
+                "speq fetch origin".to_string(),
+                "speq branch -u origin/main main".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn only_plain_owner_and_repo_names_become_a_github_url() {
+        for good in ["acme/payment-specs", "a/b", "acme/payment_specs.v2"] {
+            assert!(valid_repository(good), "{good}");
+        }
+        for bad in [
+            "",
+            "payment-specs",
+            "acme/",
+            "/payment-specs",
+            "acme/..",
+            "../payment-specs",
+            "acme/a/b",
+            r"acme/..\..\escape",
+            "acme/pay ment",
+            "acme/x?y=1",
+            "acme/x#y",
+            "acme/x\nrepo",
+        ] {
+            assert!(!valid_repository(bad), "{bad:?}");
+        }
     }
 }

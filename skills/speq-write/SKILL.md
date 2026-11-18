@@ -25,7 +25,7 @@ A Speq document turns the documents upstream of it into the next one in the team
 
 ## 2. Pick the task
 
-| Request | Role that writes it | Read first | Write | Reference |
+| Request | Role that normally writes it | Read first | Write | Reference |
 | --- | --- | --- | --- | --- |
 | Raw request from a PO or client (chat, `.docx`, `.xlsx`) with open gaps | `po` | the request | nothing yet: interview first with the `speq-interview` skill, then write the brief from its answers | `references/brief.md` |
 | Tidy raw notes into a brief | `po` | the notes, existing `briefs/` | `epics/<epic>/briefs/br-NNN-<judul>.md` | `references/brief.md` |
@@ -40,7 +40,7 @@ A Speq document turns the documents upstream of it into the next one in the team
 | Set up a new product | platform admin | the product description from the user | `README.md`, `llms.txt`, `architecture.md`, `design/DESIGN.md`, first brief | `references/new-product.md` |
 | Move existing docs into Speq | any role (`project_admin` for all paths) | `docs/`, ADRs, and READMEs in the implementation repository, plus its code | the documents the inventory maps to | `references/import.md` |
 
-Before writing a file, check its path against the user's permissions from step 1:
+The role column says who normally writes each document. What the user may actually write is read from their permissions in step 1: by default everyone except `po` may change every document, and `po` only the briefs. Before writing a file, check its path against those permissions:
 
 - **Allowed:** write it.
 - **Not allowed:** do not write it. Tell the user which role writes it. Write it only if the user asks for a draft for that role; then leave it uncommitted and say who must push it.

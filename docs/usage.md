@@ -4,9 +4,11 @@
 Commands such as `speq status`, `speq commit`, `speq pull`, and `speq push` are Git's own commands, with Git's own
 output. Only two things differ:
 
-- **You sign in with your Speq account.** You need no GitHub account and no GitHub credentials.
-- **Every push is checked by the Speq API** (role, author, document paths) before it lands on `main`. Commits that
-  pass land with exactly the same SHA, so your history and GitHub's are the same commits.
+- **You sign in with your Speq account** to list and clone the specs repositories you may use. `speq context`, `speq impact`,
+  and `speq dayaboard` work from that sign-in too.
+- **Git talks to GitHub directly.** `origin` is the project's GitHub repository over HTTPS, so your GitHub account needs
+  access to it and Git signs in with your own GitHub credentials (`gh auth login` or Git Credential Manager). Your
+  commits land on `main` as they are, with the SHAs you made.
 
 Requirements: `speq` installed (see the [README](../README.md#install)) and Git 2.28 or newer. The installer offers to
 install Git when it is missing.
@@ -33,7 +35,8 @@ next step), and `--json` gives machine-readable output.
 | `speq login [--no-browser]` | Sign in to Speq in your browser. The token is kept in the OS credential store and is valid for 30 days; a Dayaboard API key, when available, is stored with it and expires with it |
 | `speq logout [--all]` | Delete the token and cache on this machine and revoke its Dayaboard API key. `--all` also ends every session of your account (all devices and the Web app) |
 | `speq list` | The specs repositories you may use, with your roles |
-| `speq clone <repo> [dir]` | Clone a specs repository as a Git repository wired to Speq. `<repo>` can be `owner/repo`, the repo name, or the project name when it is unique in `speq list`. Default `dir`: `specs` when run inside a Git repository (it is then added to that repository's `.gitignore`), else the repo name |
+| `speq info` | Who is signed in on this device (name, email, platform role), when the session ends, whether the Dayaboard API key from `speq login` is connected, and your roles in each repository (the one you are in is marked). Roles and session come from this device; Dayaboard is not asked. `--json` for scripts. Exit code 3 when you are not signed in |
+| `speq clone <repo> [dir]` | Clone a specs repository from its GitHub repository (your GitHub account needs access). `<repo>` can be `owner/repo`, the repo name, or the project name when it is unique in `speq list`. Default `dir`: `specs` when run inside a Git repository (it is then added to that repository's `.gitignore`), else the repo name |
 | `speq deinit [--yes]` | Delete the specs repository (or a workspace of the older speq) to start over. Before deleting, speq names what would be lost: uncommitted changes, unpushed commits, and stashes |
 | `speq context <epic>[/<story>[/<task>]]` | The files a coding agent should read for one epic, story, or task, one path per line, relative to where you are. Examples: `speq context epic-payment`, `speq context epic-payment/st-001-create-payment`, `speq context epic-payment/st-001-create-payment/be-001-api` |
 | `speq impact <epic>/<story> AC-NN` / `speq impact <epic> BR-NN [--code <dir>]...` | What changing one acceptance criterion or business rule reaches: where it is written, the documents citing it, the criteria it covers, the tasks naming them with `status` and `ticket-id`, and the code lines claiming them. Read-only. Examples: `speq impact epic-payment/st-001-create-payment AC-04`, `speq impact epic-payment BR-03 --code ../payment-backend` |
@@ -95,28 +98,49 @@ Settings `speq clone` puts in the specs repository:
 
 | Setting | Effect |
 | --- | --- |
-| `user.name`, `user.email` = your Speq account | Commits are written in your name; a push only accepts commits with your account email |
+| `user.name`, `user.email` = your Speq account | Commits are written in your name |
 | `pull.rebase=true`, `rebase.autoStash=true` | `pull` rebases your commits on top of the remote, and uncommitted changes are put aside and restored automatically |
 | `merge.conflictStyle=diff3` | Conflict markers also show the version from before either side changed it |
 | `core.autocrlf=false` | Document bytes are not changed (line endings stay), so SHAs match GitHub's |
 | `core.symlinks=false` | A symbolic link on the remote is checked out as a plain file holding its target path, so a document can never lead outside the repository |
-| Remote `origin` with `main` only | Fetch through the Speq API (read-only), push through `git-remote-speq` |
+| `origin` = `https://github.com/<owner>/<repo>.git`, `main` only | Fetch and push straight to GitHub with your own GitHub credentials. `speq.repository` in the repository's config records the name |
 
 ## 3. Push rules
 
-`speq push` is checked twice: by `git-remote-speq` on your machine (before sending) and by the Speq API (which decides).
-A single problem rejects the whole push, and nothing is written to the remote.
+`speq push` is `git push` to the project's GitHub repository. GitHub decides who may push: your GitHub account needs
+write access, and the usual Git rules apply.
 
 - **Only to `main`.** Push a local branch with `speq push origin <branch>:main`.
-- **No force pushes**, branch deletes, or tags.
+- **Never force-push, delete `main`, or push tags.** Direct pushes are not blocked by speq; turn on branch protection
+  for `main` on GitHub to make GitHub refuse them.
+- **Fast-forward only.** If someone pushed first, run `speq pull` first.
+- **Documents only.** Keep to the documents the Speq Web app and API know: `llms.txt`, `development-status.md`,
+  `README.md`, `architecture.md`, `design/**` (`.md`/`.html`), and the documents under `epics/` (`prd.md`,
+  `architecture.md`, `briefs/`, `decisions/`, `stories/`), as plain UTF-8 files, not symlinks and not executable.
+- **Within your role.** Everyone except the Product Owner may change every document; the Product Owner writes the
+  briefs. speq does not check this for a direct push; the Web app and API still do for edits made there, so follow it
+  yourself.
+
+Before it sends anything, `speq push` warns, without stopping, when your commits change an acceptance criterion or a
+business rule that a task marked `DONE` still names (see `speq impact`).
+
+### Repositories cloned with an earlier speq
+
+A repository whose `origin` goes through the Speq API (it has no `speq.repository` in its Git config; `git config
+--get remote.origin.pushurl` starts with `speq::`) still works as before, but **this way is being retired**: new clones
+never use it, and a later speq will stop supporting it. Its pushes are checked twice: by
+`git-remote-speq` on your machine (before sending) and by the Speq API (which decides). A single problem rejects the
+whole push, and nothing is written to the remote.
+
+- **Only to `main`**, no force pushes, branch deletes, or tags.
 - **At most 20 commits per push.** For more, use `speq push --squash`.
 - **Author and committer must be your Speq account email.**
-- **Documents only:** `llms.txt`, `development-status.md`, `README.md`, `architecture.md`, `design/**` (`.md`/`.html`), and the documents under
-  `epics/` (`prd.md`, `architecture.md`, `briefs/`, `decisions/`, `stories/`). Files must be plain UTF-8 text, not
-  symlinks and not executable.
-- **Within your role.** For example, analysts write PRDs and stories, engineers write architecture and tasks. A merge
-  commit is judged by what it brings on top of the remote version, never by other people's changes it merges in.
-- **Fast-forward only.** If someone pushed first, run `speq pull` first.
+- **Documents only**, as listed above.
+- **Within your role.** A merge commit is judged by what it brings on top of the remote version, never by other people's
+  changes it merges in.
+
+To move such a repository to GitHub directly, push what you want to keep, then `speq deinit` and `speq clone` again (see
+[Starting over](#8-starting-over)).
 
 `speq push --squash` folds every commit not yet pushed into one commit (`Squash N commits` with the list of commit
 subjects), then pushes. It rewrites your local history, so it only runs when you ask for it. It also refuses while
@@ -129,9 +153,15 @@ changes are staged, or when your branch does not contain the latest `origin/main
 ```bash
 speq login                         # approve this device in your browser
 speq list                          # the repositories you may use
+speq info                          # who you are signed in as, Dayaboard, and your roles
 cd my-frontend-repo                # your implementation repository
 speq clone acme/payment-specs      # documents land in ./specs (ignored by the app's .gitignore)
 ```
+
+`speq clone` fetches from GitHub, so Git must be able to sign in there first: run `gh auth login` once (or use Git
+Credential Manager), and ask a project admin to add your GitHub account to the repository with write access (you get an invitation by email
+from GitHub; accept it). When the
+clone fails with `git fetch from github.com/<owner>/<repo> failed`, that is what is missing; nothing is left behind.
 
 ### Every time you work
 
@@ -218,7 +248,7 @@ Start a new session of your agent (Claude Code, Codex, Cursor, Copilot, Gemini C
 or in the implementation repository around `./specs`, and ask it to use `speq-write` (in Claude Code: `/speq-write`).
 It drafts the next document from the ones before it (brief → PRD → stories → acceptance criteria → tasks, plus epic
 architecture and decision records), reviews existing documents, and checks whether a story is ready for engineering.
-It writes only the paths your role may push, reads `version` and `briefs` the way the Web app does, and leaves its
+It writes only the paths your role may change (any document, except for the Product Owner, who writes briefs), reads `version` and `briefs` the way the Web app does, and leaves its
 changes uncommitted: commit and push them as usual once you have read them.
 
 ### Working on a local branch (optional)
@@ -348,8 +378,14 @@ commits you do not have yet. Run `speq pull` (then follow 5.2 if there is a conf
 
 ## 6. Pushes rejected for other reasons
 
-Git shows `! [remote rejected] main -> main (<reason>)`, and the `speq: ...` lines above it give the details. Nothing is
-written to the remote.
+A push straight to GitHub is rejected by GitHub itself, with its own message: `Permission ... denied` or
+`Authentication failed` mean your GitHub account has no write access (run `gh auth login`, and ask a project admin);
+`protected branch hook declined` comes from branch protection on `main`.
+
+The table below is for a repository cloned with an earlier speq (a way that is being retired), whose pushes go through
+the Speq API. Git shows
+`! [remote rejected] main -> main (<reason>)`, and the `speq: ...` lines above it give the details. Nothing is written to
+the remote.
 
 | Reason | Cause | Fix |
 | --- | --- | --- |
@@ -365,21 +401,18 @@ written to the remote.
 ## 7. If `origin` was changed or removed
 
 `origin` is an ordinary Git remote, so `speq remote set-url`, `speq remote remove origin`, or `speq remote rename`
-work as in Git. Pushes and fetches only work while `origin` points at the Speq project, though: fetch from the API's
-read-only endpoint, push through `speq::`. When it does not, every Git command through speq ends with a warning and the
-exact commands that restore it, for example:
+work as in Git. speq still recognises the folder (it is marked by `speq.address` in the repository's config, not by
+`origin`), so `speq deinit` also works. Fetches and pushes only reach the project while `origin` is
+`https://github.com/<owner>/<repo>.git`, though. When it is not, every Git command through speq ends with a warning and
+the exact commands that restore it, for example:
 
 ```text
 speq: origin no longer points to this Speq project, so fetch, pull, and push may fail. Restore it with:
-  speq remote set-url --push origin speq::https://speq-api.example.com/v1/projects/<id>
+  speq remote set-url origin https://github.com/acme/payment-specs.git
 ```
 
-Run them as printed. speq keeps recognising the folder in the meantime (it is marked by `speq.address` in the
-repository's config, not by `origin`), so `speq deinit` also still works.
-
-Pointing `origin` elsewhere gives no way around the push rules. Your Speq token is only ever sent to the Speq API it
-belongs to, another Speq project checks your role there, and pushing straight to GitHub needs GitHub access of your
-own.
+Run them as printed. In a repository cloned with an earlier speq the commands name the Speq API's read-only endpoint
+and a `speq::` push URL instead.
 
 ## 8. Starting over
 

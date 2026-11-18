@@ -63,6 +63,13 @@ pub struct Project {
 pub struct State {
     pub projects: BTreeMap<String, Project>,
     pub members: HashMap<String, Vec<String>>, // user -> project ids
+    /// Roles named for a project in every member's snapshot; `engineer` when unset.
+    pub project_roles: HashMap<String, Vec<String>>,
+    /// Users `GET /v1/me` reports as platform admin / superadmin.
+    pub platform_admins: BTreeSet<String>,
+    pub superadmins: BTreeSet<String>,
+    /// `GET /v1/me` answers `503` (the snapshot still works).
+    pub me_down: bool,
     pub auth_version: HashMap<String, i64>,
     cli_requests: HashMap<String, (String, bool, bool)>, // id -> (challenge, consumed, asked for Dayaboard)
     pub dayaboard: FakeDayaboard,
@@ -319,6 +326,10 @@ impl State {
         State {
             projects,
             members,
+            project_roles: HashMap::new(),
+            platform_admins: BTreeSet::new(),
+            superadmins: BTreeSet::new(),
+            me_down: false,
             auth_version: HashMap::new(),
             cli_requests: HashMap::new(),
             dayaboard: FakeDayaboard::Off,
@@ -896,9 +907,14 @@ fn handle(
     };
 
     if method == "GET" && path == "/v1/me" {
+        if st.me_down {
+            return error(503, "github_unavailable", "Temporarily unavailable", None);
+        }
+        let superadmin = st.superadmins.contains(&user);
         return (
             200,
-            json!({ "user_id": user, "email": format!("{user}@example.com"), "name": user, "authorization_version": 1, "session": { "kind": "cli", "expires_at": iso(900) } }),
+            json!({ "user_id": user, "email": format!("{user}@example.com"), "name": user, "authorization_version": 1, "session": { "kind": "cli", "expires_at": iso(900) },
+                "is_platform_admin": superadmin || st.platform_admins.contains(&user), "is_superadmin": superadmin }),
             vec![],
         );
     }
@@ -921,7 +937,7 @@ fn handle(
             .iter()
             .filter_map(|id| st.projects.get(id).map(|p| (id, p)))
             .map(|(id, p)| {
-                json!({ "project_id": id, "display_name": id, "repository_full_name": p.repo, "branch": "main", "dayaboard_project_key": p.dayaboard_project_key, "roles": ["engineer"],
+                json!({ "project_id": id, "display_name": id, "repository_full_name": p.repo, "branch": "main", "dayaboard_project_key": p.dayaboard_project_key, "roles": st.project_roles.get(id).cloned().unwrap_or_else(|| vec!["engineer".to_string()]),
                     "capabilities": { "create": { "allow": ["**"], "deny": deny }, "update": { "allow": ["**"], "deny": deny }, "can_delete": true, "can_restore": false, "can_manage": false } })
             })
             .collect();
@@ -1044,6 +1060,29 @@ impl FakeApi {
     }
 }
 
+/// The machine's global Git config: every project's GitHub URL (`https://github.com/<owner>/<repo>.git`, where a
+/// direct `speq clone` fetches and pushes) is answered by that project's bare repository in the fake, through Git's
+/// own `url.<base>.insteadOf`. The binary under test knows nothing about it.
+fn github_redirects(api: &FakeApi) -> String {
+    let state = api.state.lock().expect("state");
+    // Any other GitHub URL lands nowhere (Git takes the longest matching prefix), so a test never reaches the network.
+    let mut config =
+        String::from("[url \"file:///no-such-github/\"]\n\tinsteadOf = https://github.com/\n");
+    for project in state.projects.values() {
+        let Some(repo) = &project.repo else { continue };
+        let path = project.bare.to_string_lossy().replace('\\', "/");
+        let path = if path.starts_with('/') {
+            path
+        } else {
+            format!("/{path}")
+        };
+        config.push_str(&format!(
+            "[url \"file://{path}\"]\n\tinsteadOf = https://github.com/{repo}.git\n"
+        ));
+    }
+    config
+}
+
 /// One "device": its own data directory, credential store, sharing the fake API.
 pub struct Device {
     pub env: Env,
@@ -1138,7 +1177,7 @@ impl Machine {
     pub async fn new() -> Machine {
         let api = FakeApi::start();
         let home = tempfile::tempdir().expect("home");
-        std::fs::write(home.path().join(".gitconfig"), "").expect("gitconfig");
+        std::fs::write(home.path().join(".gitconfig"), github_redirects(&api)).expect("gitconfig");
         // Windows resolves the app-data folders under `%USERPROFILE%\AppData` and `ProjectDirs` fails unless both
         // `Local` and `Roaming` exist.
         for dir in ["Local", "Roaming"] {
@@ -1213,6 +1252,47 @@ impl Machine {
         assert!(init.status.success());
         self.run(&app, &["clone", "acme/payment-specs"]).ok();
         let specs = app.join("specs");
+        (app, specs)
+    }
+
+    /// A repository the way `speq clone` made it before the direct mode: `origin` fetches from the Speq API's Git
+    /// endpoint and pushes through `git-remote-speq`, so the API checks every push. Same folder as
+    /// [`Machine::clone_into_app`].
+    pub fn clone_via_api_into_app(&self) -> (PathBuf, PathBuf) {
+        let (app, specs) = self.clone_into_app();
+        let api = speq::api::parse_api_url(&self.api.url).expect("api url");
+        let helper = format!("credential.{}.helper", self.api.url);
+        for args in [
+            vec![
+                "config".to_string(),
+                "remote.origin.url".into(),
+                speq::repo::fetch_url(&api, PROJECT),
+            ],
+            vec![
+                "config".into(),
+                "remote.origin.pushurl".into(),
+                format!(
+                    "{}{}",
+                    speq::repo::TRANSPORT,
+                    speq::repo::address(&api, PROJECT)
+                ),
+            ],
+            vec!["config".into(), "--add".into(), helper.clone(), "".into()],
+            vec!["config".into(), "--add".into(), helper, "speq".into()],
+            vec![
+                "config".into(),
+                speq::repo::credential_path_key(&api),
+                "true".into(),
+            ],
+            vec![
+                "config".into(),
+                "--unset".into(),
+                speq::repo::REPOSITORY_KEY.into(),
+            ],
+        ] {
+            let args: Vec<&str> = args.iter().map(String::as_str).collect();
+            self.run(&specs, &args).ok();
+        }
         (app, specs)
     }
 

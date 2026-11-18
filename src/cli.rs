@@ -39,7 +39,7 @@ Git commands:
   speq add | restore | rm | mv             stage changes, or undo them
   speq commit                              record staged changes, authored as your Speq account
   speq pull | fetch                        get the latest specs (pull rebases your commits on top)
-  speq push                                send your commits to main, checked against your role
+  speq push                                send your commits to main, on GitHub
   speq push --squash                       fold the commits not yet pushed into one, then push
   speq switch | branch | stash | rebase    local work, exactly as in Git
   speq merge | reset | checkout | blame    ...and any other Git command, with Git's flags
@@ -47,7 +47,8 @@ Git commands:
 
 Git commands run in the specs repository you are in, or in ./specs (or --specs-dir / $SPEQ_SPECS_DIR) from the
 repository around it.
-Pushes go to main only: no force push, no tags or other branches, at most 20 commits, documents only.
+Fetches and pushes go straight to the project's GitHub repository with your own GitHub credentials
+(`gh auth login` or Git Credential Manager). Push to main only; no force push, no tags or other branches.
 
 Environment (set once instead of passing the flag every time):
   SPEQ_SPECS_DIR    folder of the specs, default `specs`; `.` for a plain clone of <product>-specs from GitHub
@@ -69,8 +70,8 @@ Get started:
     about = "Work on your product specs with the Git commands you already know",
     long_about = "speq clones a product's specs repository as an ordinary Git repository and runs Git for you: \
                   `speq status`, `speq add`, `speq commit`, `speq pull`, `speq push`, `speq log`, ... are Git's own \
-                  commands. Fetches and pushes go through the Speq API with your Speq login, so no GitHub account or \
-                  credentials are needed, and every push is checked against your role.",
+                  commands. Fetches and pushes go straight to the project's GitHub repository over HTTPS, with your own \
+                  GitHub credentials: your GitHub account needs access to the repository.",
     after_help = TOP_HELP,
     arg_required_else_help = true
 )]
@@ -111,10 +112,16 @@ pub enum Command {
     )]
     List,
 
-    /// Clone a specs repository from `speq list` as a Git repository wired to Speq
+    /// Show the account signed in on this device, its Dayaboard connection, and its roles
+    #[command(
+        after_help = "Examples:\n  speq info\n  speq info --json\n\nShows who is signed in (name, email, platform role), when the session ends, whether the Dayaboard API key from\n`speq login` is connected, and the roles you hold in each repository of `speq list`. Run inside a specs repository,\nit marks that one. Roles and the session come from this device; Dayaboard is not asked, so a key it has since\nrevoked still shows as connected until `speq dayaboard` finds out. Exits with code 3 when you are not signed in.\n\n"
+    )]
+    Info,
+
+    /// Clone a specs repository from `speq list`, straight from its GitHub repository
     #[command(
         after_help = "Arguments:\n  <REPO>  `owner/repo` from `speq list`, or the repo name or project name when it is unique\n  [DIR]   folder to create (default: `specs`, or --specs-dir, inside a Git repository, which is then ignored there;
-          else the repo name)\n\nExamples:\n  speq clone payment-specs\n  speq clone acme/payment-specs docs/specs\n\nAfterwards use Git's commands through speq: speq status, speq add, speq commit, speq pull, speq push, speq log.\nPulls rebase, line endings are kept byte for byte, and commits are authored with your Speq account email.\n\n"
+          else the repo name)\n\nExamples:\n  speq clone payment-specs\n  speq clone acme/payment-specs docs/specs\n\nAfterwards use Git's commands through speq: speq status, speq add, speq commit, speq pull, speq push, speq log.\nPulls rebase, line endings are kept byte for byte, and commits are authored with your Speq account email.\n\nGit fetches and pushes with your own GitHub credentials, so your GitHub account needs access to the repository: sign in with `gh auth login` or Git Credential Manager first.\n\n"
     )]
     Clone(CloneArgs),
 
@@ -167,6 +174,7 @@ impl Command {
             Command::Login(_) => "login",
             Command::Logout(_) => "logout",
             Command::List => "list",
+            Command::Info => "info",
             Command::Clone(_) => "clone",
             Command::Deinit(_) => "deinit",
             Command::Context(_) => "context",

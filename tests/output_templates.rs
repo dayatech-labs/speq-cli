@@ -410,3 +410,155 @@ fn logout_mentions_dayaboard_only_when_its_key_could_not_be_revoked() {
         "✔ Logged out everywhere\n\n  Every session of this account was ended and local credentials were removed.\n\n  ! The Dayaboard API key could not be revoked; it stops working on 2026-11-19."
     );
 }
+
+mod info {
+    use super::{plain, strings};
+    use speq::info::{
+        Account, DayaboardState, InfoReport, PlatformRole, ProjectRoles, SessionInfo,
+    };
+    use time::{Duration, OffsetDateTime};
+
+    fn report(dayaboard: DayaboardState, projects: Vec<ProjectRoles>) -> InfoReport {
+        InfoReport {
+            api_url: "https://api.speq.test".into(),
+            account: Account {
+                user_id: "u1".into(),
+                email: Some("ada@example.com".into()),
+                name: Some("Ada".into()),
+                platform_role: Some(PlatformRole::User),
+            },
+            // Half a day over, so the whole days left do not change while the test runs.
+            session: SessionInfo {
+                expires_at: OffsetDateTime::now_utc() + Duration::days(12) + Duration::hours(12),
+            },
+            dayaboard,
+            projects,
+            current_project_id: None,
+        }
+    }
+
+    fn repo(id: &str, name: &str, full: Option<&str>, roles: &[&str]) -> ProjectRoles {
+        ProjectRoles {
+            project_id: id.into(),
+            display_name: name.into(),
+            repository_full_name: full.map(Into::into),
+            roles: strings(roles),
+        }
+    }
+
+    fn ends(report: &InfoReport) -> String {
+        report.session.expires_at.date().to_string()
+    }
+
+    #[test]
+    fn a_connected_account_lists_who_when_dayaboard_and_the_roles_per_repository() {
+        let key_ends = OffsetDateTime::now_utc() + Duration::days(20);
+        let mut r = report(
+            DayaboardState::Connected {
+                expires_at: key_ends,
+            },
+            vec![
+                repo("p1", "Payments", Some("acme/pay-specs"), &["analyst", "qa"]),
+                repo("p2", "Cart", Some("acme/cart-specs"), &["engineer"]),
+            ],
+        );
+        r.current_project_id = Some("p2".into());
+        assert_eq!(
+            plain(&r),
+            format!(
+                "\
+ℹ Signed in
+
+  account    Ada <ada@example.com>
+  user id    u1
+  session    until {} (12 days left)
+  dayaboard  connected until {}
+  api        https://api.speq.test
+
+Your roles
+
+  REPOSITORY              PROJECT   ROLES
+  acme/pay-specs          Payments  analyst, qa
+  acme/cart-specs (here)  Cart      engineer",
+                ends(&r),
+                key_ends.date()
+            )
+        );
+    }
+
+    #[test]
+    fn platform_standing_is_shown_only_when_it_is_more_than_a_plain_user() {
+        let mut r = report(DayaboardState::NotConnected, vec![]);
+        assert!(!plain(&r).contains("platform   "));
+        r.account.platform_role = Some(PlatformRole::PlatformAdmin);
+        assert!(plain(&r).contains("platform   Platform Admin"));
+        r.account.platform_role = Some(PlatformRole::Superadmin);
+        assert!(plain(&r).contains("platform   Super Admin"));
+        // Unknown (the API could not be asked) is not guessed either.
+        r.account.platform_role = None;
+        assert!(!plain(&r).contains("platform   "));
+    }
+
+    #[test]
+    fn dayaboard_that_is_not_connected_or_expired_says_how_to_fix_it() {
+        let not_connected = report(DayaboardState::NotConnected, vec![]);
+        let text = plain(&not_connected);
+        assert!(text.contains("dayaboard  not connected"));
+        assert!(text.contains("creating tickets needs `speq login` again"));
+
+        let gone = OffsetDateTime::now_utc() - Duration::days(2);
+        let expired = report(DayaboardState::Expired { expires_at: gone }, vec![]);
+        let text = plain(&expired);
+        assert!(text.contains(&format!("dayaboard  key expired on {}", gone.date())));
+        assert!(text.contains("creating tickets needs `speq login` again"));
+    }
+
+    #[test]
+    fn a_connected_dayaboard_gets_no_warning() {
+        let r = report(
+            DayaboardState::Connected {
+                expires_at: OffsetDateTime::now_utc() + Duration::days(1),
+            },
+            vec![],
+        );
+        assert!(!plain(&r).contains("needs `speq login`"));
+    }
+
+    #[test]
+    fn without_a_name_or_email_the_account_is_its_user_id() {
+        let mut r = report(DayaboardState::NotConnected, vec![]);
+        r.account.name = None;
+        r.account.email = None;
+        assert!(plain(&r).contains("account    u1"));
+        r.account.email = Some("ada@example.com".into());
+        assert!(plain(&r).contains("account    ada@example.com"));
+    }
+
+    #[test]
+    fn a_repository_without_roles_or_a_binding_still_has_a_row() {
+        let r = report(
+            DayaboardState::NotConnected,
+            vec![repo("p1", "Cart", None, &[])],
+        );
+        let text = plain(&r);
+        assert!(text.contains("(not bound)"));
+        assert!(text.contains("(no roles)"));
+    }
+
+    #[test]
+    fn no_repository_says_whom_to_ask_and_prints_no_empty_table() {
+        let r = report(DayaboardState::NotConnected, vec![]);
+        let text = plain(&r);
+        assert!(text.contains("You hold no repository yet. Ask a platform admin to add you."));
+        assert!(!text.contains("REPOSITORY"));
+    }
+
+    #[test]
+    fn the_last_day_of_a_session_is_not_negative() {
+        let mut r = report(DayaboardState::NotConnected, vec![]);
+        r.session.expires_at = OffsetDateTime::now_utc() + Duration::hours(3);
+        assert!(plain(&r).contains("(0 days left)"));
+        r.session.expires_at = OffsetDateTime::now_utc() - Duration::hours(3);
+        assert!(plain(&r).contains("(0 days left)"));
+    }
+}

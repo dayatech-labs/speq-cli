@@ -24,10 +24,11 @@ const SKILLS: [&str; 5] = [
     "speq-write",
 ];
 
-const COMMANDS: [&str; 10] = [
+const COMMANDS: [&str; 11] = [
     "login",
     "logout",
     "list",
+    "info",
     "clone",
     "deinit",
     "context",
@@ -153,8 +154,15 @@ fn help_lists_every_command_with_a_summary_and_exit_codes() {
         assert!(out.contains(line), "missing {line:?} in help");
     }
     assert!(
-        out.contains("Pushes go to main only: no force push"),
+        out.contains(
+            "straight to the project's GitHub repository with your own GitHub credentials"
+        ),
         "{out}"
+    );
+    assert!(out.contains("Push to main only; no force push"), "{out}");
+    assert!(
+        !out.contains("checked against your role"),
+        "speq no longer checks roles on a direct push: {out}"
     );
     // What Git commands are comes before the first steps.
     assert!(out.find("Git commands:") < out.find("Get started:"));
@@ -184,12 +192,29 @@ fn every_command_help_has_usage_arguments_flags_examples_and_exit_codes() {
 }
 
 #[test]
+fn info_help_says_what_it_shows_and_what_it_does_not_ask() {
+    let (code, out, _) = speq(&["info", "--help"]);
+    assert_eq!(code, 0);
+    for line in [
+        "Show the account signed in on this device, its Dayaboard connection, and its roles",
+        "name, email, platform role",
+        "Dayaboard API key",
+        "roles you hold in each repository",
+        "Dayaboard is not asked",
+        "speq info --json",
+    ] {
+        assert!(out.contains(line), "missing {line:?} in {out}");
+    }
+}
+
+#[test]
 fn usage_errors_of_speq_commands_exit_2() {
     assert_eq!(speq(&["clone"]).0, 2);
     assert_eq!(speq(&["upgrade", "--force"]).0, 2);
     assert_eq!(speq(&["context"]).0, 2);
     assert_eq!(speq(&["impact", "epic-payment"]).0, 2);
     assert_eq!(speq(&["login", "extra"]).0, 2);
+    assert_eq!(speq(&["info", "extra"]).0, 2);
 }
 
 #[test]

@@ -6,6 +6,7 @@ use crate::dayaboard::{Connection, Revocation};
 use crate::deinit::DeinitReport;
 use crate::error::{Error, exit};
 use crate::impact::{ImpactReport, Line as ImpactLine};
+use crate::info::{DayaboardState, InfoReport, PlatformRole};
 use crate::session::{LoginReport, LogoutReport};
 use crate::skills::SkillsReport;
 use crate::template::{Item, Screen, Theme, Tone};
@@ -236,6 +237,83 @@ impl Human for ListReport {
         ))
         .table(&["REPOSITORY", "PROJECT", "ROLES"], &rows)
         .hint("Run `speq clone <repo>` in your implementation repository.");
+        s.finish()
+    }
+}
+
+impl Human for InfoReport {
+    fn human(&self, theme: &Theme) -> String {
+        let account = &self.account;
+        let who = match (&account.name, &account.email) {
+            (Some(n), Some(e)) => format!("{n} <{e}>"),
+            (None, Some(e)) => e.clone(),
+            _ => account.user_id.clone(),
+        };
+        let left = (self.session.expires_at - crate::snapshot::now())
+            .whole_days()
+            .max(0);
+        let mut facts = vec![("account", who), ("user id", account.user_id.clone())];
+        match account.platform_role {
+            Some(PlatformRole::Superadmin) => facts.push(("platform", "Super Admin".into())),
+            Some(PlatformRole::PlatformAdmin) => facts.push(("platform", "Platform Admin".into())),
+            Some(PlatformRole::User) | None => {}
+        }
+        facts.push((
+            "session",
+            format!(
+                "until {} ({})",
+                self.session.expires_at.date(),
+                plural(usize::try_from(left).unwrap_or(0), "day left", "days left")
+            ),
+        ));
+        facts.push((
+            "dayaboard",
+            match &self.dayaboard {
+                DayaboardState::Connected { expires_at } => {
+                    format!("connected until {}", expires_at.date())
+                }
+                DayaboardState::Expired { expires_at } => {
+                    format!("key expired on {}", expires_at.date())
+                }
+                DayaboardState::NotConnected => "not connected".to_string(),
+            },
+        ));
+        facts.push(("api", self.api_url.clone()));
+
+        let mut s = Screen::new(theme);
+        s.title(Tone::Info, "Signed in").facts(&facts);
+        if !matches!(self.dayaboard, DayaboardState::Connected { .. }) {
+            s.note(
+                Tone::Warn,
+                "Dayaboard is not connected: creating tickets needs `speq login` again.",
+            );
+        }
+        if self.projects.is_empty() {
+            s.hint("You hold no repository yet. Ask a platform admin to add you.");
+            return s.finish();
+        }
+        let rows: Vec<Vec<String>> = self
+            .projects
+            .iter()
+            .map(|p| {
+                let here = self.current_project_id.as_deref() == Some(p.project_id.as_str());
+                let repo = p
+                    .repository_full_name
+                    .clone()
+                    .unwrap_or_else(|| "(not bound)".into());
+                vec![
+                    if here { format!("{repo} (here)") } else { repo },
+                    p.display_name.clone(),
+                    if p.roles.is_empty() {
+                        "(no roles)".to_string()
+                    } else {
+                        p.roles.join(", ")
+                    },
+                ]
+            })
+            .collect();
+        s.heading("Your roles")
+            .table(&["REPOSITORY", "PROJECT", "ROLES"], &rows);
         s.finish()
     }
 }

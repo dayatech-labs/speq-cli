@@ -215,18 +215,14 @@ Izin bawaan (create dan update; delete dan restore mengikuti update):
 
 | Role | Boleh menulis |
 | --- | --- |
-| semua role | `llms.txt`, `development-status.md` |
-| `po` | `epics/*/briefs/**` |
-| `analyst` | `README.md`, `epics/*/prd.md`, `epics/*/stories/*/README.md`, `epics/*/stories/*/acceptance-criteria.md`, `epics/*/decisions/**` |
-| `qa` | `epics/*/stories/*/acceptance-criteria.md`, `epics/*/decisions/**` |
-| `ui_ux` | `design/**`, `epics/*/stories/*/DESIGN.md`, `epics/*/stories/*/layout.html`, `epics/*/decisions/**` |
-| `engineer` | `architecture.md`, `epics/*/architecture.md`, `epics/*/stories/*/tasks/**`, `epics/*/decisions/**` |
+| `po` | `llms.txt`, `epics/*/briefs/**` |
+| `analyst`, `qa`, `ui_ux`, `engineer`, `project_admin` | semua dokumen di repository (`**`) |
 
 Akibatnya:
 
-- `po` tidak dapat menulis PRD maupun Decision Record. Persetujuan PO dan keputusan milik PO dicatat oleh `analyst`.
-- Hanya `engineer` yang dapat menulis task, kecuali project memberi izin tambahan.
-- Satu project dapat menambah izin (`allow`) atau mencabutnya (`deny`). `deny` menang. Karena itu tabel di atas hanya bawaan; izin yang berlaku dibaca dari `speq list --json`.
+- `po` hanya menulis brief (serta `llms.txt`), tidak termasuk `development-status.md`. PRD, story, acceptance criteria, desain, arsitektur, task, dan Decision Record ditulis oleh role lain.
+- Semua role selain `po` dapat menulis dokumen jenis apa pun. Pembagian kerja per jenis dokumen kini kesepakatan tim, bukan batasan sistem.
+- Project dapat menyimpan kebijakan tambahan (`allow` atau `deny`); `deny` menang. Kebijakan tambahan tidak dapat ditambah dari antarmuka web, tetapi yang sudah tersimpan tetap berlaku. Karena itu tabel di atas hanya bawaan; izin yang berlaku dibaca dari `speq list --json`.
 - Brief terakhir di epic yang sudah memiliki PRD tidak dapat dihapus. Project yang diarsipkan tidak dapat diubah.
 
 ### Membaca izin yang berlaku

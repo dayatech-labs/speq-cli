@@ -144,6 +144,11 @@ pub struct Me {
     pub email: String,
     #[serde(default, deserialize_with = "printable_text::option")]
     pub name: Option<String>,
+    /// Older APIs send neither flag: the account is then a plain user as far as the CLI can tell.
+    #[serde(default)]
+    pub is_platform_admin: bool,
+    #[serde(default)]
+    pub is_superadmin: bool,
 }
 
 /// Server text made safe to show: control characters (newlines, terminal escape sequences) and bidirectional

@@ -46,6 +46,6 @@ Tandai di kolom Catatan tujuan yang tidak boleh ditulis user menurut izinnya (`c
 
 ## Langkah 3: push dan sumber lama
 
-- Hanya bila user meminta: dari `./specs`, `speq add`, `speq commit -m "docs: import <epic> from <repo>"`, `speq push`. Satu push paling banyak 20 commit. Bila user bukan `project_admin`, kelompokkan commit per role.
+- Hanya bila user meminta: dari `./specs`, `speq add`, `speq commit -m "docs: import <epic> from <repo>"`, `speq push`. Bila banyak commit, `speq push --squash` melipatnya jadi satu (hanya dengan izin user, karena menulis ulang riwayat lokal). Bila user adalah `po`, hanya brief yang boleh ia push: sisanya ditulis role lain.
 - **Jangan menghapus atau mengubah dokumen sumber.** Setelah push berhasil, tawarkan dua pilihan kepada user: menghapus dokumen yang sudah dipindah, atau menggantinya dengan satu baris tautan ke dokumen Speq. Perubahan di repository asal di-commit dengan `git`, bukan `speq`.
 - Balas dengan tabel akhir sumber → dokumen Speq, pertanyaan terbuka yang ditambahkan, isi yang tidak dipindah beserta alasannya, dan file yang harus ditulis role lain.
