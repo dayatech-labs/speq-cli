@@ -155,14 +155,35 @@ pub struct Me {
 /// overrides become spaces, so a value can neither forge terminal output nor add lines to Git's helper protocol.
 pub fn printable(text: &str) -> String {
     text.chars()
-        .map(|c| {
-            if c.is_control() || matches!(c, '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}') {
-                ' '
-            } else {
-                c
-            }
-        })
+        .map(|c| if forges_output(c) { ' ' } else { c })
         .collect()
+}
+
+/// A character nobody sees but a program, or a model, still reads: zero-width and direction marks, bidirectional
+/// controls and the invisible operators, line and paragraph separators, the byte-order mark, interlinear
+/// annotation marks, and the Unicode tag block (which spells ASCII invisibly, so it can hide an instruction in plain
+/// sight). Variation selectors are left out: emoji need them.
+pub fn is_invisible(c: char) -> bool {
+    matches!(
+        c,
+        '\u{00AD}'
+            | '\u{061C}'
+            | '\u{180E}'
+            | '\u{200B}'..='\u{200F}'
+            | '\u{2028}'..='\u{202E}'
+            | '\u{2060}'..='\u{2064}'
+            | '\u{2066}'..='\u{206F}'
+            | '\u{FEFF}'
+            | '\u{FFF9}'..='\u{FFFB}'
+            | '\u{E0000}'..='\u{E007F}'
+            | '\u{E0100}'..='\u{E01EF}'
+    )
+}
+
+/// A control character (terminal escape sequences, line breaks), a bidirectional override or another invisible
+/// character: text that can forge what a terminal shows or hide what a reader cannot see.
+pub fn forges_output(c: char) -> bool {
+    c.is_control() || is_invisible(c)
 }
 
 /// `deserialize_with` helpers applying [`printable`] to text the API sends for display.
@@ -183,6 +204,65 @@ mod printable_text {
             .map(|s| super::printable(s))
             .collect())
     }
+}
+
+/// A project or UI product id as the API issues them (UUIDs, or short slugs): safe as one path segment of a request.
+pub fn is_project_id(id: &str) -> bool {
+    (1..=64).contains(&id.len())
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-'))
+}
+
+/// A prototype page as the API serves it: the HTML is untrusted text, never rendered or run by speq.
+#[derive(Debug, Clone, Deserialize)]
+pub struct UiPage {
+    pub path: String,
+    pub content: String,
+    /// The blob ID of this page.
+    pub sha: String,
+    /// The commit of the ui repository the page was read at.
+    pub head_sha: String,
+}
+
+/// One mock persona of a UI product, from `personas.json` at the root of its ui repository. Every text is untrusted.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct Persona {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub note: Option<String>,
+    /// The page the persona opens on, a slug such as `admin/orders`.
+    #[serde(default)]
+    pub start: Option<String>,
+    /// The pages the persona sees, as patterns such as `admin/*`.
+    #[serde(default)]
+    pub pages: Vec<String>,
+}
+
+/// `GET /v1/ui-products/:id/personas`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct UiPersonas {
+    /// The commit of the ui repository `personas.json` was read at.
+    pub head_sha: String,
+    /// `invalid` or `too_large` when `personas.json` is unusable.
+    #[serde(default)]
+    pub problem: Option<String>,
+    #[serde(default)]
+    pub personas: Vec<Persona>,
+}
+
+/// `GET /v1/ui-products/:id/design`: `DESIGN.md` at the root of the ui repository.
+#[derive(Debug, Clone, Deserialize)]
+pub struct UiDesign {
+    /// The commit of the ui repository `DESIGN.md` was read at.
+    pub head_sha: String,
+    /// `too_large` or `invalid` when `DESIGN.md` is unusable; `content` is then `null`.
+    #[serde(default)]
+    pub problem: Option<String>,
+    /// The text of the file; `null` when there is none or it is unusable. An empty file is `""`. Untrusted.
+    #[serde(default)]
+    pub content: Option<String>,
 }
 
 /// A full commit ID (SHA-1 or SHA-256, lowercase hex), as Git prints it.
@@ -428,6 +508,85 @@ impl Client {
         })
     }
 
+    // ---- ui prototypes
+
+    /// One prototype page (`pages/**.html`) of a UI product's `<product>-ui` repository, as text. Read-only.
+    pub async fn ui_page(
+        &self,
+        token: &SecretString,
+        ui_product_id: &str,
+        path: &str,
+    ) -> Result<UiPage> {
+        // The id becomes a path segment of the request: only a plain token may take that place.
+        if !is_project_id(ui_product_id) {
+            return Err(Error::invalid(format!(
+                "{ui_product_id:?} is not a UI product id"
+            )));
+        }
+        let api_path = format!("/v1/ui-products/{ui_product_id}/pages/content");
+        let page: UiPage = Self::json(
+            self.send(self.get_call(&api_path, &[("path", path)], token))
+                .await?,
+        )
+        .await?;
+        // Both go to the terminal and into reports verbatim, so each must be what it claims to be.
+        if !is_object_id(&page.sha) || !is_object_id(&page.head_sha) {
+            return Err(Error::Other(
+                "the Speq API returned an invalid commit ID for the page".into(),
+            ));
+        }
+        Ok(page)
+    }
+
+    /// The mock personas of a UI product, from `personas.json` of its `<product>-ui` repository. Read-only.
+    pub async fn ui_personas(
+        &self,
+        token: &SecretString,
+        ui_product_id: &str,
+    ) -> Result<UiPersonas> {
+        if !is_project_id(ui_product_id) {
+            return Err(Error::invalid(format!(
+                "{ui_product_id:?} is not a UI product id"
+            )));
+        }
+        let api_path = format!("/v1/ui-products/{ui_product_id}/personas");
+        let response: UiPersonas =
+            Self::json(self.send(self.get_call(&api_path, &[], token)).await?).await?;
+        if !is_object_id(&response.head_sha) {
+            return Err(Error::Other(
+                "the Speq API returned an invalid commit ID for the personas".into(),
+            ));
+        }
+        Ok(response)
+    }
+
+    /// `DESIGN.md` of a UI product's `<product>-ui` repository. Read-only.
+    pub async fn ui_design(&self, token: &SecretString, ui_product_id: &str) -> Result<UiDesign> {
+        if !is_project_id(ui_product_id) {
+            return Err(Error::invalid(format!(
+                "{ui_product_id:?} is not a UI product id"
+            )));
+        }
+        let api_path = format!("/v1/ui-products/{ui_product_id}/design");
+        let response: UiDesign =
+            Self::json(self.send(self.get_call(&api_path, &[], token)).await?).await?;
+        if !is_object_id(&response.head_sha) {
+            return Err(Error::Other(
+                "the Speq API returned an invalid commit ID for the design".into(),
+            ));
+        }
+        // A problem comes without text, and only these two exist: anything else is not this API's answer.
+        match (response.problem.as_deref(), &response.content) {
+            (None, _) | (Some("too_large" | "invalid"), None) => {}
+            _ => {
+                return Err(Error::Other(
+                    "unexpected API response: the design answer breaks its contract".into(),
+                ));
+            }
+        }
+        Ok(response)
+    }
+
     // ---- git
 
     /// The branch head on GitHub right now.
@@ -560,6 +719,48 @@ mod tests {
         assert!(parse_api_url("https://user:pw@example.com").is_err());
         assert!(parse_api_url("https://example.com/v1").is_err());
         assert!(parse_api_url("ftp://example.com").is_err());
+    }
+
+    #[test]
+    fn invisible_characters_are_the_ones_nobody_sees_but_a_reader_can_read() {
+        for c in [
+            '\u{00AD}',
+            '\u{061C}',
+            '\u{200B}',
+            '\u{200D}',
+            '\u{200F}',
+            '\u{2028}',
+            '\u{2029}',
+            '\u{202E}',
+            '\u{2060}',
+            '\u{2066}',
+            '\u{206F}',
+            '\u{FEFF}',
+            '\u{FFF9}',
+            '\u{E0001}',
+            '\u{E0041}',
+            '\u{E007F}',
+            '\u{E0100}',
+        ] {
+            assert!(is_invisible(c), "U+{:04X}", u32::from(c));
+            assert!(forges_output(c), "U+{:04X}", u32::from(c));
+        }
+        // Text people write stays: letters, accents, symbols, CJK, emoji with their variation selector.
+        for c in [
+            'a', 'é', '—', '✓', '日', '😀', '\u{FE0F}', ' ', '\u{00A0}', '\u{2010}',
+        ] {
+            assert!(!is_invisible(c), "U+{:04X}", u32::from(c));
+        }
+        // The edges of each range are not swallowed.
+        assert!(!is_invisible('\u{200A}') && !is_invisible('\u{2010}'));
+        assert!(
+            !is_invisible('\u{E0080}') && !is_invisible('\u{E00FF}') && !is_invisible('\u{E01F0}')
+        );
+    }
+
+    #[test]
+    fn printable_text_drops_invisible_characters_too() {
+        assert_eq!(printable("a\u{200B}b\u{E0041}c"), "a b c");
     }
 
     #[test]

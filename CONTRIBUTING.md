@@ -41,6 +41,7 @@ CI menjalankan `fmt`, `clippy`, dan `test` di macOS (arm64), Linux (musl), dan W
 src/main.rs, cli.rs, commands.rs   titik masuk (juga sebagai git-remote-speq/git-credential-speq), argumen, routing ke Git
 src/git.rs, repo.rs                menjalankan Git dengan env bersih; menemukan repository specs (speq.address)
 src/clone.rs, context.rs           `speq list`, `speq clone`, `speq context`
+src/ui.rs                          `speq ui get` / `speq ui personas` / `speq ui design`: baca halaman, persona, dan DESIGN.md prototipe UI dari link Web app lewat API (hanya baca)
 src/remote_helper.rs, squash.rs    git-remote-speq (push ke POST /git/push) dan `speq push --squash`
 src/git_auth.rs, links.rs          git-credential-speq; link helper di samping binary
 src/api.rs                         client HTTP ke API Speq

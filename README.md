@@ -7,7 +7,7 @@ straight to the project's GitHub repository over HTTPS, with your own GitHub cre
 Credential Manager): your GitHub account needs access to the repository (a project admin invites you), and GitHub decides
 who may push. Speq's role and path checks are not applied to these pushes for now; the Web app still applies them to its
 edits. Your commits keep their SHAs: history is Git's own. You sign
-in to Speq (`speq login`) to list and clone repositories, and for `context`, `impact`, and `dayaboard`.
+in to Speq (`speq login`) to list and clone repositories, and for `context`, `impact`, `ui`, and `dayaboard`.
 
 ## Install
 
@@ -120,7 +120,14 @@ the tests that claim it. It edits nothing.
 already answer, and interviews you with multiple-choice questions on the problem, roles and access, screen states,
 and business rules. It then hands the answers to `speq-write` for the brief or PRD.
 
-No skill commits or pushes unless you ask. The installers run `speq skills install`, which writes all five to
+`speq-ui-design`, `speq-ui-flow`, and `speq-ui-cli` are for Speq UI prototypes (a `<product>-ui` repository of HTML +
+Tailwind screens). `speq-ui-design` holds the rules for the files: one screen per file, `data-component`,
+`data-persona` and `data-state` variants in the same screen, `personas.json`, and the design language in `DESIGN.md`. `speq-ui-flow` runs the whole flow in
+three gated phases: draft on a design canvas, review and change it with the user, and only when asked export it as
+`pages/`, `personas.json` and (when wanted) `DESIGN.md` and push. `speq-ui-cli` reads a prototype with `speq ui get`, `speq ui personas` and `speq ui design`, and
+publishes to the UI repository with plain `git` after you confirm the push.
+
+No skill commits or pushes unless you ask. The installers run `speq skills install`, which writes all eight to
 `~/.agents/skills/` (Codex, Cursor, Copilot, Gemini CLI, OpenCode) and `~/.claude/skills/` (Claude Code; or
 `$CLAUDE_CONFIG_DIR/skills/`), and `speq upgrade` refreshes them, so the skills always match the CLI version. After
 installing with Homebrew, Scoop, WinGet, or by hand, run `speq skills install` yourself. Other skills in those folders
@@ -156,6 +163,9 @@ speq push                               # checked by the API, lands on main with
 speq pull                               # rebases your unpushed commits on top of the remote
 speq context epic-payment/st-001-create-payment   # files a coding agent should read for one story
 speq context epic-payment/st-001-create-payment/be-001-api   # ... for one task (or `speq context epic-payment` for an epic)
+speq ui get https://speq.example/ui/ui_1/checkout/payment  # HTML of a UI prototype page, from its Web app link
+speq ui personas https://speq.example/ui/ui_1               # the mock personas a UI product declares
+speq ui design https://speq.example/ui/ui_1                 # DESIGN.md of a UI product: its design language
 ```
 
 A step-by-step guide with every supported command, the everyday flow, and what to do on a conflict is in
@@ -172,9 +182,12 @@ A step-by-step guide with every supported command, the everyday flow, and what t
 | `deinit [--yes]` | delete the specs repository (or a workspace of the older speq) to start over. Asks first on a terminal and names what would be lost: uncommitted changes, unpushed commits, stashes. The login and the `.gitignore` entry stay |
 | `context <epic>[/<story>[/<task>]]` | deterministic list of context files, from the working tree: `llms.txt`, root `README.md` and `architecture.md`, the epic's briefs, `prd.md`, `architecture.md`, then for `<epic>` every story (by folder name) with its tasks; for `<epic>/<story>` (`st-NNN-name` folder) the story's `README.md`, `acceptance-criteria.md`, `DESIGN.md`, `layout.html`, and tasks; for `<epic>/<story>/<task>` (task file name, `.md` optional) the same story files and only that task. Only files that exist; paths relative to where you are |
 | `impact <epic>/<story> AC-NN` / `impact <epic> BR-NN [--code DIR]...` | read-only, from the working tree: where the ID is written, the epic's documents that cite it, the criteria it covers, the tasks naming them with `status` and `ticket-id` (`DONE` ones flagged to reopen), and the code lines that name the story and criterion together, such as `(st-001 AC-04)`, in each `--code` repository or the one around `./specs`, plus the criteria no code line names |
+| `ui get <url>` | read-only: the HTML of one UI prototype page of a UI product's `<product>-ui` repository, from its link in the Speq Web app (`<speq-web>/ui/<ui-product>/<page>`, optionally `#component=<id>`, or just the path), read through the API with your session; only links of the Web app you are signed in to are accepted. Prints the page alone (control characters other than line breaks and tabs shown as spaces, invisible characters as `<U+XXXX>` markers; `--json` keeps the exact text, written with `\uXXXX` escapes, and adds the commit it was read at). A selected component is named on stderr; the whole page is printed. A query string in the link (`?persona=admin&state=empty`) only changes the Web preview and is ignored. The page holds every persona variant (`data-persona="a b"`) and state (`data-state="empty"`). A UI product you cannot open, or a page that is not there: exit code 7 |
+| `ui personas <url>` | read-only: the mock personas a UI product declares in `personas.json` (id, name, start page, the page patterns they see, note), from any link of the product: `<speq-web>/ui/<ui-product>[/<page>]`, a query is ignored. Same origin check, session and exit codes as `ui get`; text from the repository is neutralised the same way (`--json` keeps it exact with `\uXXXX` escapes). A `personas.json` that is invalid or too large is noted on stderr and lists nothing (`problem` in `--json`) |
+| `ui design <url>` | read-only: the text of `DESIGN.md` at the root of the UI repository (the design language of the prototype), as it is on stdout so it can be redirected to a file, from any link of the product (`<speq-web>/ui/<ui-product>[/<page>]`, query and fragment ignored). Same origin check, session and exit codes as `ui get`; the text is neutralised the same way (`--json` keeps it exact: `ui_product_id`, `head_sha`, `problem` when set, `content`). No `DESIGN.md`, one that is too large (over 256 KiB) or not UTF-8: nothing on stdout, a `note:` on stderr, exit 0 (`content` is null in `--json`). Nothing printed and no note means an empty file |
 | `push` | Git's push to GitHub. Before it, speq warns, without stopping, when the commits change an acceptance criterion or a PRD business rule a `DONE` task still names |
 | `push --squash [args]` | fold the commits not yet on the remote into one, then `git push [args]` (opt-in; see below) |
-| `skills install` | write the `speq-cli`, `speq-dayaboard`, `speq-impact`, `speq-interview`, and `speq-write` skills for AI coding agents, and the speq block in their `CLAUDE.md` / `AGENTS.md` |
+| `skills install` | write the `speq-cli`, `speq-dayaboard`, `speq-impact`, `speq-interview`, `speq-ui-cli`, `speq-ui-design`, `speq-ui-flow`, and `speq-write` skills for AI coding agents, and the speq block in their `CLAUDE.md` / `AGENTS.md` |
 | `upgrade` / `uninstall` | check for / install a newer `speq` (and refresh the skills); remove local data, the skills, and an official install |
 | **anything else** | Git: `speq <command> <args>` runs `git <command> <args>` in the specs repository you are in, or in `./specs` (from the implementation repository), with Git's exit code |
 

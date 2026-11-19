@@ -16,11 +16,14 @@ fn speq(args: &[&str]) -> (i32, String, String) {
     )
 }
 
-const SKILLS: [&str; 5] = [
+const SKILLS: [&str; 8] = [
     "speq-cli",
     "speq-dayaboard",
     "speq-impact",
     "speq-interview",
+    "speq-ui-cli",
+    "speq-ui-design",
+    "speq-ui-flow",
     "speq-write",
 ];
 
@@ -78,6 +81,9 @@ fn skills_install_writes_the_skills_for_every_agent_without_login() {
             "speq-dayaboard",
             "speq-impact",
             "speq-interview",
+            "speq-ui-cli",
+            "speq-ui-design",
+            "speq-ui-flow",
             "speq-write"
         ])
     );

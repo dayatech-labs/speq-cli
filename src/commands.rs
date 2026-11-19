@@ -1,5 +1,5 @@
 //! Dispatch from the command line: speq's own commands go to the library, everything else to Git.
-use crate::cli::{Cli, Command, SkillsAction, banner, exit_code_help, paint_help};
+use crate::cli::{Cli, Command, SkillsAction, UiAction, banner, exit_code_help, paint_help};
 use crate::clone::{self, CloneOptions};
 use crate::context;
 use crate::dayaboard::Revocation;
@@ -15,6 +15,7 @@ use crate::repo::{self, SpecsRepo};
 use crate::session::Session;
 use crate::skills;
 use crate::squash;
+use crate::ui;
 use crate::uninstall;
 use crate::upgrade::{self, Install};
 use clap::{CommandFactory, FromArgMatches};
@@ -23,7 +24,7 @@ use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
 
 /// Commands speq answers itself; any other command is Git's.
-pub const SPEQ_COMMANDS: [&str; 12] = [
+pub const SPEQ_COMMANDS: [&str; 13] = [
     "login",
     "logout",
     "list",
@@ -33,6 +34,7 @@ pub const SPEQ_COMMANDS: [&str; 12] = [
     "context",
     "impact",
     "dayaboard",
+    "ui",
     "skills",
     "upgrade",
     "uninstall",
@@ -312,6 +314,51 @@ pub async fn run(cli: Cli, env: &Env) -> Result<u8> {
             Ok(emit(json, &report))
         }
         Command::Dayaboard(args) => dayaboard_command(env, args).await,
+        Command::Ui(args) => match args.action {
+            UiAction::Get(get) => {
+                let report = ui::get(env, &get.url).await?;
+                // The page itself is the output, so a pipe or an agent reads plain HTML; this stays on stderr.
+                if !json && let Some(component) = &report.component {
+                    eprintln!(
+                        "note: the link selects component \"{component}\"; the whole page is printed, find data-component=\"{component}\""
+                    );
+                }
+                Ok(emit(json, &report))
+            }
+            UiAction::Design(args) => {
+                let report = ui::design(env, &args.url).await?;
+                if json {
+                    return Ok(emit(json, &report));
+                }
+                match (&report.content, report.problem.as_deref()) {
+                    // Exactly the text (a trailing newline is the file's own), so a redirect makes the file.
+                    (Some(text), _) => print!("{}", ui::terminal_text(text)),
+                    (None, None) => eprintln!("note: this UI repository has no DESIGN.md"),
+                    (None, Some("too_large")) => {
+                        eprintln!("note: DESIGN.md is too large to be shown (over 256 KiB)")
+                    }
+                    (None, Some("invalid")) => {
+                        eprintln!("note: DESIGN.md is not valid UTF-8 text")
+                    }
+                    (None, Some(_)) => unreachable!("the client accepts no other problem"),
+                }
+                Ok(crate::error::exit::OK)
+            }
+            UiAction::Personas(args) => {
+                let report = ui::personas(env, &args.url).await?;
+                if !json && let Some(problem) = &report.problem {
+                    eprintln!(
+                        "note: personas.json {}; no personas are listed",
+                        match problem.as_str() {
+                            "invalid" => "is invalid".to_string(),
+                            "too_large" => "is too large".to_string(),
+                            other => format!("has a problem ({})", crate::api::printable(other)),
+                        }
+                    );
+                }
+                Ok(emit(json, &report))
+            }
+        },
         Command::Skills(args) => match args.action {
             SkillsAction::Install => Ok(emit(
                 json,
@@ -336,7 +383,9 @@ async fn dayaboard_command(env: &Env, args: crate::cli::DayaboardArgs) -> Result
         .await?;
     println!(
         "{}",
-        serde_json::to_string_pretty(&response.body).expect("JSON value serialises")
+        crate::output::terminal_safe_json(
+            &serde_json::to_string_pretty(&response.body).expect("JSON value serialises")
+        )
     );
     match response.error() {
         Some(error) => Err(error),
@@ -515,6 +564,12 @@ mod tests {
             &["--api-url", "http://localhost:8787", "clone", "x"],
             &["--api-url=http://localhost:8787", "context", "a/b"],
             &["impact", "a", "BR-01"],
+            &["ui", "get", "/ui/p/a"],
+            &["--json", "ui", "get", "/ui/p/a"],
+            &["ui", "personas", "/ui/p"],
+            &["--json", "ui", "personas", "/ui/p/a?persona=x"],
+            &["ui", "design", "/ui/p"],
+            &["--json", "ui", "design", "/ui/p/a?persona=x"],
             &["help"],
             &["help", "clone"],
             &["--help"],

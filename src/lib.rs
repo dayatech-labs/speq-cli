@@ -29,5 +29,6 @@ pub mod skills;
 pub mod snapshot;
 pub mod squash;
 pub mod template;
+pub mod ui;
 pub mod uninstall;
 pub mod upgrade;

@@ -1,5 +1,6 @@
 //! Human-readable output (default) and `--json`. Machine output is the report struct itself.
 //! Every text layout is built with the one template in [`crate::template`].
+use crate::api::forges_output;
 use crate::clone::{CloneReport, ListReport};
 use crate::context::ContextReport;
 use crate::dayaboard::{Connection, Revocation};
@@ -10,6 +11,7 @@ use crate::info::{DayaboardState, InfoReport, PlatformRole};
 use crate::session::{LoginReport, LogoutReport};
 use crate::skills::SkillsReport;
 use crate::template::{Item, Screen, Theme, Tone};
+use crate::ui::{DesignReport, PersonasReport, UiPageReport, terminal_text};
 use crate::uninstall::UninstallReport;
 use crate::upgrade::{CheckReport, UpgradeReport};
 use serde::Serialize;
@@ -23,12 +25,32 @@ pub trait Human: Serialize {
     }
 }
 
+/// `json` made safe to show on a terminal. serde_json escapes only the C0 controls, quotes and backslashes, so the C1
+/// controls (U+009B is a one-character CSI), DEL and the invisible characters (bidirectional overrides, zero-width
+/// marks, the Unicode tag block) would reach the terminal raw. The JSON structure is ASCII, so each of them sits
+/// inside a string: writing it as `\uXXXX` keeps the document valid and gives back the exact text once parsed.
+pub fn terminal_safe_json(json: &str) -> String {
+    let mut out = String::with_capacity(json.len());
+    for c in json.chars() {
+        // The line breaks of the pretty-printed document are its own (a string never holds a raw one).
+        if c != '\n' && forges_output(c) {
+            let mut units = [0u16; 2];
+            for unit in c.encode_utf16(&mut units) {
+                out.push_str(&format!("\\u{unit:04x}"));
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 /// Print a report: JSON when requested, otherwise text. Returns the process exit code.
 pub fn emit<T: Human>(json: bool, report: &T) -> u8 {
     if json {
         println!(
             "{}",
-            serde_json::to_string_pretty(report).expect("report serialises")
+            terminal_safe_json(&serde_json::to_string_pretty(report).expect("report serialises"))
         );
     } else {
         let text = report.human(&Theme::stdout());
@@ -372,6 +394,63 @@ impl Human for ContextReport {
     }
 }
 
+/// The page itself and nothing else, so a pipe or an agent reads plain HTML; hostile control characters are defanged.
+impl Human for UiPageReport {
+    fn human(&self, _theme: &Theme) -> String {
+        terminal_text(&self.content)
+    }
+}
+
+/// The design document and nothing else, so it can be redirected to a file; neutralised like a page. Nothing is
+/// printed when the repository has no `DESIGN.md` (the command says so on stderr).
+impl Human for DesignReport {
+    fn human(&self, _theme: &Theme) -> String {
+        self.content
+            .as_deref()
+            .map(terminal_text)
+            .unwrap_or_default()
+    }
+}
+
+/// One block per persona, separated by a blank line. Every text comes from a repository: it is neutralised like a page,
+/// and kept on one line (a line break would let a name forge another line of the listing).
+impl Human for PersonasReport {
+    fn human(&self, _theme: &Theme) -> String {
+        if self.personas.is_empty() {
+            return "no personas declared".to_string();
+        }
+        let line = |text: &str| terminal_text(text).replace(['\n', '\t'], " ");
+        let blocks: Vec<String> = self
+            .personas
+            .iter()
+            .map(|p| {
+                let mut b = format!("{}  {}\n", line(&p.id), line(&p.name));
+                b.push_str(&format!(
+                    "  start: {}\n",
+                    p.start.as_deref().map_or("(none)".to_string(), line)
+                ));
+                b.push_str(&format!(
+                    "  pages: {}\n",
+                    if p.pages.is_empty() {
+                        "(none)".to_string()
+                    } else {
+                        p.pages
+                            .iter()
+                            .map(|x| line(x))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    }
+                ));
+                if let Some(note) = &p.note {
+                    b.push_str(&format!("  note:  {}\n", line(note)));
+                }
+                b.trim_end().to_string()
+            })
+            .collect();
+        blocks.join("\n\n")
+    }
+}
+
 /// Plain sections, like `speq context`: read by people and by agents that did not ask for `--json`.
 impl Human for ImpactReport {
     fn human(&self, _theme: &Theme) -> String {
@@ -534,4 +613,75 @@ pub fn render_error(error: &Error, color: bool) -> String {
     }
     s.meta(&meta.join(" · "));
     s.finish()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::terminal_safe_json;
+    use serde_json::{Value, json};
+
+    /// Text a hostile page could hold: C1 controls (U+009B is a one-character CSI), DEL, a bidirectional override,
+    /// zero-width and soft-hyphen marks, and a Unicode tag character, which lies outside the Basic Multilingual Plane.
+    const HOSTILE: &str = "a\u{9b}31mb\u{7f}c\u{202e}d\u{200b}e\u{ad}f\u{e0041}g\u{2028}h\u{feff}i";
+
+    fn safe(value: &Value) -> String {
+        terminal_safe_json(&serde_json::to_string_pretty(value).unwrap())
+    }
+
+    #[test]
+    fn leaves_no_raw_control_or_invisible_character_for_the_terminal() {
+        let out = safe(&json!({ "content": HOSTILE }));
+        assert!(out.is_ascii(), "{out:?}");
+        assert!(!out.chars().any(|c| c.is_control() && c != '\n'), "{out:?}");
+    }
+
+    #[test]
+    fn keeps_the_text_exact_once_parsed_even_outside_the_basic_plane() {
+        let value = json!({ "content": HOSTILE, "nested": [HOSTILE, { "k": HOSTILE }], "n": 7 });
+        let parsed: Value = serde_json::from_str(&safe(&value)).expect("still JSON");
+        assert_eq!(parsed, value);
+        // The tag character is written as a surrogate pair.
+        assert!(
+            safe(&json!(HOSTILE)).contains("\\ud800\\udc")
+                || safe(&json!(HOSTILE)).contains("\\udb40\\udc41")
+        );
+    }
+
+    #[test]
+    fn leaves_text_people_write_as_it_is() {
+        let value = json!({ "content": "héllo — ✓ 日本 😀 \u{fe0f}\n\t\"quoted\" back\\slash" });
+        let out = safe(&value);
+        assert!(out.contains("héllo — ✓ 日本 😀"), "{out}");
+        assert_eq!(serde_json::from_str::<Value>(&out).unwrap(), value);
+    }
+
+    #[test]
+    fn a_design_report_shows_its_text_defanged_and_nothing_when_there_is_none() {
+        use super::Human;
+        use crate::template::Theme;
+        use crate::ui::DesignReport;
+        let report = |content: Option<&str>| DesignReport {
+            ui_product_id: "ui_1".into(),
+            head_sha: "a".repeat(40),
+            problem: None,
+            content: content.map(str::to_string),
+        };
+        let theme = Theme::stdout();
+        assert_eq!(
+            report(Some("# D\u{200b}x\u{1b}[0m\n")).human(&theme),
+            "# D<U+200B>x [0m\n"
+        );
+        assert_eq!(report(Some("")).human(&theme), "");
+        assert_eq!(report(None).human(&theme), "");
+        let json = serde_json::to_value(report(None)).unwrap();
+        assert_eq!(json["content"], Value::Null);
+        assert!(json.get("problem").is_none());
+    }
+
+    #[test]
+    fn does_not_touch_the_structure_of_the_document() {
+        let value = json!({ "a": [1, 2, { "b": null }], "c": true });
+        let plain = serde_json::to_string_pretty(&value).unwrap();
+        assert_eq!(terminal_safe_json(&plain), plain);
+    }
 }

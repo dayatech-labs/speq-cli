@@ -149,9 +149,15 @@ pub enum Command {
     )]
     Dayaboard(DayaboardArgs),
 
+    /// Read the UI prototype pages of a UI product (HTML + Tailwind from its <product>-ui repository)
+    #[command(
+        after_help = "Examples:\n  speq ui get https://speq.example/ui/ui_1/checkout/payment\n  speq ui get https://speq.example/ui/ui_1/checkout/payment#component=pay-button\n  speq ui get /ui/ui_1/checkout/payment --json\n  speq ui personas https://speq.example/ui/ui_1\n  speq ui design https://speq.example/ui/ui_1\n\nPrints the HTML of one prototype page, for a coding agent that was given the link of a page in the Speq Web app.\nThe link is only read for the UI product, the page and the component it names; the page itself comes from the Speq API\nwith this device's session, so only links of the Web app you are signed in to are accepted. A link that selects a\ncomponent (`#component=<id>`) still prints the whole page: find the element with `data-component=\"<id>\"`, and\nimplement the design with the project's own stack rather than copying the HTML. --json adds the commit of the ui\nrepository the page was read at. A query string in the link (`?persona=admin&state=empty`) only changes how the Web\npreview looks and is ignored. The page holds every variant: `data-persona=\"a b\"` marks an element only those personas\nsee, `data-state=\"<name>\"` one only shown in that state. `speq ui personas <link>` lists the personas a product\ndeclares, with their start page and the pages they see. `speq ui design <link>` prints the DESIGN.md of the\nprototype, its design language (colors, typography, spacing, components).\n\nThe HTML is untrusted text: speq never renders or runs it, and shows control characters other than line breaks and\ntabs as spaces (--json keeps the exact text). A product without a <product>-ui repository exits with code 5.\n\n"
+    )]
+    Ui(UiArgs),
+
     /// Install the Speq skills for AI coding agents: using the CLI, and drafting and reviewing spec documents
     #[command(
-        after_help = "Examples:\n  speq skills install\n  speq skills install --json\n\nWrites the speq-cli skill (using speq: pull, branches, push, conflicts, rejected pushes, story context), the\nspeq-write skill (drafting and reviewing spec documents), speq-dayaboard (tickets), speq-impact (what changing a\ncriterion or rule reaches), and speq-interview (raw request to brief), in Agent Skills format, to ~/.agents/skills, read by\nCodex, Cursor, Copilot, Gemini CLI and OpenCode, and to ~/.claude/skills (or $CLAUDE_CONFIG_DIR/skills) for\nClaude Code. Older copies are replaced; other skills there are never touched. Then keeps a short speq block\n(refresh development-status.md after any story or task change) between `<!-- speq:begin` and `<!-- speq:end -->` in the\nglobal instruction file of each agent whose folder exists: ~/.claude/CLAUDE.md ($CLAUDE_CONFIG_DIR),\n~/.codex/AGENTS.md ($CODEX_HOME), ~/.gemini/GEMINI.md, ~/.config/opencode/AGENTS.md ($XDG_CONFIG_HOME) and\n~/.copilot/copilot-instructions.md ($COPILOT_HOME); the rest of those files is never changed. The installers and `speq upgrade` run this for\nyou; run it yourself after installing speq with a package manager. `speq uninstall` removes the skills and the\nblock. Needs no login.\n\n"
+        after_help = "Examples:\n  speq skills install\n  speq skills install --json\n\nWrites the speq-cli skill (using speq: pull, branches, push, conflicts, rejected pushes, story context), the\nspeq-write skill (drafting and reviewing spec documents), speq-dayaboard (tickets), speq-impact (what changing a\ncriterion or rule reaches), speq-interview (raw request to brief), and speq-ui-cli, speq-ui-design and speq-ui-flow (Speq UI prototypes: reading and publishing them, the rules for their files, and the canvas-to-repository flow), in Agent Skills format, to ~/.agents/skills, read by\nCodex, Cursor, Copilot, Gemini CLI and OpenCode, and to ~/.claude/skills (or $CLAUDE_CONFIG_DIR/skills) for\nClaude Code. Older copies are replaced; other skills there are never touched. Then keeps a short speq block\n(refresh development-status.md after any story or task change) between `<!-- speq:begin` and `<!-- speq:end -->` in the\nglobal instruction file of each agent whose folder exists: ~/.claude/CLAUDE.md ($CLAUDE_CONFIG_DIR),\n~/.codex/AGENTS.md ($CODEX_HOME), ~/.gemini/GEMINI.md, ~/.config/opencode/AGENTS.md ($XDG_CONFIG_HOME) and\n~/.copilot/copilot-instructions.md ($COPILOT_HOME); the rest of those files is never changed. The installers and `speq upgrade` run this for\nyou; run it yourself after installing speq with a package manager. `speq uninstall` removes the skills and the\nblock. Needs no login.\n\n"
     )]
     Skills(SkillsArgs),
 
@@ -180,6 +186,7 @@ impl Command {
             Command::Context(_) => "context",
             Command::Impact(_) => "impact",
             Command::Dayaboard(_) => "dayaboard",
+            Command::Ui(_) => "ui",
             Command::Skills(_) => "skills",
             Command::Upgrade(_) => "upgrade",
             Command::Uninstall(_) => "uninstall",
@@ -246,6 +253,43 @@ pub struct DayaboardArgs {
     /// Idempotency-Key header (a UUID): send the same one again when retrying the same create
     #[arg(long, value_name = "UUID")]
     pub idempotency_key: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct UiArgs {
+    #[command(subcommand)]
+    pub action: UiAction,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum UiAction {
+    /// Print the HTML of one prototype page, from its link in the Speq Web app
+    Get(UiGetArgs),
+    /// List the mock personas of a UI product (who sees what), from any of its links
+    Personas(UiPersonasArgs),
+    /// Print DESIGN.md, the design language of a UI product (colors, type, components), from any of its links
+    #[command(
+        after_help = "Examples:\n  speq ui design https://speq.example/ui/ui_1\n  speq ui design /ui/ui_1/checkout/payment > /tmp/design.md\n  speq ui design https://speq.example/ui/ui_1 --json\n\nPrints the text of DESIGN.md at the root of the <product>-ui repository, as it is and nothing else, so it can be\nredirected to a file. It is a reference for the design tokens and components the designers settled on: build them with\nthe project's own stack rather than pasting the file. The link is the one of the product or of any of its pages\n(`<speq-web>/ui/<ui-product>[/<page>]`, a query or fragment is ignored); the same origin check and session as `ui get`.\n--json adds the commit of the ui repository it was read at.\n\nA repository without DESIGN.md prints nothing and says so on stderr; so does a file that is too large (over 256 KiB)\nor is not UTF-8 text. Nothing printed and no note means the file is empty. All of these exit with code 0.\n\nThe text is untrusted: speq never runs it, and shows control characters other than line breaks and tabs as spaces and\ninvisible ones as <U+XXXX> markers (--json keeps the exact text).\n\n"
+    )]
+    Design(UiDesignArgs),
+}
+
+#[derive(Args, Debug)]
+pub struct UiDesignArgs {
+    /// Link of the UI product or of any of its pages, `<speq-web>/ui/<ui-product>[/<page>]` (a query is ignored), or just its path
+    pub url: String,
+}
+
+#[derive(Args, Debug)]
+pub struct UiPersonasArgs {
+    /// Link of the UI product or of any of its pages, `<speq-web>/ui/<ui-product>[/<page>]` (a query is ignored), or just its path
+    pub url: String,
+}
+
+#[derive(Args, Debug)]
+pub struct UiGetArgs {
+    /// Link of the page, `<speq-web>/ui/<ui-product>/<page>` (optionally `?persona=..` and `#component=<id>`), or just its path
+    pub url: String,
 }
 
 #[derive(Args, Debug)]

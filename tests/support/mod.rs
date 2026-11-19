@@ -33,6 +33,14 @@ pub struct DayaboardCall {
     pub body: Value,
 }
 
+/// One `GET /v1/ui-products/:id/pages/content` the API received.
+#[derive(Clone, Debug)]
+pub struct UiRequest {
+    /// Path and query, as sent.
+    pub url: String,
+    pub authorization: Option<String>,
+}
+
 /// What the fake does for a login that asks for Dayaboard. The same server also plays Dayaboard itself.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FakeDayaboard {
@@ -81,6 +89,19 @@ pub struct State {
     pub dayaboard_down: bool,
     /// What `GET /v1/projects` names as the Web app origin.
     pub web_url: Option<String>,
+    /// The prototype pages of each UI product's `<product>-ui` repository (UI product -> path -> HTML). A product
+    /// without an entry is unknown to this user: the generic `404`.
+    pub ui_pages: HashMap<String, BTreeMap<String, String>>,
+    /// Every call to the prototype page endpoint.
+    pub ui_requests: Vec<UiRequest>,
+    /// The `GET /v1/ui-products/:id/personas` answer of each UI product (the body); an unknown product is the generic
+    /// `404`.
+    pub ui_personas: HashMap<String, Value>,
+    /// The `GET /v1/ui-products/:id/design` answer of each UI product (the body); an unknown product is the generic
+    /// `404`.
+    pub ui_design: HashMap<String, Value>,
+    /// The answer to every prototype page call instead of the pages above (status and body), for a hostile API.
+    pub ui_reply: Option<(u16, Value)>,
     /// Every call to Dayaboard's workflow or docs API.
     pub dayaboard_calls: Vec<DayaboardCall>,
     /// The answer to the next such call (status, body, headers); `200 {"ok": true}` when unset.
@@ -337,6 +358,11 @@ impl State {
             dayaboard_disconnects: vec![],
             dayaboard_down: false,
             web_url: Some("https://speq.example".into()),
+            ui_pages: HashMap::new(),
+            ui_requests: vec![],
+            ui_personas: HashMap::new(),
+            ui_design: HashMap::new(),
+            ui_reply: None,
             dayaboard_calls: vec![],
             dayaboard_reply: None,
             next_login_user: "user_a".into(),
@@ -943,6 +969,59 @@ fn handle(
             .collect();
         let body = json!({ "user_id": user, "authorization_version": st.auth_version.get(&user).copied().unwrap_or(1), "issued_at": iso(0), "expires_at": iso(st.snapshot_ttl), "web_url": st.web_url, "projects": projects });
         return (200, body, vec![("ETag".into(), etag)]);
+    }
+
+    // UI products stand on their own: their pages are read at `/v1/ui-products/:id/pages/content`. Access follows
+    // the specs project in the real API; here a product the fake does not know is the generic 404.
+    if let Some(rest) = path.strip_prefix("/v1/ui-products/") {
+        let Some((ui_id, endpoint @ ("pages/content" | "personas" | "design"))) =
+            rest.split_once('/')
+        else {
+            return error(404, "not_found", "Not found", None);
+        };
+        if method != "GET" {
+            return error(404, "not_found", "Not found", None);
+        }
+        if endpoint == "personas" || endpoint == "design" {
+            st.ui_requests.push(UiRequest {
+                url: url.to_string(),
+                authorization: headers.get("authorization").cloned(),
+            });
+            if let Some((status, body)) = st.ui_reply.clone() {
+                return (status, body, vec![]);
+            }
+            let served = if endpoint == "design" {
+                st.ui_design.get(ui_id)
+            } else {
+                st.ui_personas.get(ui_id)
+            };
+            return match served {
+                Some(body) => (200, body.clone(), vec![]),
+                None => error(404, "not_found", "Not found", None),
+            };
+        }
+        st.ui_requests.push(UiRequest {
+            url: url.to_string(),
+            authorization: headers.get("authorization").cloned(),
+        });
+        if let Some((status, body)) = st.ui_reply.clone() {
+            return (status, body, vec![]);
+        }
+        let wanted = url
+            .split_once('?')
+            .and_then(|(_, query)| {
+                url::form_urlencoded::parse(query.as_bytes()).find(|(key, _)| key == "path")
+            })
+            .map(|(_, value)| value.into_owned())
+            .unwrap_or_default();
+        return match st.ui_pages.get(ui_id).and_then(|pages| pages.get(&wanted)) {
+            Some(content) => (
+                200,
+                json!({ "path": wanted, "content": content, "sha": "1".repeat(40), "head_sha": "2".repeat(40) }),
+                vec![],
+            ),
+            None => error(404, "not_found", "Not found", None),
+        };
     }
 
     let Some(rest) = path.strip_prefix("/v1/projects/") else {
