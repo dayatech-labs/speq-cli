@@ -1,0 +1,43 @@
+#!/bin/sh
+# Pre-push: the checks CI used to repeat on every push, run before the code leaves the machine.
+# Enable once per clone:  git config core.hooksPath .githooks
+# Skip in an emergency:   git push --no-verify   (CI on the pull request is still the gate)
+set -eu
+
+cd "$(git rev-parse --show-toplevel)"
+
+zero=0000000000000000000000000000000000000000
+range=""
+while read -r _ local_sha _ remote_sha; do
+  [ "$local_sha" = "$zero" ] && continue # deleting a branch: nothing to check
+  if [ "$remote_sha" = "$zero" ]; then base=$(git rev-parse -q --verify origin/main || echo ""); else base=$remote_sha; fi
+  range="${base:+$base..}$local_sha"
+done
+[ -n "$range" ] || exit 0
+
+step() { printf '\n==> %s\n' "$*"; }
+skip() { printf 'skipped: %s is not installed (CI still checks it)\n' "$1"; }
+have() { command -v "$1" > /dev/null 2>&1; }
+
+step "cargo fmt --check"
+cargo fmt --check
+
+step "cargo clippy"
+cargo clippy --locked --all-targets -- -D warnings
+
+step "cargo test"
+cargo test --locked
+
+step "cargo deny"
+if have cargo-deny; then cargo deny check advisories bans licenses sources; else skip cargo-deny; fi
+
+step "installer and release scripts"
+sh -n scripts/install.sh
+if have shellcheck; then shellcheck -S warning scripts/install.sh; else skip shellcheck; fi
+python3 -I -c 'import sys; [compile(open(f, encoding="utf-8").read(), f, "exec") for f in sys.argv[1:]]' scripts/*.py
+python3 scripts/test_release_scripts.py
+
+step "gitleaks (commits being pushed: $range)"
+if have gitleaks; then gitleaks git --redact --log-opts="$range" .; else skip gitleaks; fi
+
+printf '\npre-push: all checks passed\n'

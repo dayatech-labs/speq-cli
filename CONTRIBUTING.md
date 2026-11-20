@@ -14,6 +14,14 @@ cargo run -- --help
 
 Alat tambahan untuk memeriksa seperti CI: `cargo-deny` (`cargo install cargo-deny --locked`), `shellcheck`, dan `python3`.
 
+Aktifkan hook pre-push sekali per clone, supaya `fmt`, `clippy`, `test`, `cargo deny`, cek installer/skrip rilis, dan `gitleaks` (hanya commit yang di-push) berjalan sebelum kode keluar dari mesin Anda:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+Alat yang belum terpasang (`cargo-deny`, `shellcheck`, `gitleaks`) dilewati dengan peringatan. Hook bisa dilewati dengan `git push --no-verify`, tetapi CI pada PR tetap menjadi gerbang.
+
 Untuk menjalankan CLI melawan API dan Web lokal, ikuti `local-development.md` di workspace docs (bukan di repo ini) dan set `export SPEQ_API_URL=http://localhost:8787`.
 
 ## Perintah harian
