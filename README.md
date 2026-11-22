@@ -124,7 +124,7 @@ and business rules. It then hands the answers to `speq-write` for the brief or P
 Tailwind screens). `speq-ui-design` holds the rules for the files: one screen per file, `data-component`,
 `data-persona` and `data-state` variants in the same screen, `personas.json`, and the design language in `DESIGN.md`. `speq-ui-flow` runs the whole flow in
 three gated phases: draft on a design canvas, review and change it with the user, and only when asked export it as
-`pages/`, `personas.json` and (when wanted) `DESIGN.md` and push. `speq-ui-cli` reads a prototype with `speq ui get`, `speq ui personas` and `speq ui design`, and
+`pages/`, `personas.json` and (when wanted) `canvas/` and `DESIGN.md` and push. `speq-ui-cli` reads a prototype with `speq ui get`, `speq ui personas` and `speq ui design`, and
 publishes to the UI repository with plain `git` after you confirm the push.
 
 No skill commits or pushes unless you ask. The installers run `speq skills install`, which writes all eight to

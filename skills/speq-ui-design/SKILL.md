@@ -13,7 +13,7 @@ Speq UI previews the HTML you export, one screen per page, and lets people (and 
 
 ## 1. Files
 
-- One screen = one self-contained file `pages/<folder>/<name>.html`. Names use letters, digits, `.`, `_`, `-` and start with a letter or digit. Nothing else under `pages/` is shown. A `canvas/` directory at the root of the repository (the design canvas files, as exported by the **speq-ui-flow** skill) is not a screen and is not shown; do not put screens there.
+- One screen = one self-contained file `pages/<folder>/<name>.html`. Names use letters, digits, `.`, `_`, `-` and start with a letter or digit. Nothing else under `pages/` is shown. An optional `canvas/` directory at the root of the repository (the design canvas files, when the user chose to export them with the **speq-ui-flow** skill) is not a screen and is not shown; do not put screens there.
 - Load Tailwind with `<script src="https://cdn.tailwindcss.com"></script>`. Speq pins it; do not add other external scripts, stylesheets, fonts or images.
 - Images and fonts must be `data:` URIs. The preview has no network: no `fetch`, no external links to load, no forms that submit.
 - Link screens to each other with **relative links to the `.html` file** (`success.html`, `../index.html`). Do not use `location.href`, `window.open` or `<meta http-equiv="refresh">`: a screen that sends itself elsewhere is stopped by the preview.
