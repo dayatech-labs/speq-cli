@@ -888,9 +888,18 @@ mod tests {
     #[test]
     fn stops_when_asked() {
         let fixture = Fixture::new();
-        let addr = fixture.server.addr();
-        fixture.server.stop();
-        assert!(TcpStream::connect_timeout(&addr, Duration::from_millis(500)).is_err());
+        let server = fixture.server;
+        // The loop ending is the proof. A port that is closed again says nothing: the tests of this module run side by
+        // side and bind port 0, and the system may hand the port just freed to another of them at once.
+        let (done, finished) = std::sync::mpsc::channel();
+        thread::spawn(move || {
+            server.stop();
+            let _ = done.send(());
+        });
+        assert!(
+            finished.recv_timeout(Duration::from_secs(5)).is_ok(),
+            "the server loop ends when it is asked to stop"
+        );
     }
 
     #[test]
