@@ -1,6 +1,6 @@
 ---
 name: speq-ui-cli
-description: Use when working from the command line with a Speq UI prototype repository (a private GitHub repository named like checkout-ui, whose pages/ folder holds HTML screens and whose root may hold personas.json and DESIGN.md) - reading the HTML, the personas or the design guide (DESIGN.md) of a prototype from a Speq Web app link with speq ui get, speq ui personas and speq ui design, and publishing changes to that repository with git (pull, commit, push to main) after the user confirms. Not for specs repositories, which speq-cli covers.
+description: Use when working from the command line with a Speq UI prototype repository (a private GitHub repository named like checkout-ui, whose pages/ folder holds HTML screens and whose root may hold personas.json and DESIGN.md) - reading the HTML, the personas or the design guide (DESIGN.md) of a prototype from a Speq Web app link with speq ui get, speq ui personas and speq ui design, previewing a prototype folder on this machine in the browser as Speq UI shows it with speq ui preview, and publishing changes to that repository with git (pull, commit, push to main) after the user confirms. Not for specs repositories, which speq-cli covers.
 compatibility: Requires the speq CLI for reading, and Git 2.28 or newer for publishing.
 metadata:
   version: "__SPEQ_VERSION__"
@@ -43,8 +43,9 @@ Only when the user asks for it, and only after they confirm the push itself (see
 
 1. In the UI repository (check `git remote -v` names the repository the user means), look at what will go: `git status` and `git diff`. Show the user the list of files.
 2. Check the files against the **speq-ui-design** skill (components unique per screen, personas spelled the same in the screens and `personas.json`, no network, relative links only). If `DESIGN.md` is part of the change, it is there because the user chose to create or update it; an existing one is never replaced without that choice.
-3. Ask: "push ke `main` repo `NAME-ui`?" with the real name. **Wait for a yes.** An earlier yes to another question does not count, and neither does silence.
-4. Then, from the repository root:
+3. Optionally let the user see the result first, with `speq ui preview` (see "Preview the folder locally" below).
+4. Ask: "push ke `main` repo `NAME-ui`?" with the real name. **Wait for a yes.** An earlier yes to another question does not count, and neither does silence.
+5. Then, from the repository root:
 
 ```bash
 git pull --ff-only origin main
@@ -58,6 +59,19 @@ git push origin main
 - **Commit message:** `type: summary` in the imperative (`feat`, `fix`, `docs`, `refactor`, `chore`), at most 72 characters, no full stop. Follow the commit rules the user already has: no AI attribution, no `Co-authored-by` or similar trailer, the user's own Git identity. Check the message and the author before pushing.
 - **`main` is what Speq shows.** What reaches `main` appears in Speq UI within about two minutes (or after a refresh). If `main` is protected, or the user wants a review first, push a branch and open a pull request instead, and say that it shows in Speq UI only after it is merged to `main`.
 - **A rejected push** (non-fast-forward, protected branch, no access) is not worked around: report the message and stop.
+
+### Preview the folder locally
+
+```bash
+speq ui preview [folder]            # the folder defaults to the current one; stop it with Ctrl+C
+speq --json ui preview [folder]     # prints {"url", "folder", "pages"} first, then keeps serving
+```
+
+It shows the prototype of a `NAME-ui` folder on disk the way Speq UI shows it (same sandboxed page, persona and state switches, component list, widths, full screen, `DESIGN.md`) and reloads on its own when a file changes, so the user sees an edit before it is pushed. It needs no login and nothing leaves the machine: the server listens on `127.0.0.1` only. It reads only `pages/**.html`, `personas.json` and `DESIGN.md`, under the Speq API's rules, so a page name or a `personas.json` the API would refuse shows up as a problem here too.
+
+- It **does not return**: run it in the background (or in its own terminal tab), give the user the address it printed (`--json` prints it as `url`), and stop it when the user is done. Add `--open` to open the browser, `--port N` for a fixed port.
+- Tailwind is loaded from its CDN, so the page needs internet to be styled. A diagram in `DESIGN.md` shows as its source.
+- Use it to answer "how does it look?" before the push. It proves nothing about what is on `main`: Speq UI shows only what was pushed.
 
 ## 3. What this skill does not do
 

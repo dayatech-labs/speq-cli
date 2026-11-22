@@ -46,6 +46,29 @@ Rules:
 - Write the markup of each variant fully; do not rely on JavaScript to switch them. Speq switches them itself.
 - A screen's own styles can read `data-persona-current` and `data-state-current` on `<html>` if a whole layout changes, but prefer marking elements.
 
+### States to cover
+
+A state is a name you choose, not a fixed list: `empty`, `filled`, `loading`, `error`, `no-permission`, `offline` are all fine. People switch states in Speq UI (a State menu, or `?state=error` in the link) to see how a screen looks when the data is missing, slow or failing, so write the ones the screen can really be in:
+
+- **Every list, table, search result and dashboard**: `filled` and `empty`. Add `loading` when it waits for data, and `error` when loading can fail.
+- **Every form**: the untouched form, plus a variant with validation errors and one for a failed submit, when the flow has them.
+- **Every screen that depends on who is looking or on a permission**: combine with `data-persona` (`data-persona="member" data-state="no-permission"`).
+- **Keep names the same on every screen**: always `empty`, `error`, `loading`, never `kosong` on one screen and `no-data` on another. People switch states screen by screen and expect to find the same names.
+- **A state belongs to the whole screen, not to one component.** One screen has one State menu, and its value applies to every element. If a list can be empty while a form on the same screen can fail, write distinct names for what you need to see (`empty`, `error`, `form-error`) and let each element name the states it shows in (`data-state="empty error"` shows in both). Elements without `data-state` stay visible in every state: header, navigation, page title.
+- **Put the state people see first at the top of the file** (usually `filled`): the first state written is the one a screen opens in.
+
+```html
+<h1 data-component="orders-title">Pesanan</h1>
+<table data-state="filled" data-component="orders-table">…rows…</table>
+<div data-state="loading" data-component="orders-loading">…skeleton…</div>
+<div data-state="empty" data-component="orders-empty">Belum ada pesanan.</div>
+<div data-state="error" data-component="orders-error">
+  Gagal memuat pesanan. <button type="button">Coba lagi</button>
+</div>
+```
+
+The prototype fetches nothing, so a "retry" button only has to look right.
+
 ## 4. Flows that differ by role
 
 When a role has screens of its own (an admin's order list), put them in their own folder (`pages/admin/orders.html`) and give that role those pages in `personas.json` (below). Screens that everyone uses stay outside it and are shown as shared.
@@ -96,3 +119,5 @@ At the **root** of the repository, next to `personas.json`: the design language 
 4. Each persona's flow can be followed from its `start` to the end through links.
 5. No network use: no external image, font, script (except Tailwind) or `fetch`.
 6. `DESIGN.md`: if there is none it was written from the screens; if there is one, the user chose to update it or to leave it, and it was not changed without that choice.
+7. States (section 3): every list, table and search has `filled` and `empty` variants, and `loading` and `error` where it can wait or fail; every form has its validation-error and failed-submit variants where the flow has them. Names are spelled the same on every screen, and the state people should see first is written first.
+8. Look at it before handing over, when `speq` is installed: `speq ui preview` in the repository shows every screen with its persona and State menus (nothing is pushed, no login needed). Switch each screen through its states and check that nothing is blank, doubled or left from another state. Stop the preview when done.
