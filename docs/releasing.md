@@ -98,6 +98,10 @@ Check a release by hand (OpenSSL 3), with the public key as PEM:
 openssl pkeyutl -verify -pubin -inkey speq-release.pub.pem -rawin -in manifest.json -sigfile manifest.json.sig
 ```
 
+## The embedded preview viewer
+
+`speq ui preview` serves a viewer that is built into the binary from `assets/ui-preview.bin`. That file is committed, so the release workflow builds nothing extra and needs no Bun. A release carries whatever viewer was committed at the time: rebuild it from speq-app first when the web app's prototype view changed (see CONTRIBUTING.md, "Viewer preview").
+
 ## After release
 
 * Homebrew: copy `speq.rb` into the tap repository (`brew install <tap>/speq`).

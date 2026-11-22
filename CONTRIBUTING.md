@@ -50,6 +50,7 @@ src/main.rs, cli.rs, commands.rs   titik masuk (juga sebagai git-remote-speq/git
 src/git.rs, repo.rs                menjalankan Git dengan env bersih; menemukan repository specs (speq.address)
 src/clone.rs, context.rs           `speq list`, `speq clone`, `speq context`
 src/ui.rs                          `speq ui get` / `speq ui personas` / `speq ui design`: baca halaman, persona, dan DESIGN.md prototipe UI dari link Web app lewat API (hanya baca)
+src/ui_preview/                    `speq ui preview`: server HTTP lokal (127.0.0.1), pembaca folder `<product>-ui` dengan aturan yang sama dengan API, dan viewer yang ditanam (`assets/ui-preview.bin`)
 src/remote_helper.rs, squash.rs    git-remote-speq (push ke POST /git/push) dan `speq push --squash`
 src/git_auth.rs, links.rs          git-credential-speq; link helper di samping binary
 src/api.rs                         client HTTP ke API Speq
@@ -72,6 +73,16 @@ docs/releasing.md                  proses rilis
 - **Otorisasi** selalu diputuskan API. Cache capability hanya petunjuk tampilan dan tidak boleh dipakai untuk mengizinkan tulis.
 - **Lint**: `unsafe_code` di-`forbid` dan semua lint `clippy::all` bersifat `deny` (`Cargo.toml`), jadi warning clippy menggagalkan build. Kegagalan yang bisa datang dari input, I/O, atau jaringan dikembalikan sebagai error bermakna lewat `error.rs`, bukan `unwrap`/`expect`. `expect` hanya untuk invariant yang tidak mungkin gagal, dengan pesan yang menjelaskannya.
 - **MSRV**: jangan memakai fitur yang membutuhkan Rust lebih baru dari `rust-version` di `Cargo.toml`; job `msrv` akan gagal. Menaikkan MSRV perlu alasan.
+
+## Viewer preview (`assets/ui-preview.bin`)
+
+`speq ui preview` menyajikan viewer yang dibangun dari kode speq-app dan ditanam di binary lewat `include_bytes!`. Berkas itu **di-commit** (build speq-cli tidak butuh Bun); jangan diedit tangan. Bangun ulang dari checkout speq-app yang berdampingan setiap kali viewer berubah (`src/lib/ui-preview/`, `src/local/`, komponen atau kamus i18n yang dipakainya):
+
+```bash
+cd ../speq-app && bun install --frozen-lockfile && bun run build:local ../speq-cli/assets/ui-preview.bin
+```
+
+Format berkas ditulis `speq-app/scripts/pack-bundle.mjs` dan dibaca `src/ui_preview/bundle.rs`; ubah keduanya bersamaan. Aturan folder (nama halaman, `personas.json`, `DESIGN.md`) di `src/ui_preview/rules.rs` mencerminkan `speq-api/src/services/` (`canonical-path.ts`, `ui-personas.ts`, `ui-design.ts`): bila API berubah, ubah keduanya.
 
 ## Dependency
 
