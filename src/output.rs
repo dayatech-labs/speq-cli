@@ -12,6 +12,7 @@ use crate::session::{LoginReport, LogoutReport};
 use crate::skills::SkillsReport;
 use crate::template::{Item, Screen, Theme, Tone};
 use crate::ui::{DesignReport, PersonasReport, UiPageReport, terminal_text};
+use crate::ui_preview::PreviewReport;
 use crate::uninstall::UninstallReport;
 use crate::upgrade::{CheckReport, UpgradeReport};
 use serde::Serialize;
@@ -409,6 +410,18 @@ impl Human for DesignReport {
             .as_deref()
             .map(terminal_text)
             .unwrap_or_default()
+    }
+}
+
+/// Where the preview is, and how to stop it; the folder's name is the user's own, shown as a path.
+impl Human for PreviewReport {
+    fn human(&self, _theme: &Theme) -> String {
+        format!(
+            "Previewing {} ({})\n  {}\nPress Ctrl+C to stop.",
+            self.folder,
+            plural(self.pages, "page", "pages"),
+            self.url
+        )
     }
 }
 

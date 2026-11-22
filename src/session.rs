@@ -102,7 +102,7 @@ fn check_verification_url(api_url: &Url, verification_url: &str) -> Result<Url> 
     Ok(url)
 }
 
-fn open_in_browser(url: &Url) -> bool {
+pub(crate) fn open_in_browser(url: &Url) -> bool {
     let mut command = if cfg!(target_os = "macos") {
         let mut c = Command::new("open");
         c.arg(url.as_str());

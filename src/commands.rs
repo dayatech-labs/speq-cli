@@ -16,6 +16,7 @@ use crate::session::Session;
 use crate::skills;
 use crate::squash;
 use crate::ui;
+use crate::ui_preview;
 use crate::uninstall;
 use crate::upgrade::{self, Install};
 use clap::{CommandFactory, FromArgMatches};
@@ -344,6 +345,7 @@ pub async fn run(cli: Cli, env: &Env) -> Result<u8> {
                 }
                 Ok(crate::error::exit::OK)
             }
+            UiAction::Preview(args) => ui_preview::run(json, &args.dir, args.port, args.open),
             UiAction::Personas(args) => {
                 let report = ui::personas(env, &args.url).await?;
                 if !json && let Some(problem) = &report.problem {

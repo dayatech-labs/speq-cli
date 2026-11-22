@@ -30,5 +30,6 @@ pub mod snapshot;
 pub mod squash;
 pub mod template;
 pub mod ui;
+pub mod ui_preview;
 pub mod uninstall;
 pub mod upgrade;

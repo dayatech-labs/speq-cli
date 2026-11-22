@@ -1,6 +1,7 @@
 //! The Clap command tree. `speq help` and `speq <command> --help` are generated from here.
 use clap::builder::styling::{AnsiColor, Effects, Style, Styles};
 use clap::{Args, Parser, Subcommand};
+use std::path::PathBuf;
 
 /// Help colors. Clap only emits them on a terminal; `NO_COLOR` and pipes get plain text.
 pub const STYLES: Styles = Styles::styled()
@@ -272,6 +273,24 @@ pub enum UiAction {
         after_help = "Examples:\n  speq ui design https://speq.example/ui/ui_1\n  speq ui design /ui/ui_1/checkout/payment > /tmp/design.md\n  speq ui design https://speq.example/ui/ui_1 --json\n\nPrints the text of DESIGN.md at the root of the <product>-ui repository, as it is and nothing else, so it can be\nredirected to a file. It is a reference for the design tokens and components the designers settled on: build them with\nthe project's own stack rather than pasting the file. The link is the one of the product or of any of its pages\n(`<speq-web>/ui/<ui-product>[/<page>]`, a query or fragment is ignored); the same origin check and session as `ui get`.\n--json adds the commit of the ui repository it was read at.\n\nA repository without DESIGN.md prints nothing and says so on stderr; so does a file that is too large (over 256 KiB)\nor is not UTF-8 text. Nothing printed and no note means the file is empty. All of these exit with code 0.\n\nThe text is untrusted: speq never runs it, and shows control characters other than line breaks and tabs as spaces and\ninvisible ones as <U+XXXX> markers (--json keeps the exact text).\n\n"
     )]
     Design(UiDesignArgs),
+    /// Preview a <product>-ui folder in the browser, with the look and behavior of the Speq Web app
+    #[command(
+        after_help = "Examples:\n  speq ui preview\n  speq ui preview ../checkout-ui --open\n  speq ui preview ./checkout-ui --port 4173\n  speq --json ui preview ../checkout-ui\n\nShows the prototype of a <product>-ui folder (its pages/, personas.json and DESIGN.md) the way the Speq Web app does:\nthe same sandboxed page, persona and state switching, component list, mobile and tablet widths, full screen, and\nDESIGN.md. It reads the folder on disk and reloads by itself when a file changes, so a designer or an agent sees an\nedit before it is pushed. It needs no login and sends nothing anywhere: the server listens on 127.0.0.1 only and\nanswers only to the address it prints. Stop it with Ctrl+C.\n\nOnly pages/**.html, personas.json and DESIGN.md are read, under the same rules as the Speq API (page names, persona\nfile shape, sizes); symbolic links are not followed. Tailwind is loaded from its CDN, so the page needs internet to be\nstyled. A diagram in DESIGN.md shows as its source. --json prints the address as JSON, then keeps serving.\n\n"
+    )]
+    Preview(UiPreviewArgs),
+}
+
+#[derive(Args, Debug)]
+pub struct UiPreviewArgs {
+    /// The <product>-ui folder (with pages/, personas.json, DESIGN.md); the current folder by default
+    #[arg(default_value = ".")]
+    pub dir: PathBuf,
+    /// Port to listen on, on 127.0.0.1; a free one by default
+    #[arg(long, default_value_t = 0)]
+    pub port: u16,
+    /// Open the preview in the default browser
+    #[arg(long)]
+    pub open: bool,
 }
 
 #[derive(Args, Debug)]
